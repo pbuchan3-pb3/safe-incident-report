@@ -634,7 +634,10 @@ async function cleanWithAI(rawText, context, fieldType){
             '(5) Return ONLY the rewritten text — no preamble, no labels, no quotes. ' +
             'Context: ' + context + ' Raw input: ' + rawText
           : 'Rewrite the following in professional AP Style for a security incident report. ' +
-            'Keep it concise and factual. Third person only. No preamble. Return only the cleaned text. ' +
+            'Rules: (1) Third person only — never use she, he, they, her, his — use "the subject", "the female subject", or "the male subject" instead. ' +
+            '(2) Hyphenate compound modifiers (black-and-white shirt). ' +
+            '(3) No casual phrases. Professional vocabulary. Past tense. ' +
+            '(4) Keep all facts exactly as stated. Return only the rewritten text. ' +
             'Input: ' + rawText
       }]})
     });
