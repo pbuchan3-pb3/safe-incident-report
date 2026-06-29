@@ -684,7 +684,7 @@ async function cleanWithAI(rawText, context, fieldType){
         messages:[{role:"user",content:
           fieldType === 'description'
             ? 'Rewrite in professional AP Style past tense third person. Replace: girl=female subject, guy=male subject, slap=strike, fight=physical altercation, went their own ways=departed the area separately. Keep all facts. Return only rewritten text.\n\nInput: ' + rawText
-            : 'Rewrite in professional AP Style. Third person only. Hyphenate compound modifiers. Past tense. Keep all facts. Return only rewritten text.\n\nInput: ' + rawText
+            : 'Rewrite in professional AP Style. If names are listed, format as "Witnesses included [names]". If clothing, use third person with hyphenated compound modifiers. Past tense. Keep all facts. Return only rewritten text.\n\nInput: ' + rawText
         }]
       })
     });
@@ -2134,7 +2134,7 @@ async function processAnswer(raw){
         sendInterceptor=async(val)=>{
       inputArea.style.display='none'; awaitingInput=false;
       const ctx=`Incident report action taken field for ${formData.venue}.`;
-      const cleaned=await cleanWithAI(val,ctx);
+      const cleaned=await cleanWithAI(val,ctx,'field');
       addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this look right?`,'ai');
       addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
         clearQuickReplies(); addBubble(confirm,'user');
@@ -2156,7 +2156,7 @@ async function processAnswer(raw){
   if(key==='witnesses'){
     if(isSkip){ formData[key]='None'; flowIndex++; await askNextQuestion(); return; }
     const ctx=`Incident report witness field for ${formData.venue}.`;
-    const cleaned=await cleanWithAI(raw,ctx);
+    const cleaned=await cleanWithAI(raw,ctx,'field');
     addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this look right?`,'ai');
     addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
@@ -2171,7 +2171,7 @@ async function processAnswer(raw){
   if(key==='emsPolice'){
     if(isSkip||raw.toLowerCase().includes('not applicable')){formData[key]='Not applicable';flowIndex++;await askNextQuestion();return;}
     const ctx=`Incident report EMS/police involvement field for ${formData.venue}.`;
-    const cleaned=await cleanWithAI(raw,ctx);
+    const cleaned=await cleanWithAI(raw,ctx,'field');
     addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this look right?`,'ai');
     addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
@@ -2186,7 +2186,7 @@ async function processAnswer(raw){
   if(key==='additionalComments'){
     if(isSkip){ formData[key]='None'; flowIndex++; await askNextQuestion(); return; }
     const ctx=`Incident report additional comments field for ${formData.venue}.`;
-    const cleaned=await cleanWithAI(raw,ctx);
+    const cleaned=await cleanWithAI(raw,ctx,'field');
     addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this look right?`,'ai');
     addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
