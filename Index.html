@@ -2009,7 +2009,24 @@ async function askNextQuestion(){
 
   if(step.isGuestName){
     showInlineOptions(['Unknown / Guest Refused'], async(val)=>{
-      addBubble(val,'user'); formData.guestName='Unknown'; flowIndex++; await askNextQuestion();
+      addBubble(val,'user');
+      // Even if first name unknown, still ask for last name
+      showTyping(); await delay(500); removeTyping();
+      addBubble("Do you have a last name for the guest?",'ai');
+      showInlineOptions(['No last name known'], async()=>{
+        addBubble('No last name known','user');
+        formData.guestName='Unknown';
+        flowIndex++; await askNextQuestion();
+      });
+      inputArea.style.display='flex'; awaitingInput=true;
+      document.getElementById('inputHint').style.display='block';
+      sendInterceptor=async(lastName)=>{
+        addBubble(lastName,'user');
+        formData.guestName = lastName.trim();
+        inputArea.style.display='none'; awaitingInput=false;
+        sendInterceptor=null;
+        flowIndex++; await askNextQuestion();
+      };
     });
     inputArea.style.display='flex'; awaitingInput=true;
     document.getElementById('inputHint').style.display='block';
