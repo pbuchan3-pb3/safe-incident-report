@@ -663,8 +663,23 @@ function addQuickReplies(options, onSelect){
 function clearQuickReplies(){const qr=document.getElementById('quickReplies');if(qr)qr.remove();}
 
 // ── AI CLEANUP ─────────────────────────────────────────────────────────────
-async function cleanWithAI(rawText, context, fieldType){
+async function cleanWithAI(rawText, context, fieldType, fieldKey){
   try{
+    // Build field-specific instruction
+    let fieldInstruction = '';
+    if(fieldKey === 'guestClothing'){
+      fieldInstruction = 'This is a CLOTHING description. Start with "The subject was wearing" and describe the clothing in AP Style. Hyphenate compound color modifiers (black-and-white). Never say "Witnesses included".';
+    } else if(fieldKey === 'guestFeatures'){
+      fieldInstruction = 'This is a PHYSICAL FEATURES description. List features professionally (e.g. "The subject had visible tattoos and wore glasses"). Never say "Witnesses included".';
+    } else if(fieldKey === 'witnesses'){
+      fieldInstruction = 'This is a WITNESS LIST. Format as "Witnesses included [name] ([role]) and [name] ([role])." One sentence only.';
+    } else if(fieldKey === 'actionTaken'){
+      fieldInstruction = 'This is an ACTION TAKEN field. Describe the security action taken in past tense AP Style.';
+    } else if(fieldKey === 'environmentalConditions'){
+      fieldInstruction = 'This is an ENVIRONMENTAL CONDITIONS field. Describe conditions at the scene professionally.';
+    } else {
+      fieldInstruction = 'Rewrite in AP Style past tense. Third person only.';
+    }
     const r=await fetch("https://api.anthropic.com/v1/messages",{
       method:"POST",
       headers:{
@@ -676,13 +691,13 @@ async function cleanWithAI(rawText, context, fieldType){
       body:JSON.stringify({
         model:"claude-sonnet-4-6",
         max_tokens:300,
-        system: "You are a professional security report writer for S.A.F.E. Management. You ALWAYS rewrite input text into professional AP Style. You NEVER return the original text unchanged. You ALWAYS use third person — never she, he, they, her, his. Always refer to people as 'the female subject', 'the male subject', or 'the subject'. Return ONLY the rewritten text with no preamble.",
+        system: fieldType === 'description'
+          ? "You are a professional security report writer for S.A.F.E. Management. Rewrite incident descriptions in AP Style, third person past tense. Never use I, we, she, he, they. Use female subject, male subject, or subject. Return ONLY the rewritten text."
+          : "You are a professional security report writer for S.A.F.E. Management. Rewrite field entries in AP Style. For clothing: start with 'The subject was wearing...'. For names/witnesses: format as 'Witnesses included [name] ([role])'. Never start with 'Witnesses included' for clothing fields. Return ONLY the rewritten text.",
         messages:[{role:"user",content:
           fieldType === 'description'
             ? 'Rewrite in professional AP Style past tense third person. Replace: girl=female subject, guy=male subject, slap=strike, fight=physical altercation, went their own ways=departed the area separately. Keep all facts. Return only rewritten text.\n\nInput: ' + rawText
-            : 'Rewrite in professional AP Style for a security incident report witness field. ' +
-            'Format as: "Witnesses included [name], [role/description], and [name], [role/description]." ' +
-            'Keep it concise — one sentence maximum. No date references. No preamble. Return only the rewritten text.\n\nInput: ' + rawText
+            : fieldInstruction + ' Keep all facts exactly as stated. Return ONLY the rewritten text. No preamble, no labels, no quotation marks.\n\nInput: ' + rawText
         }]
       })
     });
@@ -2171,7 +2186,20 @@ async function processAnswer(raw){
   if(key==='witnesses'){
     if(isSkip){ formData[key]='None'; flowIndex++; await askNextQuestion(); return; }
     const ctx=`Incident report witness field for ${formData.venue}.`;
-    const cleaned=await cleanWithAI(raw,ctx,'field');
+    const witnessPrompt = 'Rewrite in professional AP Style as a witness list. ' +
+      'Format: "Witnesses included [name], [role], and [name], [role]." ' +
+      'One sentence maximum. No date references. No preamble. Return only the rewritten text.\n\nInput: ' + raw;
+    showTyping(); await delay(300);
+    addBubble("Writing that up in professional language...","ai");
+    const r2=await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:150,
+        system:"You are a professional security report writer. Format witness lists concisely. Return ONLY the formatted text.",
+        messages:[{role:"user",content:witnessPrompt}]})
+    });
+    const d2=await r2.json();
+    const cleaned=d2.content&&d2.content[0]?d2.content[0].text.trim():raw;
     addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this look right?`,'ai');
     addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
@@ -2285,7 +2313,7 @@ async function processAnswer(raw){
     addBubble("Writing that up in professional language...","ai");
     const ctx=`This is a ${incidentType==='incident'?formData.incidentCategory+' incident':'employee recognition'} report for ${formData.venue}.`;
     const fieldType = ['incidentDescription','guestStatement','guestStatementDetail','recognitionDescription','recognitionImpact'].includes(key) ? 'description' : 'field';
-    const cleaned=await cleanWithAI(raw,ctx,fieldType);
+    const cleaned=await cleanWithAI(raw,ctx,fieldType,key);
     removeTyping(); showTyping(); await delay(500); removeTyping();
     addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this accurately capture what happened?`,'ai');
     addQuickReplies(['Yes, that looks right','✏️ Edit — change a word or two','No, let me re-describe'],async(confirm)=>{
