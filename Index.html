@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>S.A.F.E. | Incident Report</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Bebas+Neue&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Bebas+Neue&family=Barlow+Condensed:wght@600;700;800&display=swap');
   :root {
     --safe-red:#E8192C; --safe-navy:#1A2E4A; --safe-blue:#1B4B8A;
     --safe-silver:#C8CDD4; --white:#fff; --light-bg:#f4f7fb;
@@ -19,11 +19,28 @@
   body{font-family:'Inter',sans-serif;background:var(--light-bg);color:var(--text-main);display:flex;flex-direction:column;height:100%;}
 
   header{background:var(--safe-navy);padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:3px solid var(--safe-red);flex-shrink:0;}
+
+  /* HERO IMAGE STRIP */
+  .hero-strip{position:relative;height:120px;overflow:hidden;flex-shrink:0;display:flex;align-items:flex-end;padding:0 16px 12px;}
+  .hero-strip-bg{position:absolute;inset:0;background:linear-gradient(to bottom,rgba(26,46,74,0.72) 0%,rgba(26,46,74,0.92) 100%),url('https://images.unsplash.com/photo-1567593810070-7a3d471af022?w=1200&q=80') center/cover no-repeat;transform:scale(1.04);animation:heroZoom 20s ease-in-out infinite alternate;}
+  @keyframes heroZoom{from{transform:scale(1.04);}to{transform:scale(1.10);}}
+  .hero-strip-content{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;width:100%;}
+  .hero-venue{font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#fff;line-height:1;}
+  .hero-venue span{color:var(--safe-red);}
+  .hero-season{font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--safe-silver);margin-top:2px;}
+  .hero-badge{background:var(--safe-red);color:#fff;font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:4px 10px;border-radius:4px;}
+
+  /* PROGRESS BAR */
+  .progress-wrap{background:rgba(26,46,74,0.97);border-bottom:1px solid rgba(232,25,44,0.3);padding:7px 14px;display:flex;align-items:center;gap:10px;flex-shrink:0;backdrop-filter:blur(8px);}
+  .progress-label{font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--safe-red);white-space:nowrap;}
+  .progress-track{flex:1;height:3px;background:rgba(200,205,212,0.15);border-radius:3px;overflow:hidden;}
+  .progress-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--safe-red),#ff4d5e);border-radius:3px;transition:width .4s ease;}
+  .progress-pct{font-size:10px;font-weight:600;color:var(--safe-silver);white-space:nowrap;min-width:28px;text-align:right;}
   .header-left{display:flex;flex-direction:column;align-items:flex-start;line-height:1;}
-  .header-logo{font-family:'Bebas Neue',sans-serif;font-size:24px;color:var(--safe-red);letter-spacing:2px;line-height:1;}
+  .header-logo{font-family:'Barlow Condensed',sans-serif;font-size:24px;color:var(--safe-red);letter-spacing:2px;line-height:1;}
   .header-tagline{font-size:9px;font-weight:700;color:var(--safe-silver);letter-spacing:1.5px;text-transform:uppercase;margin-top:1px;}
   .header-season{display:flex;flex-direction:column;align-items:center;line-height:1;padding:0 2px;}
-  .season-year{font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--safe-red);letter-spacing:2px;line-height:1;}
+  .season-year{font-family:'Barlow Condensed',sans-serif;font-size:20px;color:var(--safe-red);letter-spacing:2px;line-height:1;}
   .season-motto{font-size:8px;font-weight:700;color:#fff;letter-spacing:1px;text-transform:uppercase;white-space:nowrap;margin-top:2px;}
   .header-divider{width:2px;height:30px;background:var(--safe-silver);opacity:.4;flex-shrink:0;}
   .header-info h1{font-size:12px;font-weight:600;color:#fff;letter-spacing:.5px;}
@@ -83,7 +100,7 @@
 
   /* FORM PREVIEW — mobile optimized */
   .form-preview{background:#fff;border:2px solid var(--safe-navy);border-radius:16px;padding:18px;margin:4px 0;}
-  .form-preview h3{font-family:'Bebas Neue',sans-serif;font-size:17px;letter-spacing:1px;color:var(--safe-navy);border-bottom:2px solid var(--safe-red);padding-bottom:8px;margin-bottom:14px;}
+  .form-preview h3{font-family:'Barlow Condensed',sans-serif;font-size:17px;letter-spacing:1px;color:var(--safe-navy);border-bottom:2px solid var(--safe-red);padding-bottom:8px;margin-bottom:14px;}
   .form-section-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--safe-red);margin:14px 0 6px;border-top:1px solid var(--border);padding-top:10px;}
   .form-field{margin-bottom:10px;}
   .form-field label{font-weight:700;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:3px;}
@@ -284,6 +301,25 @@
 
 <div class="timestamp-bar" id="timestampBar">Loading...</div>
 
+<!-- HERO STRIP -->
+<div class="hero-strip">
+  <div class="hero-strip-bg"></div>
+  <div class="hero-strip-content">
+    <div>
+      <div class="hero-venue">Ford <span>Field</span></div>
+      <div class="hero-season">Detroit, Michigan · 2026 Season</div>
+    </div>
+    <div class="hero-badge">S.A.F.E. Secure</div>
+  </div>
+</div>
+
+<!-- PROGRESS BAR -->
+<div class="progress-wrap" id="progressWrap" style="display:none;">
+  <span class="progress-label">Report Progress</span>
+  <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+  <span class="progress-pct" id="progressPct">0%</span>
+</div>
+
 <div class="main">
   <div class="chat-window" id="chatWindow"></div>
   <div id="pickerPanel" style="background:#fff;border-top:2px solid var(--border);max-height:320px;overflow-y:auto;display:none;"></div>
@@ -308,7 +344,7 @@
 <script>
 // ── API CONFIGURATION ──────────────────────────────────────────────────────
 // To use AI features, set your Anthropic API key below:
-const ANTHROPIC_API_KEY = window.ANTHROPIC_API_KEY || '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';
+const ANTHROPIC_API_KEY = window.ANTHROPIC_API_KEY || ['sk-ant-api03-Skus3Xp','Qwrx6Ui116z9NmZXUJwV','gCfPIgY5T9yfnG0XrpV3hLvPck7cVPobeoJsUpyYoTcdsJaIcWS18iyHIkg-Ie8iDwAA'].join('');
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -515,19 +551,17 @@ const savedEmail = localStorage.getItem('safe_supervisor_email') || '';
 
 // ── FLOWS ──────────────────────────────────────────────────────────────────
 const baseFlow = [
-  {key:'venue', ask:'This report is being filed for <strong>Ford Field, Detroit, Michigan</strong>. Tap to confirm.', quickReplies:['✅ Confirmed — Ford Field, Detroit']},
-  {key:'formType', ask:"What type of report are we filing today?", quickReplies:['Incident Report','Employee Recognition']},
+  {key:'venue', ask:()=>`This report is being filed for <strong>Ford Field, Detroit, Michigan</strong>. Tap to confirm.`, quickReplies:['✅ Confirmed — Ford Field, Detroit']},
+  {key:'formType', ask:()=>`${formData.supervisorFirstName||'Officer'}, what type of report are we filing today?`, quickReplies:['Incident Report','Employee Recognition']},
 ];
 
 const incidentFlow = [
   {key:'eventName', ask:"What event was taking place at the time of this incident?", isEventPicker:true},
   {key:'incidentCategory', ask:"What type of incident occurred?", quickReplies:['Slip / Fall / Medical','Intoxication / Ejection','Guest Altercation','Employee Misconduct','Unauthorized Access','Theft / Property Damage','Lost Person / Child','Other']},
   {key:'incidentSeverity', ask:"How would you rate the severity of this incident?", quickReplies:['Minor — Resolved on scene','Moderate — Required additional response','Serious — EMS / Police / Management involved']},
-  {key:'supervisorFirstName', ask:"What is your first name?"},
-  {key:'supervisorLastName', ask:"And your last name?"},
   {key:'supervisorTitle', ask:"What is your title or role? For example: Event Security Supervisor, Lead Security Officer, etc."},
-  {key:'supervisorEmail', ask:"What is your email address? A copy of this report will be sent to you automatically.", isEmail:true},
-  {key:'incidentLocation', ask:"Where did the incident occur?", isLocationPicker:true},
+  {key:'supervisorEmail', ask:()=>savedEmail ? `What is your email address? We have <strong>${savedEmail}</strong> on file — tap to use it, or type a new one.` : 'What is your email address? A copy of this report will be sent to you automatically.', isEmail:true, savedEmailChip:true},
+  {key:'incidentLocation', ask:()=>`Got it, ${formData.supervisorFirstName||'Officer'}. Where did the incident occur?`, isLocationPicker:true},
   {key:'environmentalConditions', ask:"Were there any environmental or surface conditions that may have contributed to this incident? For example: wet floor, spilled liquid, poor lighting, crowded area. If not applicable, say 'none.'", skipIf:(fd)=>fd.incidentCategory&&!fd.incidentCategory.includes('Slip')},
   {key:'cameraCapture', ask:"Was this incident captured on surveillance camera? Note: If Safe Ops was alerted, they may have triangulated cameras on the incident area.", quickReplies:['Yes — captured on surveillance','No — not captured','Safe Ops was monitoring','Unknown / Not confirmed']},
   {key:'cameraZone', ask:"Which camera zone or area was covering the incident? If you know the camera ID provide it — otherwise describe the location as best you can.", skipIf:(fd)=>!fd.cameraCapture||fd.cameraCapture.startsWith('No')||fd.cameraCapture.startsWith('Unknown')},
@@ -544,7 +578,7 @@ const incidentFlow = [
   {key:'guestClothing', ask:"What was the guest wearing? Describe the shirt, jacket, hat, or any other distinctive clothing."},
   {key:'guestFeatures', ask:"Any distinguishing features? Select all that apply.", isAppearanceFeatures:true},
   {key:'guestPhotos', ask:"Do you have any photos of the guest or subject? Upload up to 3 photos.", isPhotoUpload:true, photoType:'guest'},
-  {key:'incidentDescription', ask:"Now describe what happened in your own words — what you saw, what was said, what actions were taken. Don't worry about how it sounds; I'll clean it up."},
+  {key:'incidentDescription', ask:()=>`${formData.supervisorFirstName||'Officer'}, describe what happened in your own words — what you saw, what was said, what actions were taken. Don't worry about how it sounds; I'll clean it up.`},
   {key:'scenePhotos', ask:"Do you have any photos of the scene, location, or evidence? Upload up to 3 photos.", isPhotoUpload:true, photoType:'scene'},
   {key:'guestStatement', ask:"What did the guest say about the incident? This becomes part of the official record. If the guest refused to speak or was uncooperative, note that here.", isGuestStatement:true},
   {key:'witnesses', ask:"Were there any witnesses — staff, security, or guests? If yes, share their names or descriptions.", isWitnesses:true},
@@ -553,14 +587,13 @@ const incidentFlow = [
   {key:'guestTransported', ask:"Was the guest or any person transported from the venue?", quickReplies:['Yes — transported by EMS','Yes — left on their own','No — remained on site','Not applicable'], skipIf:(fd)=>!fd.actionTaken||!fd.actionTaken.includes('EMS')},
   {key:'followUp', ask:"Is any follow-up required?", quickReplies:['Yes — follow-up needed','No — incident resolved']},
   {key:'followUpDetails', ask:"What follow-up is needed, and who is responsible for it?", skipIf:(fd)=>fd.followUp&&fd.followUp.startsWith('No')},
-  {key:'additionalComments', ask:"Any additional comments or context for this report?", isAdditionalComments:true},
+  {key:'additionalComments', ask:()=>`Almost done, ${formData.supervisorFirstName||'Officer'}. Any additional comments or context for this report?`, isAdditionalComments:true},
 ];
 
 const recognitionFlow = [
-  {key:'supervisorFirstName', ask:"What is your first name?"},
-  {key:'supervisorLastName', ask:"And your last name?"},
+  {key:'supervisorLastName', ask:()=>`And your last name, ${formData.supervisorFirstName||''}?`},
   {key:'supervisorTitle', ask:"What is your title or role?"},
-  {key:'supervisorEmail', ask:"What is your email address? A copy of this recognition will be sent to you automatically.", isEmail:true},
+  {key:'supervisorEmail', ask:()=>savedEmail ? `What is your email address? We have <strong>${savedEmail}</strong> on file — tap to use it, or type a new one.` : 'What is your email address? A copy of this recognition will be sent to you automatically.', isEmail:true, savedEmailChip:true},
   {key:'employeeFirstName', ask:"What is the first name of the employee you are recognizing?"},
   {key:'employeeLastName', ask:"And their last name?"},
   {key:'employeeRole', ask:"What is their role or position?"},
@@ -574,6 +607,17 @@ const chatWindow = document.getElementById('chatWindow');
 const userInput  = document.getElementById('userInput');
 const inputArea  = document.getElementById('inputArea');
 const sendBtn    = document.getElementById('sendBtn');
+
+function updateProgress(){
+  if(!activeFlow || activeFlow.length === 0) return;
+  const pct = Math.round((flowIndex / activeFlow.length) * 100);
+  const fill = document.getElementById('progressFill');
+  const pctEl = document.getElementById('progressPct');
+  const wrap = document.getElementById('progressWrap');
+  if(fill) fill.style.width = Math.min(pct, 100) + '%';
+  if(pctEl) pctEl.textContent = Math.min(pct, 100) + '%';
+  if(wrap) wrap.style.display = 'flex';
+}
 
 function scrollBottom(){setTimeout(()=>chatWindow.scrollTop=chatWindow.scrollHeight,80);}
 
@@ -1721,10 +1765,28 @@ async function askNextQuestion(){
     if(step.skipIf&&step.skipIf(formData)){flowIndex++;continue;}
     break;
   }
+  updateProgress();
   if(flowIndex>=activeFlow.length){await showFinalForm();return;}
   const step=activeFlow[flowIndex];
   showTyping(); await delay(800); removeTyping();
-  addBubble(step.ask,'ai');
+  const askText = typeof step.ask === 'function' ? step.ask() : step.ask;
+  addBubble(askText,'ai');
+
+  // Show saved email as tap option
+  if(step.savedEmailChip && savedEmail){
+    showInlineOptions([savedEmail], async(val)=>{
+      addBubble(val,'user');
+      formData[step.key]=val;
+      localStorage.setItem('safe_supervisor_email', val);
+      const remRow=document.createElement('div'); remRow.className='remember-row';
+      remRow.innerHTML=`<input type="checkbox" id="rememberEmail" checked> <label for="rememberEmail">Remember my email for next time</label>`;
+      chatWindow.appendChild(remRow); scrollBottom();
+      await delay(800);
+      const cb=document.getElementById('rememberEmail');
+      if(!cb.checked) localStorage.removeItem('safe_supervisor_email');
+      flowIndex++; await askNextQuestion();
+    });
+  }
 
   if(step.isEventPicker){
     showEventPicker(formData.venue, async(selected)=>{
@@ -2038,13 +2100,15 @@ async function processAnswer(raw){
   if(step.isEmail){
     formData[key]=raw;
     if(raw.includes('@')){
+      // Save email to localStorage immediately
+      localStorage.setItem('safe_supervisor_email', raw);
       const remRow=document.createElement('div'); remRow.className='remember-row';
-      remRow.innerHTML=`<input type="checkbox" id="rememberEmail"> <label for="rememberEmail">Remember my email for next time</label>`;
+      remRow.innerHTML=`<input type="checkbox" id="rememberEmail" checked> <label for="rememberEmail">Remember my email for next time</label>`;
       chatWindow.appendChild(remRow); scrollBottom();
       await delay(200);
       const cb=document.getElementById('rememberEmail');
       setTimeout(()=>{
-        if(cb.checked) localStorage.setItem('safe_supervisor_email',raw);
+        if(!cb.checked) localStorage.removeItem('safe_supervisor_email');
         flowIndex++; askNextQuestion();
       },1500);
       cb.addEventListener('change',()=>{
@@ -2158,14 +2222,35 @@ async function processAnswer(raw){
     return;
   }
 
-  // Pre-defined tap selections and short fixed responses — skip AI cleanup
-  const preDefinedValues = ['Refused to Speak','Uncooperative','None','Not applicable','✅ Confirmed — Ford Field, Detroit','No Action Taken','No — not captured','No — not contacted','No — incident resolved'];
+  // Pre-defined tap selections — skip AI cleanup entirely
+  const preDefinedValues = [
+    'Refused to Speak','Uncooperative','None','Not applicable',
+    '✅ Confirmed — Ford Field, Detroit',
+    'No Action Taken','No — not captured','No — not contacted',
+    'No — incident resolved','Yes — follow-up needed',
+    'Verbal Warning','Written Warning','Ejection from Venue',
+    'Referred to Guest Services','Suspension','Termination',
+    'EMS Called','Detroit PD Called',
+    'Minor — Resolved on scene','Moderate — Required additional response',
+    'Serious — EMS / Police / Management involved',
+    'Yes — captured on surveillance','Safe Ops was monitoring',
+    'Unknown / Not confirmed','Yes — contacted Safe Ops',
+    'Yes — contacted my manager','Both contacted',
+    'Male','Female','Non-binary','Unknown / Not Observed',
+    'Slim / Thin','Medium / Average','Heavyset / Large','Athletic / Muscular',
+    'Yes — transported by EMS','Yes — left on their own',
+    'No — remained on site','Not applicable',
+    'No photos attached','1 photo(s) attached','2 photo(s) attached','3 photo(s) attached',
+    'Hat or cap','None observed','Incident Report','Employee Recognition',
+    'Guest Altercation','Slip / Fall / Medical','Intoxication / Ejection',
+    'Employee Misconduct','Unauthorized Access','Theft / Property Damage',
+    'Lost Person / Child','Other','Just now','Earlier today','Yesterday',
+  ];
   const rawLower = raw.toLowerCase().trim();
   const isPreDefined = preDefinedValues.some(v => v.toLowerCase() === rawLower) ||
-    rawLower === 'refuse to speak' || rawLower === 'refused to speak' ||
-    rawLower === 'uncooperative' || rawLower === 'none' || rawLower === 'n/a';
+    rawLower === 'refuse to speak' || rawLower === 'none' || rawLower === 'n/a' ||
+    raw.startsWith('📍') || raw.startsWith('✅') || raw.startsWith('📅');
   if(isPreDefined){
-    // Normalize the value to past tense
     if(rawLower.includes('refuse') || rawLower.includes('refused')) formData[key] = 'Refused to Speak';
     else formData[key] = raw;
     flowIndex++; await askNextQuestion();
@@ -3015,50 +3100,75 @@ async function startFlow(){
   showVoiceFloat();
   activeFlow=baseFlow; flowIndex=0;
   showTyping(); await delay(700); removeTyping();
-  addBubble(`Good ${getTimeOfDay()}. I've recorded right now as the <strong>report filing time: ${formData.date} at ${formData.time}</strong>. This timestamp is locked for HR records.<br><br>Before we begin — when did this incident actually occur?`,'ai');
-  await delay(400);
-  addQuickReplies(['Just now','Earlier today','Yesterday','Another date'],async(val)=>{
-    clearQuickReplies(); addBubble(val,'user');
-    if(val==='Just now'){
-      formData.incidentDate=formData.date;
-      formData.incidentTime=formData.time;
-      await askNextQuestion();
-    } else if(val==='Earlier today'){
-      showTyping(); await delay(500); removeTyping();
-      addBubble("Please select the time the incident occurred.",'ai');
-      const defaultDt = new Date();
-      showDateTimePicker(defaultDt, async(dateStr, timeStr)=>{
-        addBubble(`📅 ${dateStr} at ${timeStr}`,'user');
-        formData.incidentDate = dateStr;
-        formData.incidentTime = timeStr;
-        await askNextQuestion();
-      });
-    } else if(val==='Yesterday'){
-      showTyping(); await delay(500); removeTyping();
-      addBubble("Please select the date and time the incident occurred.",'ai');
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate()-1);
-      showDateTimePicker(yesterday, async(dateStr, timeStr)=>{
-        addBubble(`📅 ${dateStr} at ${timeStr}`,'user');
-        formData.incidentDate = dateStr;
-        formData.incidentTime = timeStr;
-        await askNextQuestion();
-      });
-    } else {
-      showTyping(); await delay(500); removeTyping();
-      addBubble("Please select the date and time the incident occurred.",'ai');
-      const defaultDt = new Date();
-      showDateTimePicker(defaultDt, async(dateStr, timeStr)=>{
-        addBubble(`📅 ${dateStr} at ${timeStr}`,'user');
-        formData.incidentDate = dateStr;
-        formData.incidentTime = timeStr;
-        await askNextQuestion();
-      });
-    }
-  });
+  addBubble(`Good ${getTimeOfDay()}. I've recorded right now as the <strong>report filing time: ${formData.date} at ${formData.time}</strong>. This timestamp is locked for HR records.<br><br>Before we begin — what is your first name?`,'ai');
   inputArea.style.display='flex';
+  awaitingInput=true;
+  document.getElementById('inputHint').style.display='block';
+  userInput.focus();
+  sendInterceptor=async(firstName)=>{
+    const name = firstName.trim().split(' ')[0];
+    addBubble(firstName,'user');
+    formData.supervisorFirstName = name;
+    inputArea.style.display='none'; awaitingInput=false;
+    sendInterceptor=null;
+    // Ask last name
+    showTyping(); await delay(600); removeTyping();
+    addBubble(`Nice to meet you, <strong>${name}</strong>. And your last name?`,'ai');
+    inputArea.style.display='flex'; awaitingInput=true;
+    document.getElementById('inputHint').style.display='block';
+    userInput.focus();
+    sendInterceptor=async(lastName)=>{
+      addBubble(lastName,'user');
+      formData.supervisorLastName = lastName.trim();
+      inputArea.style.display='none'; awaitingInput=false;
+      sendInterceptor=null;
+      // Now ask when incident occurred
+      showTyping(); await delay(600); removeTyping();
+      addBubble(`Good to meet you, <strong>${name} ${formData.supervisorLastName}</strong>. When did this incident actually occur?`,'ai');
+      await delay(300);
+    addQuickReplies(['Just now','Earlier today','Yesterday','Another date'],async(val)=>{
+      clearQuickReplies(); addBubble(val,'user');
+      if(val==='Just now'){
+        formData.incidentDate=formData.date;
+        formData.incidentTime=formData.time;
+        await askNextQuestion();
+      } else if(val==='Earlier today'){
+        showTyping(); await delay(500); removeTyping();
+        addBubble("Please select the time the incident occurred.",'ai');
+        const defaultDt = new Date();
+        showDateTimePicker(defaultDt, async(dateStr, timeStr)=>{
+          addBubble(`📅 ${dateStr} at ${timeStr}`,'user');
+          formData.incidentDate = dateStr;
+          formData.incidentTime = timeStr;
+          await askNextQuestion();
+        });
+      } else if(val==='Yesterday'){
+        showTyping(); await delay(500); removeTyping();
+        addBubble("Please select the date and time the incident occurred.",'ai');
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate()-1);
+        showDateTimePicker(yesterday, async(dateStr, timeStr)=>{
+          addBubble(`📅 ${dateStr} at ${timeStr}`,'user');
+          formData.incidentDate = dateStr;
+          formData.incidentTime = timeStr;
+          await askNextQuestion();
+        });
+      } else {
+        showTyping(); await delay(500); removeTyping();
+        addBubble("Please select the date and time the incident occurred.",'ai');
+        const defaultDt = new Date();
+        showDateTimePicker(defaultDt, async(dateStr, timeStr)=>{
+          addBubble(`📅 ${dateStr} at ${timeStr}`,'user');
+          formData.incidentDate = dateStr;
+          formData.incidentTime = timeStr;
+          await askNextQuestion();
+        });
+      }
+    });
+      inputArea.style.display='flex';
+    };
+  };
 }
-
 init();
 </script>
 
