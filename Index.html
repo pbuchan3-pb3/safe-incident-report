@@ -21,9 +21,19 @@
   header{background:var(--safe-navy);padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:3px solid var(--safe-red);flex-shrink:0;}
 
   /* HERO IMAGE STRIP */
-  .hero-strip{position:relative;height:120px;overflow:hidden;flex-shrink:0;display:flex;align-items:flex-end;padding:0 16px 12px;}
-  .hero-strip-bg{position:absolute;inset:0;background:linear-gradient(to bottom,rgba(26,46,74,0.72) 0%,rgba(26,46,74,0.92) 100%),url('https://images.unsplash.com/photo-1567593810070-7a3d471af022?w=1200&q=80') center/cover no-repeat;transform:scale(1.04);animation:heroZoom 20s ease-in-out infinite alternate;}
-  @keyframes heroZoom{from{transform:scale(1.04);}to{transform:scale(1.10);}}
+  .hero-strip{position:relative;height:130px;overflow:hidden;flex-shrink:0;display:flex;align-items:flex-end;padding:0 16px 14px;}
+  .hero-strip-bg{position:absolute;inset:0;background:
+    linear-gradient(to bottom, rgba(26,46,74,0.6) 0%, rgba(26,46,74,0.95) 100%),
+    repeating-linear-gradient(0deg, transparent, transparent 38px, rgba(255,255,255,0.03) 38px, rgba(255,255,255,0.03) 40px),
+    repeating-linear-gradient(90deg, transparent, transparent 58px, rgba(255,255,255,0.02) 58px, rgba(255,255,255,0.02) 60px),
+    linear-gradient(135deg, #0d1f3c 0%, #1a3a6b 40%, #0d1f3c 70%, #1a2e4a 100%);
+    animation:heroZoom 20s ease-in-out infinite alternate;}
+  /* Stadium lights effect */
+  .hero-strip-bg::before{content:'';position:absolute;inset:0;background:
+    radial-gradient(ellipse at 20% 0%, rgba(232,25,44,0.15) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 0%, rgba(232,25,44,0.15) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 0%, rgba(255,255,255,0.08) 0%, transparent 40%);}
+  @keyframes heroZoom{from{opacity:.9;}to{opacity:1;}}
   .hero-strip-content{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;width:100%;}
   .hero-venue{font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#fff;line-height:1;}
   .hero-venue span{color:var(--safe-red);}
@@ -57,8 +67,8 @@
   .chat-window::-webkit-scrollbar-thumb{background:#C8CDD4;border-radius:4px;}
   .chat-window::-webkit-scrollbar-thumb:hover{background:#1A2E4A;}
 
-  .welcome-card{background:var(--safe-navy);border-radius:16px;padding:22px 18px;color:#fff;border-left:4px solid var(--safe-red);}
-  .welcome-card h2{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:1px;color:var(--safe-red);margin-bottom:8px;}
+  .welcome-card{background:var(--safe-navy);border-radius:16px;padding:22px 18px;color:#fff;border-left:4px solid var(--safe-red);box-shadow:0 4px 20px rgba(0,0,0,0.15);}
+  .welcome-card h2{font-family:'Barlow Condensed',sans-serif;font-size:24px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--safe-red);margin-bottom:8px;}
   .welcome-card p{font-size:13px;line-height:1.6;color:var(--safe-silver);}
   .start-btn{margin-top:10px;background:var(--safe-red);color:#fff;border:none;padding:12px;border-radius:8px;font-family:'Inter',sans-serif;font-size:14px;font-weight:700;cursor:pointer;width:100%;transition:background .2s;}
   .start-btn:hover{background:#b5121f;}
@@ -667,29 +677,24 @@ async function cleanWithAI(rawText, context, fieldType){
         "anthropic-version":"2023-06-01",
         "anthropic-dangerous-direct-browser-access":"true"
       },
-      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:500,messages:[{role:"user",content:
-        fieldType === 'description'
-          ? 'You are a certified security documentation specialist for S.A.F.E. Management. ' +
-            'Rewrite the following raw notes into professional, court-ready, AP Style incident report language. ' +
-            'Rules: (1) Third person past tense only — never use I, we, or my. ' +
-            '(2) Replace informal words: girl=female subject, guy=male subject, slap=strike, fight=physical altercation, told=reported, went their own ways=departed the area separately, settled down=de-escalated. ' +
-            '(3) No contractions. Professional vocabulary throughout. ' +
-            '(4) Keep all facts exactly as stated. Do not add or remove anything. ' +
-            '(5) Return ONLY the rewritten text — no preamble, no labels, no quotes. ' +
-            'Context: ' + context + ' Raw input: ' + rawText
-          : 'Rewrite the following in professional AP Style for a security incident report. ' +
-            'Rules: (1) Third person only — never use she, he, they, her, his — use "the subject", "the female subject", or "the male subject" instead. ' +
-            '(2) Hyphenate compound modifiers (black-and-white shirt). ' +
-            '(3) No casual phrases. Professional vocabulary. Past tense. ' +
-            '(4) Keep all facts exactly as stated. Return only the rewritten text. ' +
-            'Input: ' + rawText
-      }]})
+      body:JSON.stringify({
+        model:"claude-sonnet-4-6",
+        max_tokens:300,
+        system: "You are a professional security report writer for S.A.F.E. Management. You ALWAYS rewrite input text into professional AP Style. You NEVER return the original text unchanged. You ALWAYS use third person — never she, he, they, her, his. Always refer to people as 'the female subject', 'the male subject', or 'the subject'. Return ONLY the rewritten text with no preamble.",
+        messages:[{role:"user",content:
+          fieldType === 'description'
+            ? 'Rewrite in professional AP Style past tense third person. Replace: girl=female subject, guy=male subject, slap=strike, fight=physical altercation, went their own ways=departed the area separately. Keep all facts. Return only rewritten text.\n\nInput: ' + rawText
+            : 'Rewrite in professional AP Style. Third person only. Hyphenate compound modifiers. Past tense. Keep all facts. Return only rewritten text.\n\nInput: ' + rawText
+        }]
+      })
     });
     const d=await r.json();
-    console.log('cleanWithAI full response:', JSON.stringify(d).slice(0,200));
-    if(d.error){ console.error('API error:', d.error); return rawText; }
-    if(d.type === 'error'){ console.error('API error type:', d); return rawText; }
-    return d.content&&d.content[0]&&d.content[0].text ? d.content[0].text.trim() : rawText;
+    console.log('cleanWithAI response:', JSON.stringify(d).slice(0,300));
+    if(d.error){ console.error('API error:', d.error.message); return rawText; }
+    if(d.type === 'error'){ console.error('API error:', d); return rawText; }
+    const result = d.content&&d.content[0]&&d.content[0].text ? d.content[0].text.trim() : null;
+    if(!result){ console.error('No content in response'); return rawText; }
+    return result;
   }catch(e){console.error('cleanWithAI error:',e); return rawText;}
 }
 
