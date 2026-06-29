@@ -574,19 +574,19 @@ const incidentFlow = [
   {key:'safeOpsContacted', ask:"Was Safe Ops or a manager contacted about this incident?", quickReplies:['Yes — contacted Safe Ops','Yes — contacted my manager','Both contacted','No — not contacted']},
   {key:'safeOpsWho', ask:"Who specifically was contacted? Please provide their name or title.", skipIf:(fd)=>fd.safeOpsContacted&&fd.safeOpsContacted.startsWith('No')},
   {key:'guestName', ask:"What is the guest's first name? If you only have their last name, that's fine too.", isGuestName:true},
-  {key:'guestSeat', ask:"What is the guest's seat location? Please provide Section, Row, and Seat number.", isGuestSeat:true},
-  {key:'guestGender', ask:"Let's capture the guest's physical appearance. First — what is the guest's gender?", isAppearanceGender:true},
-  {key:'guestAgeRange', ask:"What is the guest's approximate age range?", isAppearanceAge:true},
-  {key:'guestHeight', ask:"How would you describe the guest's height?", isAppearanceHeight:true},
-  {key:'guestBuild', ask:"How would you describe the guest's build?", isAppearanceBuild:true},
-  {key:'guestHair', ask:"What is the guest's hair color?", isAppearanceHair:true},
-  {key:'guestHairStyle', ask:"How would you describe the guest's hair style?", isAppearanceHairStyle:true},
-  {key:'guestClothing', ask:"What was the guest wearing? Describe the shirt, jacket, hat, or any other distinctive clothing."},
-  {key:'guestFeatures', ask:"Any distinguishing features? Select all that apply.", isAppearanceFeatures:true},
-  {key:'guestPhotos', ask:"Do you have any photos of the guest or subject? Upload up to 3 photos.", isPhotoUpload:true, photoType:'guest'},
+  {key:'guestSeat', ask:()=>`What is ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} seat location? Please provide Section, Row, and Seat number.`, isGuestSeat:true},
+  {key:'guestGender', ask:()=>`Let's capture ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} physical appearance. First — what is their gender?`, isAppearanceGender:true},
+  {key:'guestAgeRange', ask:()=>`What is ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} approximate age range?`, isAppearanceAge:true},
+  {key:'guestHeight', ask:()=>`How would you describe ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} height?`, isAppearanceHeight:true},
+  {key:'guestBuild', ask:()=>`How would you describe ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} build?`, isAppearanceBuild:true},
+  {key:'guestHair', ask:()=>`What is ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} hair color?`, isAppearanceHair:true},
+  {key:'guestHairStyle', ask:()=>`How would you describe ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} hair style?`, isAppearanceHairStyle:true},
+  {key:'guestClothing', ask:()=>`What was ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest'} wearing? Describe the shirt, jacket, hat, or any other distinctive clothing.`},
+  {key:'guestFeatures', ask:()=>`Any distinguishing features for ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest'}? Select all that apply.`, isAppearanceFeatures:true},
+  {key:'guestPhotos', ask:()=>`Do you have any photos of ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest or subject'}? Upload up to 3 photos.`, isPhotoUpload:true, photoType:'guest'},
   {key:'incidentDescription', ask:()=>`${formData.supervisorFirstName||'Officer'}, describe what happened in your own words — what you saw, what was said, what actions were taken. Don't worry about how it sounds; I'll clean it up.`},
   {key:'scenePhotos', ask:"Do you have any photos of the scene, location, or evidence? Upload up to 3 photos.", isPhotoUpload:true, photoType:'scene'},
-  {key:'guestStatement', ask:"What did the guest say about the incident? This becomes part of the official record. If the guest refused to speak or was uncooperative, note that here.", isGuestStatement:true},
+  {key:'guestStatement', ask:()=>`What did ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest'} say about the incident? This becomes part of the official record.`, isGuestStatement:true},
   {key:'witnesses', ask:"Were there any witnesses — staff, security, or guests? If yes, share their names or descriptions.", isWitnesses:true},
   {key:'actionTaken', ask:"What action was taken?", quickReplies:['Verbal Warning','Written Warning','Ejection from Venue','Referred to Guest Services','Suspension','Termination','EMS Called','Detroit PD Called','No Action Taken','Other — specify'],isActionTaken:true},
   {key:'emsPolice', ask:"Was EMS or Detroit PD involved? If yes, provide any report number or officer name if available.", isEmsPolice:true},
@@ -2190,7 +2190,7 @@ async function processAnswer(raw){
       'Format: "Witnesses included [name], [role], and [name], [role]." ' +
       'One sentence maximum. No date references. No preamble. Return only the rewritten text.\n\nInput: ' + raw;
     showTyping(); await delay(300);
-    addBubble("Writing that up in professional language...","ai");
+    speak("Writing that up in professional language"); addBubble("Writing that up in professional language...","ai");
     const r2=await fetch("https://api.anthropic.com/v1/messages",{
       method:"POST",
       headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
@@ -2308,7 +2308,7 @@ async function processAnswer(raw){
   // Clothing field — handle separately with rule-based + targeted AI prompt
   if(key === 'guestClothing'){
     showTyping(); await delay(300);
-    addBubble("Writing that up in professional language...","ai");
+    speak("Writing that up in professional language"); addBubble("Writing that up in professional language...","ai");
     // Determine gender from formData for proper subject reference
     const genderRef = formData.guestGender && formData.guestGender.toLowerCase().includes('female')
       ? 'The female subject' : formData.guestGender && formData.guestGender.toLowerCase().includes('male')
@@ -2352,12 +2352,26 @@ async function processAnswer(raw){
     return;
   }
 
+  // Auto-correct guest name spelling in raw text before AI cleanup
+  if(formData.guestName && formData.guestName !== 'Unknown' && raw.length > 0){
+    const guestNameParts = formData.guestName.trim().split(' ').filter(p=>p.length>2);
+    guestNameParts.forEach(namePart => {
+      // Fix double-letter variations (Chartell → Chartel, Perrry → Perry)
+      const lastChar = namePart.slice(-1);
+      const doubleRegex = new RegExp(namePart.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').slice(0,-1) + lastChar + '+', 'gi');
+      raw = raw.replace(doubleRegex, namePart);
+      // Fix case variations
+      const caseRegex = new RegExp(namePart.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi');
+      raw = raw.replace(caseRegex, namePart);
+    });
+  }
+
   // Long text AI cleanup
   const longFields=['incidentDescription','guestStatement','guestClothing','guestFeatures','guestStatementDetail','witnesses','actionTaken','emsPolice','additionalComments','followUpDetails','cameraZone','safeOpsWho','environmentalConditions','recognitionDescription','recognitionImpact','employeeRole'];
   if(longFields.includes(key)&&raw.length>5&&!isSkip){
     console.log('🔄 cleanWithAI triggered for key:', key, 'raw length:', raw.length);
     showTyping(); await delay(300);
-    addBubble("Writing that up in professional language...","ai");
+    speak("Writing that up in professional language"); addBubble("Writing that up in professional language...","ai");
     const ctx=`This is a ${incidentType==='incident'?formData.incidentCategory+' incident':'employee recognition'} report for ${formData.venue}.`;
     const fieldType = ['incidentDescription','guestStatement','guestStatementDetail','recognitionDescription','recognitionImpact'].includes(key) ? 'description' : 'field';
     const cleaned=await cleanWithAI(raw,ctx,fieldType,key);
