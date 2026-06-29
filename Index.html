@@ -15,7 +15,7 @@
     --border:#dde3ec; --success:#10b981; --danger:#ef4444;
   }
   *{box-sizing:border-box;margin:0;padding:0;}
-  html,body{height:100%;overflow:hidden;}
+  html,body{height:100%;overflow:hidden;background:var(--safe-navy);}
   body{font-family:'Inter',sans-serif;background:var(--safe-navy);color:var(--text-main);display:flex;flex-direction:column;height:100%;}
 
   header{background:var(--safe-navy);padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:3px solid var(--safe-red);flex-shrink:0;}
@@ -307,7 +307,7 @@
 
 <div class="timestamp-bar" id="timestampBar">Loading...</div>
 
-<!-- HERO STRIP -->
+<!-- HERO STRIP — full width -->
 <div class="hero-strip">
   <div class="hero-strip-bg"></div>
   <div class="hero-strip-content">
@@ -319,7 +319,7 @@
   </div>
 </div>
 
-<!-- PROGRESS BAR -->
+<!-- PROGRESS BAR — full width -->
 <div class="progress-wrap" id="progressWrap" style="display:none;">
   <span class="progress-label">Report Progress</span>
   <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
