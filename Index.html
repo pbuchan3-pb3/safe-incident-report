@@ -2305,6 +2305,53 @@ async function processAnswer(raw){
     return;
   }
 
+  // Clothing field — handle separately with rule-based + targeted AI prompt
+  if(key === 'guestClothing'){
+    showTyping(); await delay(300);
+    addBubble("Writing that up in professional language...","ai");
+    // Determine gender from formData for proper subject reference
+    const genderRef = formData.guestGender && formData.guestGender.toLowerCase().includes('female')
+      ? 'The female subject' : formData.guestGender && formData.guestGender.toLowerCase().includes('male')
+      ? 'The male subject' : 'The subject';
+    try {
+      const cr = await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+        body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:150,
+          system:`You rewrite clothing descriptions for security reports. Always start with "${genderRef} was wearing" followed by the clothing items in AP Style. Hyphenate compound color modifiers (black-and-white). List items separated by commas. Never use "Witnesses included". Return only the rewritten sentence.`,
+          messages:[{role:"user",content:`Rewrite this clothing description: ${raw}`}]
+        })
+      });
+      const cd = await cr.json();
+      const cleaned = cd.content&&cd.content[0] ? cd.content[0].text.trim() : `${genderRef} was wearing ${raw}.`;
+      removeTyping(); showTyping(); await delay(300); removeTyping();
+      addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this accurately capture what happened?`,'ai');
+      addQuickReplies(['Yes, that looks right','✏️ Edit — change a word or two','No, let me re-describe'],async(confirm)=>{
+        clearQuickReplies(); addBubble(confirm,'user');
+        if(confirm.startsWith('Yes')){formData[key]=cleaned;flowIndex++;await askNextQuestion();}
+        else if(confirm.startsWith('✏️')){
+          showTyping(); await delay(300); removeTyping();
+          addBubble('Here is the text — edit it directly, then tap send:','ai');
+          userInput.value=cleaned; userInput.style.height='auto';
+          userInput.style.height=Math.min(userInput.scrollHeight,110)+'px';
+          inputArea.style.display='flex'; awaitingInput=true;
+          sendInterceptor=async(_intercepted)=>{
+            const edited=_intercepted.trim();
+            if(!edited){flowIndex++;await askNextQuestion();return;}
+            addBubble(edited,'user');
+            formData[key]=edited; inputArea.style.display='none'; awaitingInput=false;
+            sendInterceptor=null; flowIndex++;await askNextQuestion();
+          };
+        }
+        else{addBubble("No problem — describe it again.",'ai');inputArea.style.display='flex';awaitingInput=true;}
+      });
+    } catch(e) {
+      const fallback = `${genderRef} was wearing ${raw}.`;
+      formData[key]=fallback; flowIndex++; await askNextQuestion();
+    }
+    return;
+  }
+
   // Long text AI cleanup
   const longFields=['incidentDescription','guestStatement','guestClothing','guestFeatures','guestStatementDetail','witnesses','actionTaken','emsPolice','additionalComments','followUpDetails','cameraZone','safeOpsWho','environmentalConditions','recognitionDescription','recognitionImpact','employeeRole'];
   if(longFields.includes(key)&&raw.length>5&&!isSkip){
