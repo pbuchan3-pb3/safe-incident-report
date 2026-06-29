@@ -2885,7 +2885,9 @@ function delay(ms){return new Promise(r=>setTimeout(r,ms));}
 let sendInterceptor = null; // custom one-shot handler
 
 async function handleSend(){
-  const raw=userInput.value.trim(); if(!raw||!awaitingInput)return;
+  const raw=userInput.value.trim();
+  console.log('handleSend called — raw:', raw.slice(0,50), '| awaitingInput:', awaitingInput, '| interceptor:', !!sendInterceptor);
+  if(!raw||!awaitingInput)return;
   userInput.value=''; userInput.style.height='auto';
   if(sendInterceptor){
     const fn = sendInterceptor;
@@ -3171,6 +3173,8 @@ async function startFlow(){
       }
     });
       inputArea.style.display='flex';
+      awaitingInput=true;
+      document.getElementById('inputHint').style.display='block';
     };
   };
 }
