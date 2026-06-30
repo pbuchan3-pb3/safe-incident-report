@@ -574,20 +574,26 @@ const incidentFlow = [
   {key:'safeOpsContacted', ask:"Was Safe Ops or a manager contacted about this incident?", quickReplies:['Yes — contacted Safe Ops','Yes — contacted my manager','Both contacted','No — not contacted']},
   {key:'safeOpsWho', ask:"Who specifically was contacted? Please provide their name or title.", skipIf:(fd)=>fd.safeOpsContacted&&fd.safeOpsContacted.startsWith('No')},
   {key:'guestName', ask:"What is the guest's first name? If you only have their last name, that's fine too.", isGuestName:true},
-  {key:'guestSeat', ask:()=>`What is ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} seat location? Please provide Section, Row, and Seat number.`, isGuestSeat:true},
+  {key:'guestSeat', ask:()=>`What is ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} seat location? Please provide Section, Row, and Seat number.`, isGuestSeat:true, skipIf:(fd)=>fd.incidentCategory==='Employee Misconduct'},
+  {key:'guestRole', ask:()=>`What is ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the employee\'s'} role or position? For example: Event Security, Guest Services, Concessions, Parking, Vendor Staff.`, skipIf:(fd)=>fd.incidentCategory!=='Employee Misconduct'},
   {key:'guestGender', ask:()=>`Let's capture ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} physical appearance. First — what is their gender?`, isAppearanceGender:true},
   {key:'guestAgeRange', ask:()=>`What is ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} approximate age range?`, isAppearanceAge:true},
   {key:'guestHeight', ask:()=>`How would you describe ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} height?`, isAppearanceHeight:true},
   {key:'guestBuild', ask:()=>`How would you describe ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} build?`, isAppearanceBuild:true},
   {key:'guestHair', ask:()=>`What is ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} hair color?`, isAppearanceHair:true},
   {key:'guestHairStyle', ask:()=>`How would you describe ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} hair style?`, isAppearanceHairStyle:true},
-  {key:'guestClothing', ask:()=>`What was ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest'} wearing? Describe the shirt, jacket, hat, or any other distinctive clothing.`},
+  {key:'guestClothing', ask:()=>formData.incidentCategory==='Employee Misconduct'
+    ? `What type of uniform was ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the employee'} wearing?`
+    : `What was ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest'} wearing? Describe the shirt, jacket, hat, or any other distinctive clothing.`,
+    isUniformPicker:true},
   {key:'guestFeatures', ask:()=>`Any distinguishing features for ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest'}? Select all that apply.`, isAppearanceFeatures:true},
   {key:'guestPhotos', ask:()=>`Do you have any photos of ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest or subject'}? Upload up to 3 photos.`, isPhotoUpload:true, photoType:'guest'},
   {key:'incidentDescription', ask:()=>`${formData.supervisorFirstName||'Officer'}, describe what happened in your own words — what you saw, what was said, what actions were taken. Don't worry about how it sounds; I'll clean it up.`},
   {key:'scenePhotos', ask:"Do you have any photos of the scene, location, or evidence? Upload up to 3 photos.", isPhotoUpload:true, photoType:'scene'},
   {key:'guestStatement', ask:()=>`What did ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest'} say about the incident? This becomes part of the official record.`, isGuestStatement:true},
-  {key:'witnesses', ask:"Were there any witnesses — staff, security, or guests? If yes, share their names or descriptions.", isWitnesses:true},
+  {key:'witnesses', ask:()=>formData.incidentCategory==='Employee Misconduct'
+    ? "Were there any witnesses — other staff or supervisors? If yes, share their names or roles."
+    : "Were there any witnesses — staff, security, or guests? If yes, share their names or descriptions.", isWitnesses:true},
   {key:'actionTaken', ask:"What action was taken?", quickReplies:['Verbal Warning','Written Warning','Ejection from Venue','Referred to Guest Services','Suspension','Termination','EMS Called','Detroit PD Called','No Action Taken','Other — specify'],isActionTaken:true},
   {key:'emsPolice', ask:"Was EMS or Detroit PD involved? If yes, provide any report number or officer name if available.", isEmsPolice:true},
   {key:'guestTransported', ask:"Was the guest or any person transported from the venue?", quickReplies:['Yes — transported by EMS','Yes — left on their own','No — remained on site','Not applicable'], skipIf:(fd)=>!fd.actionTaken||!fd.actionTaken.includes('EMS')},
@@ -665,20 +671,29 @@ function clearQuickReplies(){const qr=document.getElementById('quickReplies');if
 // ── AI CLEANUP ─────────────────────────────────────────────────────────────
 async function cleanWithAI(rawText, context, fieldType, fieldKey){
   try{
+    // Determine subject term based on incident category
+    const isEmployeeCase = formData.incidentCategory === 'Employee Misconduct';
+    const subjectTerm = isEmployeeCase ? 'employee' : 'subject';
+    const subjectTermCapped = isEmployeeCase ? 'The employee' : 'The subject';
+
     // Build field-specific instruction
     let fieldInstruction = '';
     if(fieldKey === 'guestClothing'){
-      fieldInstruction = 'This is a CLOTHING description. Start with "The subject was wearing" and describe the clothing in AP Style. Hyphenate compound color modifiers (black-and-white). Never say "Witnesses included".';
+      fieldInstruction = isEmployeeCase
+        ? `This is a UNIFORM description for an employee misconduct report. Describe the uniform professionally in AP Style. Refer to the person as "the employee", never "subject" or "witnesses". Never say "Witnesses included".`
+        : 'This is a CLOTHING description. Start with "The subject was wearing" and describe the clothing in AP Style. Hyphenate compound color modifiers (black-and-white). Never say "Witnesses included".';
     } else if(fieldKey === 'guestFeatures'){
-      fieldInstruction = 'This is a PHYSICAL FEATURES description. List features professionally (e.g. "The subject had visible tattoos and wore glasses"). Never say "Witnesses included".';
+      fieldInstruction = `This is a PHYSICAL FEATURES description. List features professionally (e.g. "${subjectTermCapped} had visible tattoos and wore glasses"). Refer to the person as "the ${subjectTerm}". Never say "Witnesses included".`;
     } else if(fieldKey === 'witnesses'){
       fieldInstruction = 'This is a WITNESS LIST. Format as "Witnesses included [name] ([role]) and [name] ([role])." One sentence only.';
     } else if(fieldKey === 'actionTaken'){
       fieldInstruction = 'This is an ACTION TAKEN field. Describe the security action taken in past tense AP Style.';
     } else if(fieldKey === 'environmentalConditions'){
       fieldInstruction = 'This is an ENVIRONMENTAL CONDITIONS field. Describe conditions at the scene professionally.';
+    } else if(fieldKey === 'guestStatement' || fieldKey === 'guestStatementDetail'){
+      fieldInstruction = `This is a STATEMENT field. Rewrite in AP Style. Refer to the person as "the ${subjectTerm}", never use pronouns.`;
     } else {
-      fieldInstruction = 'Rewrite in AP Style past tense. Third person only.';
+      fieldInstruction = `Rewrite in AP Style past tense. Third person only. If referring to the person involved, use "the ${subjectTerm}".`;
     }
     const r=await fetch("https://api.anthropic.com/v1/messages",{
       method:"POST",
@@ -692,11 +707,11 @@ async function cleanWithAI(rawText, context, fieldType, fieldKey){
         model:"claude-sonnet-4-6",
         max_tokens:300,
         system: fieldType === 'description'
-          ? "You are a professional security report writer for S.A.F.E. Management. Rewrite incident descriptions in AP Style, third person past tense. Never use I, we, she, he, they. Use female subject, male subject, or subject. Return ONLY the rewritten text."
-          : "You are a professional security report writer for S.A.F.E. Management. Rewrite field entries in AP Style. For clothing: start with 'The subject was wearing...'. For names/witnesses: format as 'Witnesses included [name] ([role])'. Never start with 'Witnesses included' for clothing fields. Return ONLY the rewritten text.",
+          ? `You are a professional security report writer for S.A.F.E. Management. Rewrite incident descriptions in AP Style, third person past tense. Never use I, we, she, he, they. ${isEmployeeCase ? 'This is an EMPLOYEE MISCONDUCT report — refer to the person involved as "the employee", never "subject".' : 'Use female subject, male subject, or subject.'} Return ONLY the rewritten text.`
+          : `You are a professional security report writer for S.A.F.E. Management. Rewrite field entries in AP Style. ${isEmployeeCase ? 'This is an EMPLOYEE MISCONDUCT report — refer to the person as "the employee", never "subject" or "witnesses".' : "For clothing: start with 'The subject was wearing...'."} For names/witnesses: format as 'Witnesses included [name] ([role])'. Never start with 'Witnesses included' for clothing or uniform fields. Return ONLY the rewritten text.`,
         messages:[{role:"user",content:
           fieldType === 'description'
-            ? 'Rewrite in professional AP Style past tense third person. Replace: girl=female subject, guy=male subject, slap=strike, fight=physical altercation, went their own ways=departed the area separately. Keep all facts. Return only rewritten text.\n\nInput: ' + rawText
+            ? `Rewrite in professional AP Style past tense third person. Replace: girl=female subject, guy=male subject, slap=strike, fight=physical altercation, went their own ways=departed the area separately. ${isEmployeeCase ? 'Refer to the person involved as "the employee".' : ''} Keep all facts. Return only rewritten text.\n\nInput: ` + rawText
             : fieldInstruction + ' Keep all facts exactly as stated. Return ONLY the rewritten text. No preamble, no labels, no quotation marks.\n\nInput: ' + rawText
         }]
       })
@@ -1974,6 +1989,30 @@ async function askNextQuestion(){
     return;
   }
 
+  if(step.isUniformPicker && formData.incidentCategory==='Employee Misconduct'){
+    inputArea.style.display='none';
+    showAppearancePicker(['Event Security','Guest Services','Concessions/Vendor','Parking Staff','Operations/Maintenance','Management/Supervisor','Other — specify'], async(val)=>{
+      if(val==='Other — specify'){
+        addBubble(val,'user');
+        showTyping(); await delay(400); removeTyping();
+        addBubble('Please describe the uniform or attire:','ai');
+        inputArea.style.display='flex'; awaitingInput=true;
+        sendInterceptor=async(custom)=>{
+          addBubble(custom,'user');
+          const genderRef = formData.guestGender && formData.guestGender.toLowerCase().includes('female') ? 'employee' : 'employee';
+          formData.guestClothing = `${formData.guestName||'The employee'} was wearing ${custom}.`;
+          inputArea.style.display='none'; awaitingInput=false;
+          sendInterceptor=null; flowIndex++; await askNextQuestion();
+        };
+      } else {
+        addBubble(val,'user');
+        formData.guestClothing = `${formData.guestName||'The employee'} was wearing a ${val} uniform.`;
+        flowIndex++; await askNextQuestion();
+      }
+    }, false);
+    return;
+  }
+
   if(step.isAppearanceFeatures){
     inputArea.style.display='none';
     addBubble('Select all that apply — tap <strong>Confirm Selection</strong> when done, or confirm with nothing selected if none apply.','ai');
@@ -2419,9 +2458,11 @@ async function showFinalForm(){
   if(isIncident && !formData.professionalNarrative){
     addBubble("Generating your professional incident narrative...",'ai');
     showTyping();
+    const isEmployeeCase = formData.incidentCategory === 'Employee Misconduct';
     const narrativePrompt = `You are a professional security documentation specialist for S.A.F.E. Management at Ford Field, Detroit.
 
 Using ONLY the information provided below, write a single cohesive professional incident narrative in AP Style. Third person, past tense. Do not add any facts not listed. Do not use bullet points. Write 2-3 paragraphs maximum. Make it read as a court-ready security report.
+${isEmployeeCase ? 'IMPORTANT: This is an EMPLOYEE MISCONDUCT report. Refer to the person involved as "the employee" or by name, never as "subject" or "guest". This is an internal personnel matter.' : ''}
 
 Incident Date: ${formData.incidentDate||formData.date}
 Incident Time: ${formData.incidentTime||formData.time}
@@ -2431,10 +2472,10 @@ Location: ${formData.incidentLocation||'N/A'}
 Incident Type: ${formData.incidentCategory||'N/A'}
 Severity: ${formData.incidentSeverity||'N/A'}
 Reporting Officer: ${supName}, ${formData.supervisorTitle||''}
-Guest Name: ${formData.guestName||'Unknown'}
-Guest Description: ${formData.guestGender||''} ${formData.guestAgeRange||''} ${formData.guestHeight||''} ${formData.guestBuild||''} Hair: ${formData.guestHair||''} ${formData.guestHairStyle||''} Clothing: ${formData.guestClothing||''} Features: ${formData.guestFeatures||''}
+${isEmployeeCase ? 'Employee' : 'Guest'} Name: ${formData.guestName||'Unknown'}
+${isEmployeeCase ? 'Employee Role' : 'Guest'} Description: ${formData.guestGender||''} ${formData.guestAgeRange||''} ${formData.guestHeight||''} ${formData.guestBuild||''} Hair: ${formData.guestHair||''} ${formData.guestHairStyle||''} ${isEmployeeCase?'Uniform':'Clothing'}: ${formData.guestClothing||''} Features: ${formData.guestFeatures||''}
 Incident Description: ${formData.incidentDescription||'N/A'}
-Guest Statement: ${formData.guestStatement||'N/A'}
+${isEmployeeCase ? 'Employee' : 'Guest'} Statement: ${formData.guestStatement||'N/A'}
 Witnesses: ${formData.witnesses||'None'}
 Action Taken: ${formData.actionTaken||'N/A'}
 EMS/Police: ${formData.emsPolice||'N/A'}
