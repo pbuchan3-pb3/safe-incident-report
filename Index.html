@@ -2586,7 +2586,7 @@ function generatePDF(isIncident, silent) {
   const css = `
     @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Roboto', Arial, sans-serif; font-size: 13px; color: #1e1e1e; background: #fff; padding: 0; }
+    body { font-family: 'Roboto', Arial, sans-serif; font-size: 13px; color: #1e1e1e; background: #fff; padding: 48px 0 0; }
     .page { max-width: 800px; margin: 0 auto; padding: 0; }
 
     /* LETTERHEAD */
@@ -2810,6 +2810,10 @@ function generatePDF(isIncident, silent) {
     <div class="footer-logo">S.A.F.E.</div>
   </div>
 </div>
+<div class="print-fallback-bar" style="position:fixed;top:0;left:0;right:0;background:#134D7F;padding:10px;text-align:center;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,.3);">
+  <button onclick="window.print()" style="background:#D82E44;color:#fff;border:none;padding:10px 24px;border-radius:6px;font-family:Arial,sans-serif;font-size:14px;font-weight:700;cursor:pointer;">🖨️ Print / Save as PDF</button>
+</div>
+<style>@media print{.print-fallback-bar{display:none !important;}}</style>
 <scr"+"ipt>window.onload=()=>{window.print();}</scr"+"ipt>
 </body>
 </html>`;
