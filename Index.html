@@ -1984,6 +1984,28 @@ function showInlineOptions(options, onSelect) {
 
 // ── FLOW LOGIC ─────────────────────────────────────────────────────────────
 // ── PEOPLE LOOP — collects one or more structured people with distinct roles ──
+// Auto-correct spelling of any already-captured person's name within free-typed
+// or voice-transcribed text, before that text goes through AP Style rewriting.
+// Checks against every person in formData.people, not just a single legacy guest.
+function correctKnownNames(raw){
+  const allKnownNames = (formData.people||[]).map(p=>p.name).filter(n=>n && n!=='Unknown');
+  if(formData.guestName && formData.guestName!=='Unknown') allKnownNames.push(formData.guestName);
+  allKnownNames.forEach(fullName => {
+    const nameParts = fullName.trim().split(' ').filter(p=>p.length>2);
+    nameParts.forEach(namePart => {
+      const escaped = namePart.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+      const lastChar = namePart.slice(-1);
+      // Fix double-letter variations (Chartell → Chartel, Perrry → Perry)
+      const doubleRegex = new RegExp(escaped.slice(0,-1) + lastChar + '+', 'gi');
+      raw = raw.replace(doubleRegex, namePart);
+      // Fix case variations
+      const caseRegex = new RegExp(escaped, 'gi');
+      raw = raw.replace(caseRegex, namePart);
+    });
+  });
+  return raw;
+}
+
 async function collectPerson(){
   const person = newPerson();
 
@@ -2013,8 +2035,11 @@ async function collectPerson(){
   // Smart duplicate detection: if the officer already typed the full name in the
   // "first name" field (e.g. "Whitney Jones") and then repeats the last word again
   // in the last name step (e.g. "Jones"), don't concatenate it twice.
-  let assembledName = firstName.trim();
-  const lastNameTrimmed = lastName.trim();
+  function toProperCase(s){
+    return s.replace(/\w\S*/g, t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
+  }
+  let assembledName = toProperCase(firstName.trim());
+  const lastNameTrimmed = toProperCase(lastName.trim());
   if(lastNameTrimmed && !assembledName.toLowerCase().endsWith(lastNameTrimmed.toLowerCase())){
     assembledName = (assembledName + ' ' + lastNameTrimmed).trim();
   }
@@ -2150,6 +2175,7 @@ async function collectPerson(){
       inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
       const lower = val.toLowerCase().trim();
       if(['refused to speak','uncooperative','nothing said'].includes(lower)){ resolve(val); return; }
+      val = correctKnownNames(val);
       // AP Style cleanup for statement
       showTyping(); await delay(300);
       speak("Writing that up in professional language"); addBubble("Writing that up in professional language...","ai");
@@ -2806,18 +2832,10 @@ async function processAnswer(raw){
     return;
   }
 
-  // Auto-correct guest name spelling in raw text before AI cleanup
-  if(formData.guestName && formData.guestName !== 'Unknown' && raw.length > 0){
-    const guestNameParts = formData.guestName.trim().split(' ').filter(p=>p.length>2);
-    guestNameParts.forEach(namePart => {
-      // Fix double-letter variations (Chartell → Chartel, Perrry → Perry)
-      const lastChar = namePart.slice(-1);
-      const doubleRegex = new RegExp(namePart.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').slice(0,-1) + lastChar + '+', 'gi');
-      raw = raw.replace(doubleRegex, namePart);
-      // Fix case variations
-      const caseRegex = new RegExp(namePart.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi');
-      raw = raw.replace(caseRegex, namePart);
-    });
+  // Auto-correct spelling of any known person's name (uses the shared function
+  // that checks the full people[] array, not just the legacy single guest field)
+  if(raw.length > 0){
+    raw = correctKnownNames(raw);
   }
 
   // AP Style cleanup — triggers on ANY typed field with more than 3 words (full stop, no exceptions)
