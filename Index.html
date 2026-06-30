@@ -641,6 +641,7 @@ const incidentFlow = [
   {key:'guestTransported', ask:"Was the guest or any person transported from the venue?", quickReplies:['Yes — transported by EMS','Yes — left on their own','No — remained on site','Not applicable'], skipIf:(fd)=>!fd.actionTaken||!fd.actionTaken.includes('EMS')},
   {key:'followUp', ask:"Is any follow-up required?", quickReplies:['Yes — follow-up needed','No — incident resolved']},
   {key:'followUpDetails', ask:"What follow-up is needed, and who is responsible for it?", skipIf:(fd)=>fd.followUp&&fd.followUp.startsWith('No')},
+  {key:'recommendation', ask:"Is there anything you'd recommend changing as a result of this incident? For example: additional signage, staffing adjustments, procedure review.", isRecommendation:true},
   {key:'additionalComments', ask:()=>`Almost done, ${formData.supervisorFirstName||'Officer'}. Any additional comments or context for this report?`, isAdditionalComments:true},
 ];
 
@@ -686,12 +687,25 @@ function flashAutosaveIndicator(){
 
 function scrollBottom(){setTimeout(()=>chatWindow.scrollTop=chatWindow.scrollHeight,80);}
 
+// ── SECURITY: HTML escaping for all user-controlled content ────────────────
+function escapeHtml(str){
+  if (str === null || str === undefined) return '';
+  if (typeof str !== 'string') str = String(str);
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 function addBubble(text, role){
   const row=document.createElement('div'); row.className=`bubble-row ${role}`;
   const av=document.createElement('div'); av.className=`avatar ${role}`;
   av.textContent=role==='ai'?'AI':'YOU';
   const bub=document.createElement('div'); bub.className=`bubble ${role}`;
-  bub.innerHTML=text.replace(/\n/g,'<br>');
+  // SECURITY: user-role bubbles always show exactly what the person typed/said/tapped —
+  // they never need real HTML, so we always escape them to prevent stored XSS.
+  // AI-role bubbles may contain trusted <strong>/<br> markup we author ourselves.
+  const safeText = role==='user' ? escapeHtml(text) : text;
+  bub.innerHTML=safeText.replace(/\n/g,'<br>');
   if(role==='user'){row.appendChild(bub);row.appendChild(av);}
   else{row.appendChild(av);row.appendChild(bub);}
   chatWindow.appendChild(row); scrollBottom();
@@ -813,7 +827,7 @@ function sendViaMailto(isIncident){
     body += `Guest Statement Detail: ${fd.guestStatementDetail||'N/A'}\n`;
     body += `Witnesses: ${fd.witnesses||'None'}\nAction Taken: ${fd.actionTaken||'N/A'}\n`;
     body += `EMS/Police: ${fd.emsPolice||'N/A'}\nGuest Transported: ${fd.guestTransported||'N/A'}\n\n`;
-    body += `FOLLOW-UP\n---------\nRequired: ${fd.followUp||'N/A'}\nDetails: ${fd.followUpDetails||'N/A'}\n\n`;
+    body += `FOLLOW-UP\n---------\nRequired: ${fd.followUp||'N/A'}\nDetails: ${fd.followUpDetails||'N/A'}\nRecommendation: ${fd.recommendation||'N/A'}\n\n`;
   } else {
     const empName=`${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim();
     body += `RECOGNITION DETAILS\n-------------------\n`;
@@ -832,6 +846,32 @@ function sendViaMailto(isIncident){
 
 // ── GOOGLE SHEETS INTEGRATION ──────────────────────────────────────────────
 const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzq1W-DfpAKe-Bz8GgpNaEDqVXUdLTOdFA-F_Uoc8U36CYkToRNfo5TYHldf2z-IITobA/exec';
+
+// ── ANALYTICS TAGS — auto-generated from structured data for future pattern analysis ──
+function generateAnalyticsTags(fd){
+  const tags = [];
+  if(fd.incidentCategory) tags.push(fd.incidentCategory);
+  if(fd.incidentLocation){
+    const gateMatch = fd.incidentLocation.match(/Gate [A-G]/);
+    if(gateMatch) tags.push(gateMatch[0]);
+  }
+  if(fd.incidentSeverity){
+    if(fd.incidentSeverity.includes('Minor')) tags.push('Low Severity');
+    else if(fd.incidentSeverity.includes('Moderate')) tags.push('Medium Severity');
+    else if(fd.incidentSeverity.includes('Serious')) tags.push('High Severity');
+  }
+  if(fd.guestName && fd.guestName !== 'Unknown') tags.push('Identified Subject');
+  if(fd.guestTransported && fd.guestTransported.includes('EMS')) tags.push('Medical Transport');
+  if(fd.emsPolice && !fd.emsPolice.toLowerCase().includes('not applicable')) tags.push('Law Enforcement Involved');
+  if(fd.witnesses && fd.witnesses !== 'None') tags.push('Witnesses Present');
+  if(fd.cameraCapture && fd.cameraCapture.startsWith('Yes')) tags.push('Camera Footage Available');
+  // Day of week tag
+  try {
+    const dow = new Date(fd.incidentDate||fd.date).toLocaleDateString('en-US',{weekday:'long'});
+    if(dow && dow !== 'Invalid Date') tags.push(dow);
+  } catch(e){}
+  return tags.join(', ');
+}
 
 async function submitToSheets(isIncident) {
   return new Promise((resolve) => {
@@ -877,6 +917,8 @@ async function submitToSheets(isIncident) {
         guestTransported: fd.guestTransported || '',
         followUp: fd.followUp || '',
         followUpDetails: fd.followUpDetails || '',
+        recommendation: fd.recommendation || '',
+        analyticsTags: generateAnalyticsTags(fd),
         employeeName: fd.employeeName || '',
         employeeRole: fd.employeeRole || '',
         recognitionDescription: fd.recognitionDescription || '',
@@ -884,6 +926,22 @@ async function submitToSheets(isIncident) {
         additionalComments: fd.additionalComments || '',
         professionalNarrative: fd.professionalNarrative || ''
       });
+
+      // Local backup — persists even if the network call to Sheets fails entirely.
+      // This is the real safety net: the officer's data is never solely dependent
+      // on a successful network round-trip.
+      try {
+        const backupKey = 'safe_submitted_backup_' + Date.now();
+        const backupPayload = Object.fromEntries(params.entries());
+        localStorage.setItem(backupKey, JSON.stringify({ payload: backupPayload, savedAt: new Date().toISOString() }));
+      } catch(e) { console.error('Local backup failed:', e); }
+
+      // If the device is known offline, don't pretend the network call succeeded
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        console.warn('Device is offline — Sheets submission deferred, local backup retained.');
+        resolve(false);
+        return;
+      }
 
       // Image ping method — bypasses CORS completely
       const img = new Image();
@@ -1791,6 +1849,8 @@ function showSignaturePad(onComplete) {
 
   let drawing = false;
   let hasSig = false;
+  let totalStrokeDistance = 0;
+  let lastPos = null;
 
   function getPos(e) {
     const rect = canvas.getBoundingClientRect();
@@ -1800,12 +1860,20 @@ function showSignaturePad(onComplete) {
     return { x: (src.clientX - rect.left) * scaleX, y: (src.clientY - rect.top) * scaleY };
   }
 
-  canvas.addEventListener('mousedown', e => { drawing = true; hasSig = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); });
-  canvas.addEventListener('mousemove', e => { if (!drawing) return; const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); });
-  canvas.addEventListener('mouseup', () => drawing = false);
-  canvas.addEventListener('touchstart', e => { e.preventDefault(); drawing = true; hasSig = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }, {passive:false});
-  canvas.addEventListener('touchmove', e => { e.preventDefault(); if (!drawing) return; const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); }, {passive:false});
-  canvas.addEventListener('touchend', () => drawing = false);
+  function trackStroke(p){
+    if(lastPos){
+      const dx = p.x - lastPos.x, dy = p.y - lastPos.y;
+      totalStrokeDistance += Math.sqrt(dx*dx + dy*dy);
+    }
+    lastPos = p;
+  }
+
+  canvas.addEventListener('mousedown', e => { drawing = true; const p = getPos(e); lastPos = p; ctx.beginPath(); ctx.moveTo(p.x, p.y); });
+  canvas.addEventListener('mousemove', e => { if (!drawing) return; const p = getPos(e); trackStroke(p); ctx.lineTo(p.x, p.y); ctx.stroke(); });
+  canvas.addEventListener('mouseup', () => { drawing = false; lastPos = null; });
+  canvas.addEventListener('touchstart', e => { e.preventDefault(); drawing = true; const p = getPos(e); lastPos = p; ctx.beginPath(); ctx.moveTo(p.x, p.y); }, {passive:false});
+  canvas.addEventListener('touchmove', e => { e.preventDefault(); if (!drawing) return; const p = getPos(e); trackStroke(p); ctx.lineTo(p.x, p.y); ctx.stroke(); }, {passive:false});
+  canvas.addEventListener('touchend', () => { drawing = false; lastPos = null; });
 
   const actions = document.createElement('div');
   actions.className = 'sig-pad-actions';
@@ -1813,14 +1881,16 @@ function showSignaturePad(onComplete) {
   const clearBtn = document.createElement('button');
   clearBtn.className = 'sig-clear-btn';
   clearBtn.textContent = '✕ Clear';
-  clearBtn.onclick = () => { ctx.clearRect(0,0,canvas.width,canvas.height); hasSig = false; };
+  clearBtn.onclick = () => { ctx.clearRect(0,0,canvas.width,canvas.height); totalStrokeDistance = 0; lastPos = null; };
   actions.appendChild(clearBtn);
 
   const confirmBtn = document.createElement('button');
   confirmBtn.className = 'sig-confirm-btn';
   confirmBtn.textContent = '✓ Sign & Complete';
   confirmBtn.onclick = () => {
-    if (!hasSig) { alert('Please sign before continuing.'); return; }
+    // SECURITY/LEGAL: require meaningful drawn distance, not just a tap event,
+    // so a blank or near-blank canvas can never be accepted as a valid signature.
+    if (totalStrokeDistance < 40) { alert('Please provide a complete signature before continuing — a single tap is not a valid signature.'); return; }
     const sigDataUrl = canvas.toDataURL('image/png');
     wrap.remove();
     onComplete(sigDataUrl);
@@ -2089,10 +2159,15 @@ async function askNextQuestion(){
     inputArea.style.display='none';
     const photoKey = step.photoType === 'scene' ? 'scenePhotos' : 'guestPhotos';
     const photoDataKey = step.photoType === 'scene' ? 'scenePhotoDataUrls' : 'guestPhotoDataUrls';
+    const photoMetaKey = step.photoType === 'scene' ? 'scenePhotoMeta' : 'guestPhotoMeta';
     showPhotoUpload(async(result)=>{
       addBubble(result,'user');
       formData[photoKey] = result;
       formData[photoDataKey] = uploadedPhotos.map(p=>p.dataUrl);
+      // Evidence metadata — captured timestamp and officer name for each photo
+      const captureTime = new Date().toLocaleString('en-US',{weekday:'short',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      const officerName = `${formData.supervisorFirstName||''} ${formData.supervisorLastName||''}`.trim() || 'Unknown';
+      formData[photoMetaKey] = uploadedPhotos.map(() => ({ captured: captureTime, takenBy: officerName }));
       uploadedPhotos = [];
       flowIndex++; await askNextQuestion();
     });
@@ -2130,7 +2205,7 @@ async function askNextQuestion(){
       inputArea.style.display='flex'; awaitingInput=true;
       document.getElementById('inputHint').style.display='block';
       sendInterceptor=async(lastName)=>{
-        formData.guestName = lastName.trim();
+        formData.guestName = escapeHtml(lastName.trim());
         inputArea.style.display='none'; awaitingInput=false;
         sendInterceptor=null;
         flowIndex++; await askNextQuestion();
@@ -2163,6 +2238,15 @@ async function askNextQuestion(){
   if(step.isEmsPolice){
     showInlineOptions(['Not applicable'], async(val)=>{
       addBubble(val,'user'); formData.emsPolice='Not applicable'; flowIndex++; await askNextQuestion();
+    });
+    inputArea.style.display='flex'; awaitingInput=true;
+    document.getElementById('inputHint').style.display='block';
+    return;
+  }
+
+  if(step.isRecommendation){
+    showInlineOptions(['No recommendation'], async(val)=>{
+      addBubble(val,'user'); formData.recommendation='No recommendation'; flowIndex++; await askNextQuestion();
     });
     inputArea.style.display='flex'; awaitingInput=true;
     document.getElementById('inputHint').style.display='block';
@@ -2341,7 +2425,7 @@ async function processAnswer(raw){
 
     const finishName = async(lastName) => {
       sendInterceptor = null;
-      formData.guestName = lastName ? `${firstName} ${lastName}`.trim() : firstName;
+      formData.guestName = escapeHtml(lastName ? `${firstName} ${lastName}`.trim() : firstName);
       flowIndex++; await askNextQuestion();
     };
 
@@ -2367,7 +2451,7 @@ async function processAnswer(raw){
   const preDefinedValues = [
     'Refused to Speak','Uncooperative','None','Not applicable',
     '✅ Confirmed — Ford Field, Detroit',
-    'No Action Taken','No — not captured','No — not contacted',
+    'No Action Taken','No — not captured','No — not contacted','No recommendation',
     'No — incident resolved','Yes — follow-up needed',
     'Verbal Warning','Written Warning','Ejection from Venue',
     'Referred to Guest Services','Suspension','Termination',
@@ -2624,6 +2708,13 @@ Return ONLY the narrative text. No preamble, no labels, no markdown.`;
     await delay(500);
     showSignaturePad(async(sigDataUrl)=>{
       formData.supervisorSignature = sigDataUrl;
+      // LEGAL ACCURACY FIX: re-stamp the official filing time at the moment of
+      // signature (the true point of completion), not page load time which may
+      // be stale if the officer was interrupted mid-report.
+      const signedAt = new Date();
+      formData.date = signedAt.toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+      formData.time = signedAt.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+      document.getElementById('timestampBar').textContent = `📍 ${formData.venue.split(',')[0]}  ·  ${formData.date}  ·  ${formData.time}  ·  Auto-captured`;
       signReadyBtn.remove();
       // Pre-generate the report HTML for sharing (no popup — just builds the string)
       generatePDF(isIncident, true);
@@ -2654,13 +2745,17 @@ Return ONLY the narrative text. No preamble, no labels, no markdown.`;
         finalStatusDiv.className='email-status sending';
         finalStatusDiv.textContent='💾 Saving report to S.A.F.E. records...';
         const saved = await submitToSheets(isIncident);
-        if(saved){ finalStatusDiv.textContent='✅ Saved. Opening email to notify HR...'; }
-        else { finalStatusDiv.textContent='⚠️ Could not save — opening email anyway...'; }
-        await delay(1200);
+        await delay(800);
         sendViaMailto(isIncident);
-        finalStatusDiv.className='email-status sent';
-        finalStatusDiv.textContent='✅ Report saved and email opened — tap Send in your mail app to notify HR.';
-        clearDraft(); // Report submitted — no longer need the offline draft
+        finalStatusDiv.className = saved ? 'email-status sent' : 'email-status error';
+        if(saved){
+          finalStatusDiv.textContent='✅ Report saved and email opened — tap Send in your mail app to notify HR.';
+          clearDraft(); // Only clear the offline draft once the save is confirmed
+        } else {
+          finalStatusDiv.textContent='⚠️ Could not confirm the report saved to S.A.F.E. records (no connection detected). A backup copy is stored on this device, and your email draft has been opened — please send it now, and retry Submit once you have a connection.';
+          finalSubmitBtn.disabled=false;
+          finalSubmitBtn.textContent='🔄 Retry Submit';
+        }
       };
       scrollBottom();
       addBubble('✅ Report signed and locked. Download your copy or submit to HR below.','ai');
@@ -2714,8 +2809,15 @@ function generatePDF(isIncident, silent) {
     .field-value { font-size: 13px; color: #1e1e1e; padding: 6px 10px; background: #f4f4f4; border-left: 3px solid #134D7F; line-height: 1.5; }
     .field-value.unknown { color: #94a3b8; font-style: italic; }
     .field-value.narrative { background: #f4f4f4; border-left: 3px solid #134D7F; padding: 10px 12px; line-height: 1.7; }
-    .pdf-photo-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+    .breakdown-grid { border: 1px solid #d4dbe6; border-radius: 6px; overflow: hidden; margin-top: 4px; }
+    .breakdown-row { display: grid; grid-template-columns: 130px 1fr; border-bottom: 1px solid #e8edf3; }
+    .breakdown-row:last-child { border-bottom: none; }
+    .breakdown-label { background: #eef3f9; padding: 8px 12px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #134D7F; display: flex; align-items: center; }
+    .breakdown-value { padding: 8px 12px; font-size: 12px; line-height: 1.5; color: #1e1e1e; }
+    .pdf-photo-grid { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 4px; }
+    .pdf-photo-wrap { display: flex; flex-direction: column; align-items: center; }
     .pdf-photo { width: 160px; height: 160px; object-fit: cover; border-radius: 6px; border: 2px solid #134D7F; }
+    .pdf-photo-meta { font-size: 9px; color: #64748b; text-align: center; margin-top: 4px; line-height: 1.4; max-width: 160px; }
     @media print { .pdf-photo { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 
     /* SEVERITY BADGES */
@@ -2748,9 +2850,9 @@ function generatePDF(isIncident, silent) {
   `;
 
   function fv(label, value, full) {
-    const val = value || 'Unknown / Not Available';
+    const val = value ? escapeHtml(value) : 'Unknown / Not Available';
     const cls = (!value || value === 'Unknown / Not Available') ? 'unknown' : '';
-    return `<div class="field${full?' full':''}"><div class="field-label">${label}</div><div class="field-value ${cls}">${val}</div></div>`;
+    return `<div class="field${full?' full':''}"><div class="field-label">${escapeHtml(label)}</div><div class="field-value ${cls}">${val}</div></div>`;
   }
 
   function severityBadge(sev) {
@@ -2812,14 +2914,24 @@ function generatePDF(isIncident, silent) {
     body += fv('Distinguishing Features', fd.guestFeatures);
     if(fd.guestPhotoDataUrls && fd.guestPhotoDataUrls.length > 0){
       body += `<div class="field"><div class="field-label">Guest / Subject Photos</div><div class="pdf-photo-grid">`;
-      fd.guestPhotoDataUrls.forEach(url => { body += `<img class="pdf-photo" src="${url}"/>`; });
+      fd.guestPhotoDataUrls.forEach((url, idx) => {
+        const meta = fd.guestPhotoMeta && fd.guestPhotoMeta[idx] ? fd.guestPhotoMeta[idx] : null;
+        body += `<div class="pdf-photo-wrap"><img class="pdf-photo" src="${url}"/>`;
+        if(meta) body += `<div class="pdf-photo-meta">Captured: ${meta.captured}<br>By: ${meta.takenBy}</div>`;
+        body += `</div>`;
+      });
       body += `</div></div>`;
     } else {
       body += fv('Guest Photos', fd.guestPhotos||'None');
     }
     if(fd.scenePhotoDataUrls && fd.scenePhotoDataUrls.length > 0){
       body += `<div class="field"><div class="field-label">Scene / Evidence Photos</div><div class="pdf-photo-grid">`;
-      fd.scenePhotoDataUrls.forEach(url => { body += `<img class="pdf-photo" src="${url}"/>`; });
+      fd.scenePhotoDataUrls.forEach((url, idx) => {
+        const meta = fd.scenePhotoMeta && fd.scenePhotoMeta[idx] ? fd.scenePhotoMeta[idx] : null;
+        body += `<div class="pdf-photo-wrap"><img class="pdf-photo" src="${url}"/>`;
+        if(meta) body += `<div class="pdf-photo-meta">Captured: ${meta.captured}<br>By: ${meta.takenBy}</div>`;
+        body += `</div>`;
+      });
       body += `</div></div>`;
     } else {
       body += fv('Scene / Evidence Photos', fd.scenePhotos||'None');
@@ -2829,9 +2941,22 @@ function generatePDF(isIncident, silent) {
     // Incident Narrative
     body += `<div class="section-title">Incident Narrative</div>`;
     if(fd.professionalNarrative){
-      body += `<div class="field"><div class="field-label">Professional Narrative</div><div class="field-value narrative">${fd.professionalNarrative}</div></div>`;
+      body += `<div class="field"><div class="field-label">Professional Narrative</div><div class="field-value narrative">${escapeHtml(fd.professionalNarrative)}</div></div>`;
     }
-    body += `<div class="field"><div class="field-label">Officer's Description</div><div class="field-value narrative">${fd.incidentDescription || 'Not provided'}</div></div>`;
+
+    // Incident Breakdown — Facts vs. Conclusions, courtroom-friendly structure
+    const outcomeText = fd.followUp && fd.followUp.startsWith('No')
+      ? 'The incident concluded without further enforcement action.'
+      : (fd.followUpDetails || 'Follow-up action was required; see Follow-Up section below.');
+    body += `<div class="field"><div class="field-label" style="color:#134D7F;font-size:11px;margin-top:6px;">Incident Breakdown</div></div>`;
+    body += `<div class="breakdown-grid">`;
+    body += `<div class="breakdown-row"><div class="breakdown-label">Observed</div><div class="breakdown-value">${fd.incidentDescription || 'Not provided'}</div></div>`;
+    body += `<div class="breakdown-row"><div class="breakdown-label">Statement</div><div class="breakdown-value">${fd.guestStatement || 'No statement provided'}</div></div>`;
+    body += `<div class="breakdown-row"><div class="breakdown-label">Officer Action</div><div class="breakdown-value">${fd.actionTaken || 'Not provided'}</div></div>`;
+    body += `<div class="breakdown-row"><div class="breakdown-label">Outcome</div><div class="breakdown-value">${outcomeText}</div></div>`;
+    body += `</div>`;
+
+    body += `<div class="field" style="margin-top:10px;"><div class="field-label">Officer's Description</div><div class="field-value narrative">${escapeHtml(fd.incidentDescription) || 'Not provided'}</div></div>`;
     body += `<div class="field-grid" style="margin-top:10px;">`;
     body += fv('Guest Account of Incident', fd.guestStatement);
     body += fv('Guest Statement Detail', fd.guestStatementDetail);
@@ -2846,6 +2971,7 @@ function generatePDF(isIncident, silent) {
     body += `<div class="field-grid">`;
     body += fv('Follow-Up Required', fd.followUp);
     body += fv('Follow-Up Details', fd.followUpDetails);
+    body += fv('Recommendation', fd.recommendation);
     body += `</div>`;
 
   } else {
@@ -2855,8 +2981,8 @@ function generatePDF(isIncident, silent) {
     body += fv('Employee Name', empName);
     body += fv('Employee Role', fd.employeeRole);
     body += `</div>`;
-    body += `<div class="field"><div class="field-label">Description of Good Deed</div><div class="field-value narrative">${fd.recognitionDescription || 'Not provided'}</div></div>`;
-    body += `<div class="field" style="margin-top:10px;"><div class="field-label">Impact & S.A.F.E. Values</div><div class="field-value narrative">${fd.recognitionImpact || 'Not provided'}</div></div>`;
+    body += `<div class="field"><div class="field-label">Description of Good Deed</div><div class="field-value narrative">${escapeHtml(fd.recognitionDescription) || 'Not provided'}</div></div>`;
+    body += `<div class="field" style="margin-top:10px;"><div class="field-label">Impact & S.A.F.E. Values</div><div class="field-value narrative">${escapeHtml(fd.recognitionImpact) || 'Not provided'}</div></div>`;
   }
 
   // Additional Comments
@@ -3021,7 +3147,7 @@ function generateWord(isIncident) {
     content += `Witnesses: ${fd.witnesses||'None'}\nAction Taken: ${fd.actionTaken||'N/A'}\n`;
     content += `EMS/Police: ${fd.emsPolice||'N/A'}\nGuest Transported: ${fd.guestTransported||'N/A'}\n\n`;
     content += `FOLLOW-UP\n${'-'.repeat(30)}\n`;
-    content += `Required: ${fd.followUp||'N/A'}\nDetails: ${fd.followUpDetails||'N/A'}\n\n`;
+    content += `Required: ${fd.followUp||'N/A'}\nDetails: ${fd.followUpDetails||'N/A'}\nRecommendation: ${fd.recommendation||'N/A'}\n\n`;
   } else {
     const empName=`${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim();
     content += `RECOGNITION DETAILS\n${'-'.repeat(30)}\n`;
@@ -3117,6 +3243,22 @@ function buildFormHTML(isIncident,supName,empName){
     if(fd.professionalNarrative){
       h+=`<div class="form-field"><label>Professional Narrative</label><span class="editable-value">${fd.professionalNarrative}</span><textarea class="field-value-edit editable-input" data-key="professionalNarrative" style="display:none">${fd.professionalNarrative}</textarea></div>`;
     }
+    // Incident Breakdown — Facts vs. Conclusions
+    {
+      const outcomeText = fd.followUp && fd.followUp.startsWith('No')
+        ? 'The incident concluded without further enforcement action.'
+        : (fd.followUpDetails || 'Follow-up action was required; see Follow-Up section below.');
+      h+=`<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--safe-navy);margin:10px 0 4px;">Incident Breakdown</div>`;
+      h+=`<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:10px;">`;
+      const rows = [['Observed', fd.incidentDescription||'Not provided'],['Statement', fd.guestStatement||'No statement provided'],['Officer Action', fd.actionTaken||'Not provided'],['Outcome', outcomeText]];
+      rows.forEach(([label,val],i)=>{
+        h+=`<div style="display:grid;grid-template-columns:110px 1fr;${i<rows.length-1?'border-bottom:1px solid var(--border);':''}">`;
+        h+=`<div style="background:var(--light-bg);padding:8px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--safe-navy);">${label}</div>`;
+        h+=`<div style="padding:8px 10px;font-size:13px;line-height:1.5;">${val}</div>`;
+        h+=`</div>`;
+      });
+      h+=`</div>`;
+    }
     h+=ff('Description',fd.incidentDescription,'incidentDescription');
     // Scene photo thumbnails
     if(fd.scenePhotoDataUrls && fd.scenePhotoDataUrls.length > 0){
@@ -3133,7 +3275,7 @@ function buildFormHTML(isIncident,supName,empName){
     h+=ff('EMS / Police Involvement',fd.emsPolice,'emsPolice');
     h+=ff('Guest Transported',fd.guestTransported);
     h+=`<div class="form-section-title">Follow-Up</div>`;
-    h+=ff('Follow-Up Required',fd.followUp); h+=ff('Follow-Up Details',fd.followUpDetails,'followUpDetails');
+    h+=ff('Follow-Up Required',fd.followUp); h+=ff('Follow-Up Details',fd.followUpDetails,'followUpDetails'); h+=ff('Recommendation',fd.recommendation,'recommendation');
   } else {
     h+=`<div class="form-section-title">Recognition Details</div>`;
     h+=ff('Employee Name',empName); h+=ff('Employee Role',fd.employeeRole,'employeeRole');
@@ -3441,7 +3583,7 @@ async function startFlow(){
     const fillers = [/^(it'?s|i'?m|my name is|this is|i am)\s+/i, /^(is|im|ive)\s+/i];
     fillers.forEach(re => { cleaned = cleaned.replace(re, ''); });
     const name = cleaned.trim().split(' ')[0] || firstName.trim().split(' ')[0];
-    formData.supervisorFirstName = name;
+    formData.supervisorFirstName = escapeHtml(name);
     inputArea.style.display='none'; awaitingInput=false;
     sendInterceptor=null;
     // Ask last name
@@ -3454,7 +3596,7 @@ async function startFlow(){
       let cleanedLast = lastName.trim();
       const fillersLast = [/^(it'?s|i'?m|my last name is|this is|i am)\s+/i, /^(is|im|ive)\s+/i];
       fillersLast.forEach(re => { cleanedLast = cleanedLast.replace(re, ''); });
-      formData.supervisorLastName = cleanedLast.trim() || lastName.trim();
+      formData.supervisorLastName = escapeHtml(cleanedLast.trim() || lastName.trim());
       inputArea.style.display='none'; awaitingInput=false;
       sendInterceptor=null;
       // Now ask when incident occurred
