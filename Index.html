@@ -2010,7 +2010,15 @@ async function collectPerson(){
     });
     inputArea.style.display='none';
   }
-  person.name = escapeHtml((firstName + ' ' + lastName).trim() || 'Unknown');
+  // Smart duplicate detection: if the officer already typed the full name in the
+  // "first name" field (e.g. "Whitney Jones") and then repeats the last word again
+  // in the last name step (e.g. "Jones"), don't concatenate it twice.
+  let assembledName = firstName.trim();
+  const lastNameTrimmed = lastName.trim();
+  if(lastNameTrimmed && !assembledName.toLowerCase().endsWith(lastNameTrimmed.toLowerCase())){
+    assembledName = (assembledName + ' ' + lastNameTrimmed).trim();
+  }
+  person.name = escapeHtml(assembledName || 'Unknown');
 
   // 2. Role category — the critical structural question
   showTyping(); await delay(400); removeTyping();
@@ -3004,8 +3012,10 @@ Return ONLY the narrative text. No preamble, no labels, no markdown.`;
       formData.time = signedAt.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
       document.getElementById('timestampBar').textContent = `📍 ${formData.venue.split(',')[0]}  ·  ${formData.date}  ·  ${formData.time}  ·  Auto-captured`;
       signReadyBtn.remove();
-      // Pre-generate the report HTML for sharing (no popup — just builds the string)
-      generatePDF(isIncident, true);
+      // Pre-generate the report HTML for sharing (no popup — just builds the string).
+      // Wrapped defensively — if this fails, sharePDF() will detect the missing cache
+      // and regenerate fresh when the officer actually taps Share.
+      try { generatePDF(isIncident, true); } catch(e) { console.error('PDF pre-cache failed:', e); }
       // Show signature on card
       const sigRow = document.createElement('div');
       sigRow.style.cssText='padding:10px 18px;border-top:1px solid var(--border);margin-top:8px;';
@@ -3018,8 +3028,9 @@ Return ONLY the narrative text. No preamble, no labels, no markdown.`;
         <div style="font-size:12px;color:var(--text-muted);text-align:center;margin:12px 0 8px;font-style:italic;">Report signed and locked. Download or submit below.</div>
         <button class="download-pdf-btn" style="margin-top:6px;">⬇ Download Professional PDF</button>
         <button class="download-word-btn" style="margin-top:6px;">⬇ Download Word Document</button>
-        <button class="share-btn" style="margin-top:6px;width:100%;background:#fff;border:2px solid var(--safe-navy);color:var(--safe-navy);padding:14px;border-radius:10px;font-family:Inter,sans-serif;font-size:15px;font-weight:700;cursor:pointer;">📤 Share Report</button>
-        <button class="submit-btn" style="margin-top:6px;">📧 Submit Report — Send to HR & Myself</button>
+        <button class="share-btn" style="margin-top:6px;width:100%;background:#fff;border:2px solid var(--safe-navy);color:var(--safe-navy);padding:14px;border-radius:10px;font-family:Inter,sans-serif;font-size:15px;font-weight:700;cursor:pointer;">📤 Share Report (with file attached)</button>
+        <div style="font-size:11px;color:var(--text-muted);text-align:center;margin:8px 0 4px;line-height:1.4;">👆 Use <strong>Share Report</strong> to send the actual report file. The button below saves to S.A.F.E. records and opens an email with the report as text only — no attachment.</div>
+        <button class="submit-btn" style="margin-top:6px;">📧 Save to Records & Email Text Summary</button>
         <div class="email-status"></div>
       `;
       card.appendChild(submitWrap);
@@ -3380,12 +3391,30 @@ function generatePDF(isIncident, silent) {
 async function sharePDF(isIncident) {
   const fd = formData;
   const title = isIncident ? 'Incident Report' : 'Employee Recognition Report';
+
+  // Defensive regeneration: don't trust a possibly-stale or missing pre-cache.
+  // If lastReportHTML is missing or suspiciously short, rebuild it fresh right now.
+  if(!window.lastReportHTML || window.lastReportHTML.length < 500){
+    try {
+      generatePDF(isIncident, true);
+    } catch(e) {
+      console.error('Failed to regenerate report HTML for sharing:', e);
+    }
+  }
+
   const submissionId = window.lastReportSubmissionId || ('SAFE-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(Math.random()*9000+1000));
   const filename = `SAFE_${isIncident?'Incident':'Recognition'}_Report_${submissionId}.html`;
 
+  // If we genuinely have no usable report content, don't attach an empty/broken file —
+  // tell the officer honestly and point them to Download instead.
+  if(!window.lastReportHTML || window.lastReportHTML.length < 500){
+    alert('Unable to prepare the report file for sharing right now. Please use the "Download Professional PDF" button instead, then attach that file manually to your email.');
+    return;
+  }
+
   if (navigator.share && navigator.canShare) {
     try {
-      const blob = new Blob([window.lastReportHTML || 'Report data unavailable'], {type:'text/html'});
+      const blob = new Blob([window.lastReportHTML], {type:'text/html'});
       const file = new File([blob], filename, {type:'text/html'});
 
       if (navigator.canShare({files:[file]})) {
