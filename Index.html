@@ -750,7 +750,7 @@ function sendViaMailto(isIncident){
     body += `Captured on Camera: ${fd.cameraCapture||'N/A'}\nCamera Zone: ${fd.cameraZone||'N/A'}\n`;
     body += `Safe Ops / Manager Contacted: ${fd.safeOpsContacted||'N/A'}\nContacted: ${fd.safeOpsWho||'N/A'}\n\n`;
     body += `GUEST INFORMATION\n-----------------\n`;
-    body += `Name: ${fd.guestName||'Unknown'}\nSeat: ${fd.guestSeat||'Unknown'}\n`;
+    body += `Name: ${fd.guestName||'Unknown'}\nSeat: ${fd.guestSeat||'N/A'}\nRole/Position: ${fd.guestRole||'N/A'}\n`;
     body += `Gender: ${fd.guestGender||'Unknown'}\nAge Range: ${fd.guestAgeRange||'Unknown'}\n`;
     body += `Height: ${fd.guestHeight||'Unknown'}\nBuild: ${fd.guestBuild||'Unknown'}\n`;
     body += `Hair Color: ${fd.guestHair||'Unknown'}\n`;
@@ -806,6 +806,7 @@ async function submitToSheets(isIncident) {
         supervisorEmail: fd.supervisorEmail || '',
         guestName: fd.guestName || '',
         guestSeat: fd.guestSeat || '',
+        guestRole: fd.guestRole || '',
         guestGender: fd.guestGender || '',
         guestAgeRange: fd.guestAgeRange || '',
         guestHeight: fd.guestHeight || '',
@@ -1999,7 +2000,6 @@ async function askNextQuestion(){
         inputArea.style.display='flex'; awaitingInput=true;
         sendInterceptor=async(custom)=>{
           addBubble(custom,'user');
-          const genderRef = formData.guestGender && formData.guestGender.toLowerCase().includes('female') ? 'employee' : 'employee';
           formData.guestClothing = `${formData.guestName||'The employee'} was wearing ${custom}.`;
           inputArea.style.display='none'; awaitingInput=false;
           sendInterceptor=null; flowIndex++; await askNextQuestion();
@@ -2473,6 +2473,7 @@ Incident Type: ${formData.incidentCategory||'N/A'}
 Severity: ${formData.incidentSeverity||'N/A'}
 Reporting Officer: ${supName}, ${formData.supervisorTitle||''}
 ${isEmployeeCase ? 'Employee' : 'Guest'} Name: ${formData.guestName||'Unknown'}
+${isEmployeeCase ? `Employee Role/Position: ${formData.guestRole||'N/A'}` : `Guest Seat: ${formData.guestSeat||'Unknown'}`}
 ${isEmployeeCase ? 'Employee Role' : 'Guest'} Description: ${formData.guestGender||''} ${formData.guestAgeRange||''} ${formData.guestHeight||''} ${formData.guestBuild||''} Hair: ${formData.guestHair||''} ${formData.guestHairStyle||''} ${isEmployeeCase?'Uniform':'Clothing'}: ${formData.guestClothing||''} Features: ${formData.guestFeatures||''}
 Incident Description: ${formData.incidentDescription||'N/A'}
 ${isEmployeeCase ? 'Employee' : 'Guest'} Statement: ${formData.guestStatement||'N/A'}
@@ -2744,6 +2745,7 @@ function generatePDF(isIncident, silent) {
     body += `<div class="field-grid">`;
     body += fv('Guest Name', fd.guestName);
     body += fv('Seat Location (Section / Row / Seat)', fd.guestSeat);
+    body += fv('Role / Position', fd.guestRole);
     body += fv('Gender', fd.guestGender);
     body += fv('Age Range', fd.guestAgeRange);
     body += fv('Height', fd.guestHeight);
@@ -2937,7 +2939,7 @@ function generateWord(isIncident) {
     content += `Surveillance Camera: ${fd.cameraCapture||'N/A'}\nCamera Zone: ${fd.cameraZone||'N/A'}\n`;
     content += `Safe Ops Contacted: ${fd.safeOpsContacted||'N/A'}\nContacted: ${fd.safeOpsWho||'N/A'}\n\n`;
     content += `GUEST INFORMATION\n${'-'.repeat(30)}\n`;
-    content += `Name: ${fd.guestName||'Unknown'}\nSeat: ${fd.guestSeat||'Unknown'}\n`;
+    content += `Name: ${fd.guestName||'Unknown'}\nSeat: ${fd.guestSeat||'N/A'}\nRole/Position: ${fd.guestRole||'N/A'}\n`;
     content += `Gender: ${fd.guestGender||'N/A'}\nAge Range: ${fd.guestAgeRange||'N/A'}\n`;
     content += `Height: ${fd.guestHeight||'N/A'}\nBuild: ${fd.guestBuild||'N/A'}\n`;
     content += `Hair Color: ${fd.guestHair||'N/A'}\nHair Style: ${fd.guestHairStyle||'N/A'}\n`;
@@ -3027,7 +3029,7 @@ function buildFormHTML(isIncident,supName,empName){
     h+=ff('Safe Ops / Manager Contacted',fd.safeOpsContacted);
     h+=ff('Who Was Contacted',fd.safeOpsWho,'safeOpsWho');
     h+=`<div class="form-section-title">Guest Information</div>`;
-    h+=ff('Guest Name',fd.guestName,'guestName'); h+=ff('Seat (Section / Row / Seat)',fd.guestSeat,'guestSeat');
+    h+=ff('Guest Name',fd.guestName,'guestName'); h+=ff('Seat (Section / Row / Seat)',fd.guestSeat,'guestSeat'); h+=ff('Role / Position',fd.guestRole,'guestRole');
     h+=ff('Gender',fd.guestGender);
     h+=ff('Age Range',fd.guestAgeRange);
     h+=ff('Height',fd.guestHeight);
