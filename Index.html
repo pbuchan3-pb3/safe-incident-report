@@ -694,7 +694,7 @@ const incidentFlow = [
   {key:'incidentLocation', ask:()=>`Got it, ${formData.supervisorFirstName||'Officer'}. Where did the incident occur?`, isLocationPicker:true},
   {key:'environmentalConditions', ask:"Were there any environmental or surface conditions that may have contributed to this incident? For example: wet floor, spilled liquid, poor lighting, crowded area. If not applicable, say 'none.'", skipIf:(fd)=>fd.incidentCategory&&!fd.incidentCategory.includes('Slip')},
   {key:'cameraCapture', ask:"Was this incident captured on surveillance camera? Note: If Safe Ops was alerted, they may have triangulated cameras on the incident area.", quickReplies:['Yes — captured on surveillance','No — not captured','Safe Ops was monitoring','Unknown / Not confirmed']},
-  {key:'cameraZone', ask:"Which camera zone or area was covering the incident? If you know the camera ID provide it — otherwise describe the location as best you can.", skipIf:(fd)=>!fd.cameraCapture||fd.cameraCapture.startsWith('No')||fd.cameraCapture.startsWith('Unknown')},
+  {key:'cameraZone', ask:"Which camera zone or area was covering the incident? If you know the camera ID provide it — otherwise describe the location as best you can.", isCameraZone:true, skipIf:(fd)=>!fd.cameraCapture||fd.cameraCapture.startsWith('No')||fd.cameraCapture.startsWith('Unknown')},
   {key:'safeOpsContacted', ask:"Was Safe Ops or a manager contacted about this incident?", quickReplies:['Yes — contacted Safe Ops','Yes — contacted my manager','Both contacted','No — not contacted']},
   {key:'safeOpsWho', ask:"Who specifically was contacted? Please provide their name or title.", skipIf:(fd)=>fd.safeOpsContacted&&fd.safeOpsContacted.startsWith('No')},
   {key:'peopleLoop', ask:"Now let's document everyone involved — subjects, employees, and witnesses. Tap below to add the first person.", isPeopleLoop:true},
@@ -2560,6 +2560,15 @@ async function askNextQuestion(){
     return;
   }
 
+  if(step.isCameraZone){
+    showInlineOptions(['Unknown / Not confirmed at this time'], async(val)=>{
+      addBubble(val,'user'); formData.cameraZone='Unknown / Not confirmed at this time'; flowIndex++; await askNextQuestion();
+    });
+    inputArea.style.display='flex'; awaitingInput=true;
+    document.getElementById('inputHint').style.display='block';
+    return;
+  }
+
   if(step.isRecommendation){
     showInlineOptions(['No recommendation'], async(val)=>{
       addBubble(val,'user'); formData.recommendation='No recommendation'; flowIndex++; await askNextQuestion();
@@ -2755,7 +2764,7 @@ async function processAnswer(raw){
   const preDefinedValues = [
     'Refused to Speak','Uncooperative','None','Not applicable',
     '✅ Confirmed — Ford Field, Detroit',
-    'No Action Taken','No — not captured','No — not contacted','No recommendation',
+    'No Action Taken','No — not captured','No — not contacted','No recommendation','Unknown / Not confirmed at this time',
     'No — incident resolved','Yes — follow-up needed',
     'Verbal Warning','Written Warning','Ejection from Venue',
     'Referred to Guest Services','Suspension','Termination',
@@ -3942,6 +3951,15 @@ async function startFlow(){
   chatWindow.innerHTML='';
   showVoiceFloat();
   activeFlow=baseFlow; flowIndex=0;
+
+  // BUG-14 FIX: Warn officer before accidentally navigating away mid-report.
+  // Only active while a report is in progress (flowIndex > 0 and not yet submitted).
+  window.addEventListener('beforeunload', (e) => {
+    if(activeFlow && activeFlow.length && flowIndex > 0 && !formData.supervisorSignature){
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
   showTyping(); await delay(700); removeTyping();
   addBubble(`Good ${getTimeOfDay()}. I've recorded right now as the <strong>report filing time: ${formData.date} at ${formData.time}</strong>. This timestamp is locked for HR records.<br><br>Before we begin — what is your first name?`,'ai');
   inputArea.style.display='flex';
