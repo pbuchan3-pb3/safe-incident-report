@@ -2054,7 +2054,6 @@ async function askNextQuestion(){
         addBubble('Please describe the uniform or attire:','ai');
         inputArea.style.display='flex'; awaitingInput=true;
         sendInterceptor=async(custom)=>{
-          addBubble(custom,'user');
           formData.guestClothing = `${formData.guestName||'The employee'} was wearing ${custom}.`;
           inputArea.style.display='none'; awaitingInput=false;
           sendInterceptor=null; flowIndex++; await askNextQuestion();
@@ -2130,7 +2129,6 @@ async function askNextQuestion(){
       inputArea.style.display='flex'; awaitingInput=true;
       document.getElementById('inputHint').style.display='block';
       sendInterceptor=async(lastName)=>{
-        addBubble(lastName,'user');
         formData.guestName = lastName.trim();
         inputArea.style.display='none'; awaitingInput=false;
         sendInterceptor=null;
@@ -2263,7 +2261,7 @@ async function processAnswer(raw){
       addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
         clearQuickReplies(); addBubble(confirm,'user');
         if(confirm.startsWith('Yes')){formData.actionTaken=cleaned;flowIndex++;await askNextQuestion();}
-        else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{addBubble(e,'user');formData.actionTaken=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
+        else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{formData.actionTaken=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
         else{addBubble("No problem — describe it again.",'ai');inputArea.style.display='flex';awaitingInput=true;}
       });
     };
@@ -2298,7 +2296,7 @@ async function processAnswer(raw){
     addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
       if(confirm.startsWith('Yes')){formData[key]=cleaned;flowIndex++;await askNextQuestion();}
-      else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{addBubble(e,'user');formData[key]=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
+      else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{formData[key]=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
       else{addBubble("No problem — describe it again.",'ai');inputArea.style.display='flex';awaitingInput=true;}
     });
     return;
@@ -2313,7 +2311,7 @@ async function processAnswer(raw){
     addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
       if(confirm.startsWith('Yes')){formData[key]=cleaned;flowIndex++;await askNextQuestion();}
-      else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{addBubble(e,'user');formData[key]=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
+      else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{formData[key]=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
       else{addBubble("No problem — describe it again.",'ai');inputArea.style.display='flex';awaitingInput=true;}
     });
     return;
@@ -2328,7 +2326,7 @@ async function processAnswer(raw){
     addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
       if(confirm.startsWith('Yes')){formData[key]=cleaned;flowIndex++;await askNextQuestion();}
-      else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{addBubble(e,'user');formData[key]=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
+      else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{formData[key]=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
       else{addBubble("No problem — describe it again.",'ai');inputArea.style.display='flex';awaitingInput=true;}
     });
     return;
@@ -2432,7 +2430,6 @@ async function processAnswer(raw){
           sendInterceptor=async(_intercepted)=>{
             const edited=_intercepted.trim();
             if(!edited){flowIndex++;await askNextQuestion();return;}
-            addBubble(edited,'user');
             formData[key]=edited; inputArea.style.display='none'; awaitingInput=false;
             sendInterceptor=null; flowIndex++;await askNextQuestion();
           };
@@ -2486,7 +2483,6 @@ async function processAnswer(raw){
         sendInterceptor=async(_intercepted)=>{
           const edited=_intercepted.trim();
           if(!edited){ flowIndex++; await askNextQuestion(); return; }
-          addBubble(edited,'user');
           formData[key]=edited; inputArea.style.display='none'; awaitingInput=false;
           sendInterceptor=null;
           flowIndex++; await askNextQuestion();
@@ -3429,7 +3425,6 @@ async function startFlow(){
     const fillers = [/^(it'?s|i'?m|my name is|this is|i am)\s+/i, /^(is|im|ive)\s+/i];
     fillers.forEach(re => { cleaned = cleaned.replace(re, ''); });
     const name = cleaned.trim().split(' ')[0] || firstName.trim().split(' ')[0];
-    addBubble(firstName,'user');
     formData.supervisorFirstName = name;
     inputArea.style.display='none'; awaitingInput=false;
     sendInterceptor=null;
@@ -3440,7 +3435,6 @@ async function startFlow(){
     document.getElementById('inputHint').style.display='block';
     userInput.focus();
     sendInterceptor=async(lastName)=>{
-      addBubble(lastName,'user');
       let cleanedLast = lastName.trim();
       const fillersLast = [/^(it'?s|i'?m|my last name is|this is|i am)\s+/i, /^(is|im|ive)\s+/i];
       fillersLast.forEach(re => { cleanedLast = cleanedLast.replace(re, ''); });
