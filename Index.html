@@ -541,6 +541,88 @@ function speak(text) {
 
 // ── STATE ──────────────────────────────────────────────────────────────────
 const formData = {};
+
+// ── PEOPLE / PERSONS DATA MODEL ─────────────────────────────────────────────
+// Replaces the single-guest fields with a structured array supporting any
+// number of people, each with a distinct role. Old single-guest fields
+// (formData.guestName, formData.guestGender, etc.) are still populated
+// alongside formData.people for backward compatibility with anything that
+// hasn't been migrated yet, but formData.people is the source of truth.
+
+const ROLE_CATEGORIES = [
+  'Subject',
+  'Alleged Aggressor',
+  'Victim',
+  'Witness',
+  'Employee',
+  'Reporting Party',
+  'Other Involved Party',
+  'Unknown',
+];
+
+// Roles that belong in the "subject/involved parties" section of the report
+const SUBJECT_ROLES = ['Subject','Alleged Aggressor','Victim','Employee','Other Involved Party'];
+// Roles that belong in the "witnesses" section of the report
+const WITNESS_ROLES = ['Witness'];
+
+function newPerson(){
+  return {
+    id: 'person_' + Date.now() + '_' + Math.floor(Math.random()*10000),
+    name: '',
+    role: '',           // free-text role/position (e.g. "Event Security", job title)
+    roleCategory: '',   // one of ROLE_CATEGORIES — drives report section placement
+    gender: '',
+    ageRange: '',
+    height: '',
+    build: '',
+    hairColor: '',
+    hairStyle: '',
+    clothing: '',
+    features: '',
+    seatLocation: '',
+    statement: '',
+    photoDataUrls: [],
+    photoMeta: [],
+    contactInfo: '',
+    notes: '',
+  };
+}
+
+formData.people = [];
+
+// Migration shim: if older saved drafts or any legacy code path still writes
+// to the flat formData.guestName/guestGender/etc. fields, this converts that
+// single-guest data into a people[] entry so nothing downstream breaks.
+function migrateLegacyGuestToPeople(){
+  if(!formData.people) formData.people = []; // defensive: never assume the caller initialized this
+  if(formData.people.length > 0) return; // already migrated/populated
+  if(!formData.guestName && !formData.guestGender) return; // nothing to migrate
+
+  const p = newPerson();
+  p.name = formData.guestName || 'Unknown';
+  p.role = formData.guestRole || '';
+  p.roleCategory = formData.incidentCategory === 'Employee Misconduct' ? 'Employee' : 'Subject';
+  p.gender = formData.guestGender || '';
+  p.ageRange = formData.guestAgeRange || '';
+  p.height = formData.guestHeight || '';
+  p.build = formData.guestBuild || '';
+  p.hairColor = formData.guestHair || '';
+  p.hairStyle = formData.guestHairStyle || '';
+  p.clothing = formData.guestClothing || '';
+  p.features = formData.guestFeatures || '';
+  p.seatLocation = formData.guestSeat || '';
+  p.statement = formData.guestStatement || '';
+  p.photoDataUrls = formData.guestPhotoDataUrls || [];
+  p.photoMeta = formData.guestPhotoMeta || [];
+  formData.people.push(p);
+}
+
+function getSubjectPeople(){
+  return (formData.people||[]).filter(p => SUBJECT_ROLES.includes(p.roleCategory));
+}
+function getWitnessPeople(){
+  return (formData.people||[]).filter(p => WITNESS_ROLES.includes(p.roleCategory));
+}
 let currentStep = -1, awaitingInput = false, incidentType = null;
 let activeFlow = [], flowIndex = 0;
 
@@ -615,27 +697,9 @@ const incidentFlow = [
   {key:'cameraZone', ask:"Which camera zone or area was covering the incident? If you know the camera ID provide it — otherwise describe the location as best you can.", skipIf:(fd)=>!fd.cameraCapture||fd.cameraCapture.startsWith('No')||fd.cameraCapture.startsWith('Unknown')},
   {key:'safeOpsContacted', ask:"Was Safe Ops or a manager contacted about this incident?", quickReplies:['Yes — contacted Safe Ops','Yes — contacted my manager','Both contacted','No — not contacted']},
   {key:'safeOpsWho', ask:"Who specifically was contacted? Please provide their name or title.", skipIf:(fd)=>fd.safeOpsContacted&&fd.safeOpsContacted.startsWith('No')},
-  {key:'guestName', ask:"What is the guest's first name? If you only have their last name, that's fine too.", isGuestName:true},
-  {key:'guestSeat', ask:()=>`What is ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} seat location? Please provide Section, Row, and Seat number.`, isGuestSeat:true, skipIf:(fd)=>fd.incidentCategory==='Employee Misconduct'},
-  {key:'guestRole', ask:()=>`What is ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the employee\'s'} role or position? For example: Event Security, Guest Services, Concessions, Parking, Vendor Staff.`, skipIf:(fd)=>fd.incidentCategory!=='Employee Misconduct'},
-  {key:'guestGender', ask:()=>`Let's capture ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} physical appearance. First — what is their gender?`, isAppearanceGender:true},
-  {key:'guestAgeRange', ask:()=>`What is ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} approximate age range?`, isAppearanceAge:true},
-  {key:'guestHeight', ask:()=>`How would you describe ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} height?`, isAppearanceHeight:true},
-  {key:'guestBuild', ask:()=>`How would you describe ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} build?`, isAppearanceBuild:true},
-  {key:'guestHair', ask:()=>`What is ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} hair color?`, isAppearanceHair:true},
-  {key:'guestHairStyle', ask:()=>`How would you describe ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} hair style?`, isAppearanceHairStyle:true},
-  {key:'guestClothing', ask:()=>formData.incidentCategory==='Employee Misconduct'
-    ? `What type of uniform was ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the employee'} wearing?`
-    : `What was ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest'} wearing? Describe the shirt, jacket, hat, or any other distinctive clothing.`,
-    isUniformPicker:true},
-  {key:'guestFeatures', ask:()=>`Any distinguishing features for ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest'}? Select all that apply.`, isAppearanceFeatures:true},
-  {key:'guestPhotos', ask:()=>`Do you have any photos of ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest or subject'}? Upload up to 3 photos.`, isPhotoUpload:true, photoType:'guest'},
+  {key:'peopleLoop', ask:"Now let's document everyone involved — subjects, employees, and witnesses. Tap below to add the first person.", isPeopleLoop:true},
   {key:'incidentDescription', ask:()=>`${formData.supervisorFirstName||'Officer'}, describe what happened in your own words — what you saw, what was said, what actions were taken. Don't worry about how it sounds; I'll clean it up.`},
   {key:'scenePhotos', ask:"Do you have any photos of the scene, location, or evidence? Upload up to 3 photos.", isPhotoUpload:true, photoType:'scene'},
-  {key:'guestStatement', ask:()=>`What did ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest'} say about the incident? This becomes part of the official record.`, isGuestStatement:true},
-  {key:'witnesses', ask:()=>formData.incidentCategory==='Employee Misconduct'
-    ? "Were there any witnesses — other staff or supervisors? If yes, share their names or roles."
-    : "Were there any witnesses — staff, security, or guests? If yes, share their names or descriptions.", isWitnesses:true},
   {key:'actionTaken', ask:"What action was taken?", quickReplies:['Verbal Warning','Written Warning','Ejection from Venue','Referred to Guest Services','Suspension','Termination','EMS Called','Detroit PD Called','No Action Taken','Other — specify'],isActionTaken:true},
   {key:'emsPolice', ask:"Was EMS or Detroit PD involved? If yes, provide any report number or officer name if available.", isEmsPolice:true},
   {key:'guestTransported', ask:"Was the guest or any person transported from the venue?", quickReplies:['Yes — transported by EMS','Yes — left on their own','No — remained on site','Not applicable'], skipIf:(fd)=>!fd.actionTaken||!fd.actionTaken.includes('EMS')},
@@ -924,7 +988,8 @@ async function submitToSheets(isIncident) {
         recognitionDescription: fd.recognitionDescription || '',
         recognitionImpact: fd.recognitionImpact || '',
         additionalComments: fd.additionalComments || '',
-        professionalNarrative: fd.professionalNarrative || ''
+        professionalNarrative: fd.professionalNarrative || '',
+        peopleSummary: (fd.people||[]).map(p=>`${p.name} (${p.roleCategory})`).join('; ')
       });
 
       // Local backup — persists even if the network call to Sheets fails entirely.
@@ -1918,6 +1983,252 @@ function showInlineOptions(options, onSelect) {
 }
 
 // ── FLOW LOGIC ─────────────────────────────────────────────────────────────
+// ── PEOPLE LOOP — collects one or more structured people with distinct roles ──
+async function collectPerson(){
+  const person = newPerson();
+
+  // 1. Name
+  addBubble("What is this person's first name? If you only have their last name, that's fine too.",'ai');
+  inputArea.style.display='flex'; awaitingInput=true;
+  document.getElementById('inputHint').style.display='block';
+  userInput.focus();
+
+  const firstName = await new Promise(resolve => {
+    showInlineOptions(['Unknown / Refused'], (val)=>{ sendInterceptor=null; resolve(val==='Unknown / Refused' ? '' : val); });
+    sendInterceptor = async(val) => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(val); };
+  });
+  inputArea.style.display='none';
+
+  let lastName = '';
+  if(firstName){
+    showTyping(); await delay(400); removeTyping();
+    addBubble(`And their last name?`,'ai');
+    inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
+    lastName = await new Promise(resolve => {
+      showInlineOptions(['Unknown / Refused'], (val)=>{ sendInterceptor=null; resolve(val==='Unknown / Refused' ? '' : val); });
+      sendInterceptor = async(val) => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(val); };
+    });
+    inputArea.style.display='none';
+  }
+  person.name = escapeHtml((firstName + ' ' + lastName).trim() || 'Unknown');
+
+  // 2. Role category — the critical structural question
+  showTyping(); await delay(400); removeTyping();
+  addBubble(`What was ${person.name}'s role in this incident?`,'ai');
+  person.roleCategory = await new Promise(resolve => {
+    showAppearancePicker(ROLE_CATEGORIES, (val)=>resolve(val), false);
+  });
+
+  // 3. If Employee, ask for role/position. Otherwise for non-witness subjects, ask seat.
+  if(person.roleCategory === 'Employee'){
+    showTyping(); await delay(400); removeTyping();
+    addBubble(`What is ${person.name}'s role or position? For example: Event Security, Guest Services, Concessions, Parking, Vendor Staff.`,'ai');
+    inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
+    person.role = await new Promise(resolve => {
+      sendInterceptor = async(val) => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(escapeHtml(val)); };
+    });
+    inputArea.style.display='none';
+  } else if(SUBJECT_ROLES.includes(person.roleCategory)){
+    showTyping(); await delay(400); removeTyping();
+    addBubble(`What is ${person.name}'s seat location? Please provide Section, Row, and Seat number.`,'ai');
+    person.seatLocation = await new Promise(resolve => {
+      showInlineOptions(['Unknown'], (val)=>resolve(val==='Unknown'?'':val));
+      inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
+      sendInterceptor = async(val) => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(escapeHtml(val)); };
+    });
+    inputArea.style.display='none';
+    person.seatLocation = person.seatLocation || 'Unknown';
+  }
+
+  // 4. Physical appearance — skip for pure Witness role (not usually needed) but offer it
+  const wantsAppearance = WITNESS_ROLES.includes(person.roleCategory)
+    ? await new Promise(resolve => {
+        showTyping();
+        addBubble(`Would you like to capture a physical description for ${person.name} as well? This is optional for witnesses.`,'ai');
+        showInlineOptions(['Yes, add description','Skip — name and role only'], (val)=>resolve(val.startsWith('Yes')));
+      })
+    : true;
+
+  if(wantsAppearance){
+    showTyping(); await delay(400); removeTyping();
+    addBubble(`What is ${person.name}'s gender?`,'ai');
+    person.gender = await new Promise(resolve => showAppearancePicker(['Male','Female','Non-binary','Unknown / Not Observed'], resolve, false));
+
+    showTyping(); await delay(300); removeTyping();
+    addBubble(`What is ${person.name}'s approximate age range?`,'ai');
+    person.ageRange = await new Promise(resolve => showAgeRangePicker(resolve));
+
+    showTyping(); await delay(300); removeTyping();
+    addBubble(`How would you describe ${person.name}'s height?`,'ai');
+    person.height = await new Promise(resolve => {
+      const heightWrap = document.createElement('div');
+      heightWrap.className = 'location-picker'; heightWrap.style.margin='4px 0 4px 38px'; heightWrap.style.maxWidth='84%';
+      const btnWrap = document.createElement('div'); btnWrap.className='location-options';
+      ['Short (under 5\'4")','Average (5\'4"–5\'10")','Tall (5\'11" and above)','Unknown'].forEach(opt=>{
+        const btn=document.createElement('button'); btn.className='loc-btn'; btn.textContent=opt;
+        btn.onclick=()=>{heightWrap.remove(); resolve(opt);};
+        btnWrap.appendChild(btn);
+      });
+      heightWrap.appendChild(btnWrap);
+      chatWindow.appendChild(heightWrap); scrollBottom();
+    });
+
+    showTyping(); await delay(300); removeTyping();
+    addBubble(`How would you describe ${person.name}'s build?`,'ai');
+    person.build = await new Promise(resolve => showAppearancePicker(['Slim / Thin','Medium / Average','Heavyset / Large','Athletic / Muscular','Unknown'], resolve, false));
+
+    showTyping(); await delay(300); removeTyping();
+    addBubble(`What is ${person.name}'s hair color?`,'ai');
+    person.hairColor = await new Promise(resolve => showAppearancePicker(['Black','Brown','Blonde','Red / Auburn','Gray','White / Silver','Bald','Unknown'], resolve, false));
+
+    showTyping(); await delay(300); removeTyping();
+    addBubble(`How would you describe ${person.name}'s hair style?`,'ai');
+    person.hairStyle = await new Promise(resolve => showHairStylePicker(resolve));
+
+    showTyping(); await delay(300); removeTyping();
+    const clothingLabel = person.roleCategory === 'Employee' ? 'uniform' : 'clothing';
+    addBubble(`What was ${person.name} wearing? Describe the ${clothingLabel}.`,'ai');
+    const rawClothing = await new Promise(resolve => {
+      inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
+      sendInterceptor = async(val) => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(val); };
+    });
+    // AP Style cleanup for clothing, same dedicated handler logic as before
+    showTyping(); await delay(300);
+    speak("Writing that up in professional language"); addBubble("Writing that up in professional language...","ai");
+    const genderRef = person.gender && person.gender.toLowerCase().includes('female') ? `The female ${person.roleCategory==='Employee'?'employee':'subject'}` : person.gender && person.gender.toLowerCase().includes('male') ? `The male ${person.roleCategory==='Employee'?'employee':'subject'}` : `The ${person.roleCategory==='Employee'?'employee':'subject'}`;
+    try {
+      const cr = await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+        body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:150,
+          system:`You rewrite clothing descriptions for security reports. Always start with "${genderRef} was wearing" followed by the items in AP Style. Hyphenate compound color modifiers. Return only the rewritten sentence.`,
+          messages:[{role:"user",content:`Rewrite this clothing description: ${rawClothing}`}]
+        })
+      });
+      const cd = await cr.json();
+      person.clothing = cd.content&&cd.content[0] ? cd.content[0].text.trim() : `${genderRef} was wearing ${escapeHtml(rawClothing)}.`;
+    } catch(e){ person.clothing = `${genderRef} was wearing ${escapeHtml(rawClothing)}.`; }
+    removeTyping();
+    addBubble(`Here's how it will read: <em>"${person.clothing}"</em>`,'ai');
+    await delay(600);
+
+    showTyping(); await delay(300); removeTyping();
+    addBubble(`Any distinguishing features for ${person.name}? Select all that apply.`,'ai');
+    person.features = await new Promise(resolve => {
+      showAppearancePicker(['Tattoos visible','Facial hair (beard/mustache)','Glasses','Hat or cap','Mask or face covering','Scar or birthmark','None observed'], resolve, true);
+    });
+
+    showTyping(); await delay(300); removeTyping();
+    addBubble(`Do you have any photos of ${person.name}? Upload up to 3 photos.`,'ai');
+    await new Promise(resolve => {
+      showPhotoUpload(async(result)=>{
+        person.photoDataUrls = uploadedPhotos.map(p=>p.dataUrl);
+        const captureTime = new Date().toLocaleString('en-US',{weekday:'short',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        const officerName = `${formData.supervisorFirstName||''} ${formData.supervisorLastName||''}`.trim() || 'Unknown';
+        person.photoMeta = uploadedPhotos.map(() => ({ captured: captureTime, takenBy: officerName }));
+        uploadedPhotos = [];
+        resolve();
+      });
+    });
+  }
+
+  // 5. Statement — ask for everyone regardless of role (subjects, witnesses, employees all may have something to say)
+  showTyping(); await delay(300); removeTyping();
+  addBubble(`What did ${person.name} say, if anything? This becomes part of the official record.`,'ai');
+  person.statement = await new Promise(resolve => {
+    showInlineOptions(['Refused to Speak','Uncooperative','Nothing said'], (val)=>resolve(val));
+    inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
+    sendInterceptor = async(val) => {
+      inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
+      const lower = val.toLowerCase().trim();
+      if(['refused to speak','uncooperative','nothing said'].includes(lower)){ resolve(val); return; }
+      // AP Style cleanup for statement
+      showTyping(); await delay(300);
+      speak("Writing that up in professional language"); addBubble("Writing that up in professional language...","ai");
+      const ctx = `Statement field for ${person.name} (${person.roleCategory}) in a ${formData.incidentCategory||'incident'} report.`;
+      const cleaned = await cleanWithAI(val, ctx, 'field', 'guestStatement');
+      removeTyping();
+      addBubble(`Here's how it will read: <em>"${cleaned}"</em>`,'ai');
+      await delay(500);
+      resolve(cleaned);
+    };
+  });
+
+  return person;
+}
+
+async function runPeopleLoop(){
+  inputArea.style.display='none';
+  let addingMore = true;
+  let isFirst = true;
+
+  while(addingMore){
+    if(!isFirst){
+      const choice = await new Promise(resolve => {
+        showInlineOptions(['➕ Add Another Person','✓ Done Adding People'], (val)=>resolve(val));
+      });
+      if(choice.startsWith('✓')) break;
+      addBubble(choice,'user');
+    }
+    isFirst = false;
+
+    const person = await collectPerson();
+
+    // Ambiguity check: if this person's name matches an existing person who
+    // already has a different role, or if the officer's narrative elsewhere
+    // suggests dual involvement, don't guess — ask directly.
+    const existing = formData.people.find(p => p.name.toLowerCase() === person.name.toLowerCase() && p.name.toLowerCase() !== 'unknown');
+    if(existing && existing.roleCategory !== person.roleCategory){
+      showTyping(); await delay(400); removeTyping();
+      addBubble(`I see ${person.name} was already listed as <strong>${existing.roleCategory}</strong>. Was ${person.name} ${existing.roleCategory.toLowerCase()}, ${person.roleCategory.toLowerCase()}, or both?`,'ai');
+      const resolution = await new Promise(resolve => {
+        showInlineOptions([existing.roleCategory + ' only', person.roleCategory + ' only', 'Both roles apply'], (val)=>resolve(val));
+      });
+      addBubble(resolution,'user');
+      if(resolution === 'Both roles apply'){
+        // Keep both entries — dual role explicitly confirmed by the officer
+        formData.people.push(person);
+      } else if(resolution.startsWith(person.roleCategory)){
+        // Replace the existing entry's role with the new one, drop the duplicate
+        existing.roleCategory = person.roleCategory;
+      }
+      // else: keep existing as-is, discard the new duplicate entry
+    } else {
+      formData.people.push(person);
+    }
+
+    showTyping(); await delay(300); removeTyping();
+    addBubble(`Got it — ${person.name} added.`,'ai');
+  }
+
+  // Backward-compat: also populate the legacy flat guest fields from the first subject-role person
+  const firstSubject = getSubjectPeople()[0];
+  if(firstSubject){
+    formData.guestName = firstSubject.name;
+    formData.guestRole = firstSubject.role;
+    formData.guestGender = firstSubject.gender;
+    formData.guestAgeRange = firstSubject.ageRange;
+    formData.guestHeight = firstSubject.height;
+    formData.guestBuild = firstSubject.build;
+    formData.guestHair = firstSubject.hairColor;
+    formData.guestHairStyle = firstSubject.hairStyle;
+    formData.guestClothing = firstSubject.clothing;
+    formData.guestFeatures = firstSubject.features;
+    formData.guestSeat = firstSubject.seatLocation;
+    formData.guestStatement = firstSubject.statement;
+    formData.guestPhotoDataUrls = firstSubject.photoDataUrls;
+    formData.guestPhotoMeta = firstSubject.photoMeta;
+    formData.guestPhotos = firstSubject.photoDataUrls.length > 0 ? `${firstSubject.photoDataUrls.length} photo(s) attached` : 'No photos attached';
+  }
+  // Build legacy witnesses summary text from witness-role people, for any code path that still reads formData.witnesses
+  const witnessPeople = getWitnessPeople();
+  formData.witnesses = witnessPeople.length > 0
+    ? 'Witnesses included ' + witnessPeople.map(p => `${p.name}${p.role?', '+p.role:''}`).join(', and ') + '.'
+    : 'None';
+
+  flowIndex++; await askNextQuestion();
+}
+
 async function askNextQuestion(){
   while(flowIndex<activeFlow.length){
     const step=activeFlow[flowIndex];
@@ -2191,47 +2502,18 @@ async function askNextQuestion(){
     return;
   }
 
-  if(step.isGuestName){
-    showInlineOptions(['Unknown / Guest Refused'], async(val)=>{
-      addBubble(val,'user');
-      // Even if first name unknown, still ask for last name
-      showTyping(); await delay(500); removeTyping();
-      addBubble("Do you have a last name for the guest?",'ai');
-      showInlineOptions(['No last name known'], async()=>{
-        addBubble('No last name known','user');
-        formData.guestName='Unknown';
-        flowIndex++; await askNextQuestion();
-      });
-      inputArea.style.display='flex'; awaitingInput=true;
-      document.getElementById('inputHint').style.display='block';
-      sendInterceptor=async(lastName)=>{
-        formData.guestName = escapeHtml(lastName.trim());
-        inputArea.style.display='none'; awaitingInput=false;
-        sendInterceptor=null;
-        flowIndex++; await askNextQuestion();
-      };
-    });
-    inputArea.style.display='flex'; awaitingInput=true;
-    document.getElementById('inputHint').style.display='block';
-    userInput.focus();
-    return;
-  }
-
-  if(step.isGuestSeat){
-    showInlineOptions(['Unknown'], async(val)=>{
-      addBubble(val,'user'); formData.guestSeat=val; flowIndex++; await askNextQuestion();
-    });
-    inputArea.style.display='flex'; awaitingInput=true;
-    document.getElementById('inputHint').style.display='block';
-    return;
-  }
-
-  if(step.isWitnesses){
-    showInlineOptions(['None'], async(val)=>{
-      clearQuickReplies(); addBubble(val,'user'); formData.witnesses='None'; flowIndex++; await askNextQuestion();
-    });
-    inputArea.style.display='flex'; awaitingInput=true;
-    document.getElementById('inputHint').style.display='block';
+  if(step.isPeopleLoop){
+    addBubble("✓ Got it. Tap below to begin adding people involved.",'user');
+    showTyping(); await delay(400); removeTyping();
+    const startBtn = document.createElement('div');
+    startBtn.style.cssText = 'margin:6px 0 4px 38px;max-width:84%;';
+    const btn = document.createElement('button');
+    btn.className = 'qr-btn';
+    btn.textContent = '➕ Add First Person';
+    btn.onclick = () => { startBtn.remove(); runPeopleLoop(); };
+    startBtn.appendChild(btn);
+    chatWindow.appendChild(startBtn);
+    scrollBottom();
     return;
   }
 
@@ -2262,18 +2544,6 @@ async function askNextQuestion(){
     return;
   }
 
-
-  if(step.isGuestStatement){
-    showInlineOptions(['Refused to Speak','Uncooperative'], async(val)=>{
-      addBubble(val,'user');
-      // These are pre-defined values — skip AI cleanup, save directly
-      formData.guestStatement = val;
-      flowIndex++; await askNextQuestion();
-    });
-    inputArea.style.display='flex'; awaitingInput=true;
-    document.getElementById('inputHint').style.display='block';
-    return;
-  }
 
   if(step.quickReplies){
     addQuickReplies(step.quickReplies,async(val)=>{clearQuickReplies();addBubble(val,'user');await processAnswer(val);});
@@ -2584,6 +2854,7 @@ async function processAnswer(raw){
 
 async function showFinalForm(){
   showTyping(); await delay(900); removeTyping();
+  migrateLegacyGuestToPeople(); // safety net — ensures people[] is populated even on edge paths
   const isIncident=incidentType==='incident';
   const supName=`${formData.supervisorFirstName||''} ${formData.supervisorLastName||''}`.trim();
   formData.supervisorName=supName;
@@ -2595,10 +2866,28 @@ async function showFinalForm(){
     addBubble("Generating your professional incident narrative...",'ai');
     showTyping();
     const isEmployeeCase = formData.incidentCategory === 'Employee Misconduct';
+
+    // Build a structured people summary from the people array — this is what
+    // lets the AI correctly distinguish subjects from witnesses and avoid
+    // ever conflating the same person into both roles unless explicitly confirmed.
+    const peopleForNarrative = formData.people && formData.people.length > 0 ? formData.people : [];
+    let peopleSummary = '';
+    if(peopleForNarrative.length > 0){
+      peopleSummary = peopleForNarrative.map(p => {
+        const desc = [p.gender, p.ageRange, p.height, p.build].filter(Boolean).join(', ');
+        const hair = [p.hairColor, p.hairStyle].filter(Boolean).join(' ');
+        return `- ${p.name} | Role: ${p.roleCategory}${p.role?' ('+p.role+')':''} | Description: ${desc}${hair?', Hair: '+hair:''}${p.clothing?', Wearing: '+p.clothing:''}${p.features?', Features: '+p.features:''}${p.seatLocation?', Seat: '+p.seatLocation:''} | Statement: ${p.statement||'None provided'}`;
+      }).join('\n');
+    } else {
+      peopleSummary = `${isEmployeeCase ? 'Employee' : 'Guest'} Name: ${formData.guestName||'Unknown'} | Statement: ${formData.guestStatement||'N/A'}`;
+    }
+
     const narrativePrompt = `You are a professional security documentation specialist for S.A.F.E. Management at Ford Field, Detroit.
 
 Using ONLY the information provided below, write a single cohesive professional incident narrative in AP Style. Third person, past tense. Do not add any facts not listed. Do not use bullet points. Write 2-3 paragraphs maximum. Make it read as a court-ready security report.
 ${isEmployeeCase ? 'IMPORTANT: This is an EMPLOYEE MISCONDUCT report. Refer to the person involved as "the employee" or by name, never as "subject" or "guest". This is an internal personnel matter.' : ''}
+
+CRITICAL ROLE RULE: Each person below has exactly one listed role (Subject, Alleged Aggressor, Victim, Witness, Employee, Reporting Party, or Other Involved Party). NEVER describe the same person as both a witness and a subject/aggressor/victim in the narrative unless their role is explicitly listed as more than one entry for that name — in that case, describe both aspects of their involvement accurately. Do not infer or guess a dual role that wasn't explicitly provided.
 
 Incident Date: ${formData.incidentDate||formData.date}
 Incident Time: ${formData.incidentTime||formData.time}
@@ -2608,12 +2897,11 @@ Location: ${formData.incidentLocation||'N/A'}
 Incident Type: ${formData.incidentCategory||'N/A'}
 Severity: ${formData.incidentSeverity||'N/A'}
 Reporting Officer: ${supName}, ${formData.supervisorTitle||''}
-${isEmployeeCase ? 'Employee' : 'Guest'} Name: ${formData.guestName||'Unknown'}
-${isEmployeeCase ? `Employee Role/Position: ${formData.guestRole||'N/A'}` : `Guest Seat: ${formData.guestSeat||'Unknown'}`}
-${isEmployeeCase ? 'Employee Role' : 'Guest'} Description: ${formData.guestGender||''} ${formData.guestAgeRange||''} ${formData.guestHeight||''} ${formData.guestBuild||''} Hair: ${formData.guestHair||''} ${formData.guestHairStyle||''} ${isEmployeeCase?'Uniform':'Clothing'}: ${formData.guestClothing||''} Features: ${formData.guestFeatures||''}
+
+People Involved:
+${peopleSummary}
+
 Incident Description: ${formData.incidentDescription||'N/A'}
-${isEmployeeCase ? 'Employee' : 'Guest'} Statement: ${formData.guestStatement||'N/A'}
-Witnesses: ${formData.witnesses||'None'}
 Action Taken: ${formData.actionTaken||'N/A'}
 EMS/Police: ${formData.emsPolice||'N/A'}
 Camera: ${formData.cameraCapture||'N/A'}
@@ -2898,32 +3186,47 @@ function generatePDF(isIncident, silent) {
     body += fv('Who Was Contacted', fd.safeOpsWho);
     body += `</div>`;
 
-    // Guest Information
-    body += `<div class="section-title">Guest Information</div>`;
-    body += `<div class="field-grid">`;
-    body += fv('Guest Name', fd.guestName);
-    body += fv('Seat Location (Section / Row / Seat)', fd.guestSeat);
-    body += fv('Role / Position', fd.guestRole);
-    body += fv('Gender', fd.guestGender);
-    body += fv('Age Range', fd.guestAgeRange);
-    body += fv('Height', fd.guestHeight);
-    body += fv('Build', fd.guestBuild);
-    body += fv('Hair Color', fd.guestHair);
-    body += fv('Hair Style', fd.guestHairStyle);
-    body += fv('Clothing', fd.guestClothing);
-    body += fv('Distinguishing Features', fd.guestFeatures);
-    if(fd.guestPhotoDataUrls && fd.guestPhotoDataUrls.length > 0){
-      body += `<div class="field"><div class="field-label">Guest / Subject Photos</div><div class="pdf-photo-grid">`;
-      fd.guestPhotoDataUrls.forEach((url, idx) => {
-        const meta = fd.guestPhotoMeta && fd.guestPhotoMeta[idx] ? fd.guestPhotoMeta[idx] : null;
-        body += `<div class="pdf-photo-wrap"><img class="pdf-photo" src="${url}"/>`;
-        if(meta) body += `<div class="pdf-photo-meta">Captured: ${meta.captured}<br>By: ${meta.takenBy}</div>`;
-        body += `</div>`;
-      });
-      body += `</div></div>`;
-    } else {
-      body += fv('Guest Photos', fd.guestPhotos||'None');
+    // People — Subjects / Involved Parties / Employees
+    function renderPersonPDF(p){
+      let h = `<div style="border:1px solid #d4dbe6;border-radius:6px;padding:10px 12px;margin-bottom:10px;">`;
+      h += `<div style="font-weight:700;font-size:13px;color:#134D7F;margin-bottom:6px;">${escapeHtml(p.name)} — ${escapeHtml(p.roleCategory)}</div>`;
+      h += `<div class="field-grid">`;
+      if(p.role) h += fv('Role / Position', p.role);
+      if(p.seatLocation) h += fv('Seat Location', p.seatLocation);
+      if(p.gender) h += fv('Gender', p.gender);
+      if(p.ageRange) h += fv('Age Range', p.ageRange);
+      if(p.height) h += fv('Height', p.height);
+      if(p.build) h += fv('Build', p.build);
+      if(p.hairColor) h += fv('Hair Color', p.hairColor);
+      if(p.hairStyle) h += fv('Hair Style', p.hairStyle);
+      if(p.clothing) h += fv('Clothing', p.clothing);
+      if(p.features) h += fv('Distinguishing Features', p.features);
+      h += `</div>`;
+      if(p.statement) h += `<div style="margin-top:6px;"><div class="field-label">Statement</div><div class="field-value">${escapeHtml(p.statement)}</div></div>`;
+      if(p.photoDataUrls && p.photoDataUrls.length > 0){
+        h += `<div class="pdf-photo-grid" style="margin-top:8px;">`;
+        p.photoDataUrls.forEach((url, idx) => {
+          const meta = p.photoMeta && p.photoMeta[idx] ? p.photoMeta[idx] : null;
+          h += `<div class="pdf-photo-wrap"><img class="pdf-photo" src="${url}"/>`;
+          if(meta) h += `<div class="pdf-photo-meta">Captured: ${meta.captured}<br>By: ${meta.takenBy}</div>`;
+          h += `</div>`;
+        });
+        h += `</div>`;
+      }
+      h += `</div>`;
+      return h;
     }
+
+    const pdfSubjects = getSubjectPeople();
+    const pdfWitnesses = getWitnessPeople();
+
+    body += `<div class="section-title">Subjects / Involved Parties</div>`;
+    if(pdfSubjects.length > 0){
+      pdfSubjects.forEach(p => { body += renderPersonPDF(p); });
+    } else {
+      body += `<div class="field-value unknown">No subjects recorded</div>`;
+    }
+
     if(fd.scenePhotoDataUrls && fd.scenePhotoDataUrls.length > 0){
       body += `<div class="field"><div class="field-label">Scene / Evidence Photos</div><div class="pdf-photo-grid">`;
       fd.scenePhotoDataUrls.forEach((url, idx) => {
@@ -2936,7 +3239,13 @@ function generatePDF(isIncident, silent) {
     } else {
       body += fv('Scene / Evidence Photos', fd.scenePhotos||'None');
     }
-    body += `</div>`;
+
+    body += `<div class="section-title">Witnesses</div>`;
+    if(pdfWitnesses.length > 0){
+      pdfWitnesses.forEach(p => { body += renderPersonPDF(p); });
+    } else {
+      body += `<div class="field-value unknown">No witnesses recorded</div>`;
+    }
 
     // Incident Narrative
     body += `<div class="section-title">Incident Narrative</div>`;
@@ -2958,9 +3267,6 @@ function generatePDF(isIncident, silent) {
 
     body += `<div class="field" style="margin-top:10px;"><div class="field-label">Officer's Description</div><div class="field-value narrative">${escapeHtml(fd.incidentDescription) || 'Not provided'}</div></div>`;
     body += `<div class="field-grid" style="margin-top:10px;">`;
-    body += fv('Guest Account of Incident', fd.guestStatement);
-    body += fv('Guest Statement Detail', fd.guestStatementDetail);
-    body += fv('Witnesses', fd.witnesses);
     body += fv('Action Taken', fd.actionTaken);
     body += fv('EMS / Police Involvement', fd.emsPolice);
     body += fv('Guest Transported', fd.guestTransported);
@@ -3222,35 +3528,49 @@ function buildFormHTML(isIncident,supName,empName){
     h+=ff('Camera Zone / Area',fd.cameraZone,'cameraZone');
     h+=ff('Safe Ops / Manager Contacted',fd.safeOpsContacted);
     h+=ff('Who Was Contacted',fd.safeOpsWho,'safeOpsWho');
-    h+=`<div class="form-section-title">Guest Information</div>`;
-    h+=ff('Guest Name',fd.guestName,'guestName'); h+=ff('Seat (Section / Row / Seat)',fd.guestSeat,'guestSeat'); h+=ff('Role / Position',fd.guestRole,'guestRole');
-    h+=ff('Gender',fd.guestGender);
-    h+=ff('Age Range',fd.guestAgeRange);
-    h+=ff('Height',fd.guestHeight);
-    h+=ff('Build',fd.guestBuild);
-    h+=ff('Hair Color',fd.guestHair);
-    h+=ff('Hair Style',fd.guestHairStyle);
-    h+=ff('Clothing',fd.guestClothing,'guestClothing'); h+=ff('Distinguishing Features',fd.guestFeatures,'guestFeatures');
-    // Guest photo thumbnails
-    if(fd.guestPhotoDataUrls && fd.guestPhotoDataUrls.length > 0){
-      h+=`<div class="report-photo-label">📷 Guest / Subject Photos</div><div class="report-photo-grid">`;
-      fd.guestPhotoDataUrls.forEach(url=>{ h+=`<img class="report-photo-thumb" src="${url}" onclick="window.open('${url}','_blank')" title="Click to enlarge"/>`; });
-      h+=`</div>`;
-    } else {
-      h+=ff('Guest Photos',fd.guestPhotos||'None');
+    function renderPersonCard(p){
+      let ph = `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fff;">`;
+      ph += `<div style="font-weight:700;font-size:14px;color:var(--safe-navy);margin-bottom:4px;">${escapeHtml(p.name)} <span style="font-weight:500;color:var(--text-muted);font-size:12px;">— ${escapeHtml(p.roleCategory)}</span></div>`;
+      if(p.role) ph += ff('Role / Position', p.role);
+      if(p.seatLocation) ph += ff('Seat Location', p.seatLocation);
+      if(p.gender) ph += ff('Gender', p.gender);
+      if(p.ageRange) ph += ff('Age Range', p.ageRange);
+      if(p.height) ph += ff('Height', p.height);
+      if(p.build) ph += ff('Build', p.build);
+      if(p.hairColor) ph += ff('Hair Color', p.hairColor);
+      if(p.hairStyle) ph += ff('Hair Style', p.hairStyle);
+      if(p.clothing) ph += ff('Clothing', p.clothing);
+      if(p.features) ph += ff('Distinguishing Features', p.features);
+      if(p.statement) ph += ff('Statement', p.statement);
+      if(p.photoDataUrls && p.photoDataUrls.length > 0){
+        ph += `<div class="report-photo-label">📷 Photos</div><div class="report-photo-grid">`;
+        p.photoDataUrls.forEach(url=>{ ph += `<img class="report-photo-thumb" src="${url}" onclick="window.open('${url}','_blank')" title="Click to enlarge"/>`; });
+        ph += `</div>`;
+      }
+      ph += `</div>`;
+      return ph;
     }
+
+    const cardSubjects = getSubjectPeople();
+    const cardWitnesses = getWitnessPeople();
+
+    h+=`<div class="form-section-title">Subjects / Involved Parties</div>`;
+    if(cardSubjects.length > 0){ cardSubjects.forEach(p => { h += renderPersonCard(p); }); }
+    else { h += `<div class="form-field"><span class="unknown">No subjects recorded</span></div>`; }
+
     h+=`<div class="form-section-title">Incident Narrative</div>`;
     if(fd.professionalNarrative){
       h+=`<div class="form-field"><label>Professional Narrative</label><span class="editable-value">${fd.professionalNarrative}</span><textarea class="field-value-edit editable-input" data-key="professionalNarrative" style="display:none">${fd.professionalNarrative}</textarea></div>`;
     }
     // Incident Breakdown — Facts vs. Conclusions
     {
+      const breakdownStatement = cardSubjects[0] && cardSubjects[0].statement ? cardSubjects[0].statement : 'No statement provided';
       const outcomeText = fd.followUp && fd.followUp.startsWith('No')
         ? 'The incident concluded without further enforcement action.'
         : (fd.followUpDetails || 'Follow-up action was required; see Follow-Up section below.');
       h+=`<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--safe-navy);margin:10px 0 4px;">Incident Breakdown</div>`;
       h+=`<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:10px;">`;
-      const rows = [['Observed', fd.incidentDescription||'Not provided'],['Statement', fd.guestStatement||'No statement provided'],['Officer Action', fd.actionTaken||'Not provided'],['Outcome', outcomeText]];
+      const rows = [['Observed', fd.incidentDescription||'Not provided'],['Statement', breakdownStatement],['Officer Action', fd.actionTaken||'Not provided'],['Outcome', outcomeText]];
       rows.forEach(([label,val],i)=>{
         h+=`<div style="display:grid;grid-template-columns:110px 1fr;${i<rows.length-1?'border-bottom:1px solid var(--border);':''}">`;
         h+=`<div style="background:var(--light-bg);padding:8px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--safe-navy);">${label}</div>`;
@@ -3268,9 +3588,11 @@ function buildFormHTML(isIncident,supName,empName){
     } else {
       h+=ff('Scene Photos',fd.scenePhotos||'None');
     }
-    h+=ff('Guest Account of Incident',fd.guestStatement,'guestStatement');
-    h+=ff('Guest Statement Detail',fd.guestStatementDetail,'guestStatementDetail');
-    h+=ff('Witnesses',fd.witnesses,'witnesses');
+
+    h+=`<div class="form-section-title">Witnesses</div>`;
+    if(cardWitnesses.length > 0){ cardWitnesses.forEach(p => { h += renderPersonCard(p); }); }
+    else { h += `<div class="form-field"><span class="unknown">No witnesses recorded</span></div>`; }
+
     h+=ff('Action Taken',fd.actionTaken,'actionTaken');
     h+=ff('EMS / Police Involvement',fd.emsPolice,'emsPolice');
     h+=ff('Guest Transported',fd.guestTransported);
@@ -3373,6 +3695,8 @@ async function resumeFlow(draft){
 
   // Restore state
   Object.assign(formData, draft.formData);
+  if(!formData.people) formData.people = [];
+  migrateLegacyGuestToPeople(); // upgrade any pre-people-array draft data
   incidentType = draft.incidentType;
   activeFlow = incidentType === 'incident' ? incidentFlow : (incidentType === 'recognition' ? recognitionFlow : baseFlow);
   flowIndex = draft.flowIndex || 0;
