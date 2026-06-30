@@ -645,7 +645,6 @@ const incidentFlow = [
 ];
 
 const recognitionFlow = [
-  {key:'supervisorLastName', ask:()=>`And your last name, ${formData.supervisorFirstName||''}?`},
   {key:'supervisorTitle', ask:"What is your title or role?"},
   {key:'supervisorEmail', ask:()=>savedEmail ? `What is your email address? We have <strong>${savedEmail}</strong> on file — tap to use it, or type a new one.` : 'What is your email address? A copy of this recognition will be sent to you automatically.', isEmail:true, savedEmailChip:true},
   {key:'employeeFirstName', ask:"What is the first name of the employee you are recognizing?"},
@@ -866,6 +865,7 @@ async function submitToSheets(isIncident) {
         guestHeight: fd.guestHeight || '',
         guestBuild: fd.guestBuild || '',
         guestHair: fd.guestHair || '',
+        guestHairStyle: fd.guestHairStyle || '',
         guestClothing: fd.guestClothing || '',
         guestFeatures: fd.guestFeatures || '',
         incidentDescription: fd.incidentDescription || '',
@@ -881,7 +881,8 @@ async function submitToSheets(isIncident) {
         employeeRole: fd.employeeRole || '',
         recognitionDescription: fd.recognitionDescription || '',
         recognitionImpact: fd.recognitionImpact || '',
-        additionalComments: fd.additionalComments || ''
+        additionalComments: fd.additionalComments || '',
+        professionalNarrative: fd.professionalNarrative || ''
       });
 
       // Image ping method — bypasses CORS completely
