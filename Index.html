@@ -553,6 +553,48 @@ formData.venue = "Ford Field, Detroit, Michigan"; // updated at runtime
 document.getElementById('timestampBar').textContent = `📍 Ford Field  ·  ${formData.date}  ·  ${formData.time}  ·  Auto-captured`;
 
 // Remember email
+// ── OFFLINE AUTOSAVE — protects against dropped connection or accidental close ──
+const DRAFT_KEY = 'safe_incident_draft';
+let autosaveTimer = null;
+
+function saveDraft(){
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(() => {
+    try {
+      const draft = {
+        formData: formData,
+        flowIndex: flowIndex,
+        incidentType: incidentType,
+        savedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+      flashAutosaveIndicator();
+    } catch(e) { console.error('Draft save failed:', e); }
+  }, 400); // debounce — avoid hammering localStorage on every keystroke
+}
+
+function loadDraft(){
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if(!raw) return null;
+    return JSON.parse(raw);
+  } catch(e) { return null; }
+}
+
+function clearDraft(){
+  localStorage.removeItem(DRAFT_KEY);
+}
+
+function formatDraftAge(savedAt){
+  const diffMs = Date.now() - new Date(savedAt).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if(mins < 1) return 'moments ago';
+  if(mins < 60) return `${mins} minute${mins!==1?'s':''} ago`;
+  const hrs = Math.floor(mins / 60);
+  if(hrs < 24) return `${hrs} hour${hrs!==1?'s':''} ago`;
+  return new Date(savedAt).toLocaleDateString();
+}
+
 const savedEmail = localStorage.getItem('safe_supervisor_email') || '';
 
 // ── FLOWS ──────────────────────────────────────────────────────────────────
@@ -629,6 +671,18 @@ function updateProgress(){
   if(fill) fill.style.width = Math.min(pct, 100) + '%';
   if(pctEl) pctEl.textContent = Math.min(pct, 100) + '%';
   if(wrap) wrap.style.display = 'flex';
+}
+
+function flashAutosaveIndicator(){
+  const label = document.querySelector('.progress-label');
+  if(!label) return;
+  const original = label.textContent;
+  label.textContent = '💾 Saved';
+  label.style.color = '#10b981';
+  setTimeout(() => {
+    label.textContent = original;
+    label.style.color = '';
+  }, 1200);
 }
 
 function scrollBottom(){setTimeout(()=>chatWindow.scrollTop=chatWindow.scrollHeight,80);}
@@ -1800,6 +1854,7 @@ async function askNextQuestion(){
     break;
   }
   updateProgress();
+  saveDraft();
   if(flowIndex>=activeFlow.length){await showFinalForm();return;}
   const step=activeFlow[flowIndex];
   showTyping(); await delay(800); removeTyping();
@@ -2608,6 +2663,7 @@ Return ONLY the narrative text. No preamble, no labels, no markdown.`;
         sendViaMailto(isIncident);
         finalStatusDiv.className='email-status sent';
         finalStatusDiv.textContent='✅ Report saved and email opened — tap Send in your mail app to notify HR.';
+        clearDraft(); // Report submitted — no longer need the offline draft
       };
       scrollBottom();
       addBubble('✅ Report signed and locked. Download your copy or submit to HR below.','ai');
@@ -3111,6 +3167,34 @@ userInput.addEventListener('input',function(){this.style.height='auto';this.styl
 function getTimeOfDay(){const h=new Date().getHours();return h<12?'morning':h<17?'afternoon':'evening';}
 
 function init(){
+  const draft = loadDraft();
+
+  if(draft && draft.formData && Object.keys(draft.formData).length > 2){
+    // Found a saved in-progress report — offer to resume
+    const resumeCard=document.createElement('div'); resumeCard.className='welcome-card';
+    resumeCard.style.borderLeftColor = 'var(--safe-red)';
+    const ageText = formatDraftAge(draft.savedAt);
+    const reportLabel = draft.incidentType === 'recognition' ? 'Employee Recognition' : 'Incident Report';
+    resumeCard.innerHTML=`
+      <h2>📋 Unfinished Report Found</h2>
+      <p>You have an in-progress <strong>${reportLabel}</strong> saved from <strong>${ageText}</strong>. This was saved automatically so you wouldn't lose your work if your connection dropped.<br><br>
+      Would you like to resume where you left off, or start a new report?</p>
+      <button class="start-btn" id="resumeBtn" style="margin-top:10px;">▶ Resume My Report</button>
+      <button class="voice-btn" id="discardBtn" style="margin-top:8px;">🗑️ Discard & Start New</button>`;
+    chatWindow.appendChild(resumeCard);
+
+    document.getElementById('resumeBtn').onclick = () => {
+      resumeCard.remove();
+      resumeFlow(draft);
+    };
+    document.getElementById('discardBtn').onclick = () => {
+      clearDraft();
+      resumeCard.remove();
+      init();
+    };
+    return;
+  }
+
   const card=document.createElement('div'); card.className='welcome-card';
   card.innerHTML=`
     <h2>S.A.F.E. Incident Reporting</h2>
@@ -3126,6 +3210,29 @@ function init(){
     hint.textContent=`Email on file: ${savedEmail}`;
     chatWindow.appendChild(hint);
   }
+}
+
+// ── RESUME FLOW — restores state from a saved draft and continues the conversation ──
+async function resumeFlow(draft){
+  chatWindow.innerHTML='';
+  showVoiceFloat();
+
+  // Restore state
+  Object.assign(formData, draft.formData);
+  incidentType = draft.incidentType;
+  activeFlow = incidentType === 'incident' ? incidentFlow : (incidentType === 'recognition' ? recognitionFlow : baseFlow);
+  flowIndex = draft.flowIndex || 0;
+
+  // If we never made it past the base flow (no formType chosen yet), restart from base flow
+  if(!incidentType){
+    activeFlow = baseFlow;
+    flowIndex = Math.min(flowIndex, baseFlow.length);
+  }
+
+  showTyping(); await delay(700); removeTyping();
+  addBubble(`Welcome back${formData.supervisorFirstName?', '+formData.supervisorFirstName:''}. Picking up right where you left off.`,'ai');
+  await delay(400);
+  await askNextQuestion();
 }
 
 // ── CALENDAR & TIME PICKER ─────────────────────────────────────────────────
