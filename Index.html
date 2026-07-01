@@ -1042,7 +1042,7 @@ RULES:
 - Do NOT add accomplishments, leadership qualities, or initiative the supervisor did not describe.
 
 BAD (replaces observation): "She demonstrated exceptional leadership and work ethic."
-GOOD (answers what + how from supervisor's words): "${recognitionEmployeeName} consistently volunteered to relocate between sections as needed, doing so without complaint and with a positive attitude."\`;
+GOOD (answers what + how from supervisor's words): "${recognitionEmployeeName} consistently volunteered to relocate between sections as needed, doing so without complaint and with a positive attitude."`;
     } else if(fieldKey === 'recognitionImpact'){
       fieldInstruction = `This is an EMPLOYEE RECOGNITION impact statement for ${recognitionEmployeeName}.
 
@@ -1056,7 +1056,7 @@ RULES:
 - PRESERVE every specific observation — do not swap them for generic conclusions.
 - Do NOT add accomplishments, awards, or initiative the supervisor did not describe.
 - Only state that something benefited operations or guests if the supervisor clearly implied it.
-- If the supervisor provided general chip selections, rewrite them without inventing supporting details.\`;
+- If the supervisor provided general chip selections, rewrite them without inventing supporting details.`;
     } else {
       fieldInstruction = `Rewrite in AP Style past tense. Third person only. If referring to the person involved, use "the ${subjectTerm}".`;
     }
@@ -1079,7 +1079,7 @@ CRITICAL RULES:
 - "Always volunteered to move sections without complaint" is a specific observation. "Demonstrated exceptional work ethic" is generic praise. Keep the specific observation.
 - Do NOT add accomplishments, leadership qualities, initiative, or awards the supervisor did not describe.
 - You may improve grammar, word choice, and sentence structure — but all facts must come from the supervisor's input.
-- Return ONLY the rewritten text. No preamble.\`;
+- Return ONLY the rewritten text. No preamble.`;
     } else if(isEmployeeCase){
       systemPrompt = fieldType === 'description'
         ? `You are a professional security report writer for S.A.F.E. Management. Rewrite incident descriptions in AP Style, third person past tense. Never use I, we, she, he, they. This is an EMPLOYEE MISCONDUCT report — refer to the person involved as "the employee", never "subject". Return ONLY the rewritten text.`
