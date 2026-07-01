@@ -98,6 +98,71 @@
 
   .input-area{background:#fff;border-top:1px solid var(--border);padding:10px 14px;display:flex;gap:8px;align-items:flex-end;flex-shrink:0;}
   .input-area textarea{flex:1;border:2px solid var(--border);border-radius:12px;padding:10px 13px;font-family:'Inter',sans-serif;font-size:15px;resize:none;min-height:44px;max-height:110px;outline:none;transition:border-color .2s;line-height:1.5;}
+
+  /* ── INCIDENT RECORDING PANEL ── */
+  #incidentRecordingPanel{
+    background:#fff;border-top:3px solid var(--safe-red);border-bottom:1px solid var(--border);
+    padding:14px 16px;flex-shrink:0;display:none;
+  }
+  .irp-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+  .irp-title{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:800;
+    letter-spacing:.12em;text-transform:uppercase;color:var(--safe-navy);}
+  .irp-status-row{display:flex;align-items:center;gap:8px;margin-bottom:12px;min-height:22px;}
+  .irp-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;transition:background .3s;}
+  .irp-status{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;
+    letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);}
+  .irp-timer{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;
+    color:var(--text-main);min-width:44px;font-family:'Inter',sans-serif;}
+  .irp-segs{font-size:11px;color:var(--text-muted);}
+  .irp-subtext{font-size:12px;color:var(--text-muted);line-height:1.5;margin-bottom:12px;}
+  .irp-buttons{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+
+  /* Record button — large, red, clearly clickable */
+  .irp-btn-record{
+    background:var(--safe-red);color:#fff;
+    border:2px solid rgba(255,255,255,.25);
+    border-radius:8px;cursor:pointer;
+    font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:16px;
+    letter-spacing:.08em;text-transform:uppercase;
+    padding:14px 28px;min-height:52px;
+    box-shadow:0 3px 12px rgba(232,25,44,.45);
+    transition:background .15s,transform .1s,box-shadow .15s;
+    display:inline-flex;align-items:center;gap:8px;
+  }
+  .irp-btn-record:hover{background:#c41323;box-shadow:0 4px 18px rgba(232,25,44,.6);}
+  .irp-btn-record:active{transform:scale(.97);box-shadow:0 2px 8px rgba(232,25,44,.35);}
+
+  /* Secondary action buttons */
+  .irp-btn{
+    background:#f4f7fb;color:var(--safe-navy);
+    border:1.5px solid var(--border);border-radius:8px;cursor:pointer;
+    font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:14px;
+    letter-spacing:.06em;text-transform:uppercase;
+    padding:11px 20px;min-height:44px;
+    transition:background .15s,border-color .15s,transform .1s;
+    display:inline-flex;align-items:center;gap:6px;
+  }
+  .irp-btn:hover{background:#e8edf5;border-color:var(--safe-navy);}
+  .irp-btn:active{transform:scale(.97);}
+  .irp-btn-end{color:var(--safe-red);border-color:rgba(232,25,44,.3);}
+  .irp-btn-end:hover{background:rgba(232,25,44,.06);border-color:var(--safe-red);}
+
+  /* Finish & Build Report button */
+  .irp-btn-build{
+    background:#10b981;color:#fff;
+    border:2px solid rgba(255,255,255,.2);border-radius:8px;cursor:pointer;
+    font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:15px;
+    letter-spacing:.06em;text-transform:uppercase;
+    padding:13px 24px;min-height:48px;
+    box-shadow:0 3px 12px rgba(16,185,129,.4);
+    transition:background .15s,transform .1s;
+    display:inline-flex;align-items:center;gap:8px;
+  }
+  .irp-btn-build:hover{background:#0ea472;}
+  .irp-btn-build:active{transform:scale(.97);}
+
+  @keyframes irpPulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.4;transform:scale(.82);}}
+  .irp-dot.recording{animation:irpPulse 1.2s ease-in-out infinite;}
   .input-area textarea:focus{border-color:var(--safe-navy);}
   .input-area textarea::placeholder{color:var(--text-muted);}
   .send-btn{background:var(--safe-navy);border:none;border-radius:10px;width:44px;height:44px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .2s;}
@@ -301,7 +366,7 @@
     <div class="season-motto">Stronger Together</div>
   </div>
   <div class="header-right">
-    <div class="header-badge">Beta</div>
+    <div class="header-badge">Voice Capture</div>
   </div>
 </header>
 
@@ -339,6 +404,11 @@
 
 <div class="main">
   <div class="chat-window" id="chatWindow"></div>
+
+  <!-- INCIDENT RECORDING PANEL — injected content by mountRecordingControls() -->
+  <!-- Sits above the chat input so supervisors see it immediately -->
+  <div id="incidentRecordingPanel"></div>
+
   <div id="pickerPanel" style="background:#fff;border-top:2px solid var(--border);max-height:320px;overflow-y:auto;display:none;"></div>
   <div class="input-area" id="inputArea" style="display:none;">
     <button class="mic-btn" id="micBtn" onclick="toggleMic()" title="Tap to speak">
@@ -367,21 +437,98 @@ const ANTHROPIC_API_KEY = window.ANTHROPIC_API_KEY || ['sk-ant-api03-xa5WcCw','j
 // enableVoiceIncidentCapture = true  → Recording controls appear in the context banner.
 // enableVoiceIncidentCapture = false → Existing workflow is completely unchanged.
 // No production recording logic is wired. This is the UI shell and state scaffold only.
-const enableVoiceIncidentCapture = false;
+const enableVoiceIncidentCapture = true;
+const APP_VERSION = 'v1.3.0-voice-ui-test';
 
 // ── RECORDING SESSION STATE ───────────────────────────────────────────────────
+// ── RECORDING SESSION STATE ───────────────────────────────────────────────────
+// Tracks the full lifecycle of a voice-captured incident recording.
+// Audio is captured by MediaRecorder; transcript is accumulated live by
+// SpeechRecognition running in parallel. No external transcription service needed.
 const recordingSession = {
-  status:       'idle',   // 'idle'|'recording'|'paused'|'ended'|'processing'|'draftReady'
-  segments:     [],       // {segmentId, startedAt, endedAt, sequenceNumber}
-  startedAt:    null,
-  totalElapsed: 0,        // accumulated ms across completed segments
-  segmentStart: null,     // Date.now() when current segment began (null when not live)
-  timerInterval:null,
+  status:        'idle',  // 'idle'|'recording'|'paused'|'ended'|'processing'|'draftReady'|'error'
+  mediaRecorder: null,    // active MediaRecorder instance
+  speechRec:     null,    // active SpeechRecognition for live transcript
+  segments: [],           // [{segmentId, startedAt, endedAt, audioChunks[], transcriptParts[]}]
+  totalElapsed:  0,       // accumulated ms across completed segments
+  segmentStart:  null,    // Date.now() when current segment began
+  timerInterval: null,
+  combinedTranscript: '', // full accumulated transcript across all segments
+  extractedFields: null,  // AI extraction result
+  missingFields:  [],
+  unclearFields:  [],
+  draftId: null,          // IndexedDB key for this recording draft
 };
 
+// ── INDEXEDDB AUDIO STORAGE ───────────────────────────────────────────────────
+// localStorage can't hold binary audio blobs. IndexedDB can.
+const REC_DB_NAME  = 'safe_recordings';
+const REC_DB_VER   = 1;
+const REC_DB_STORE = 'drafts';
+let   recDB        = null;
+
+function openRecDB(){
+  return new Promise((resolve, reject) => {
+    if(recDB){ resolve(recDB); return; }
+    const req = indexedDB.open(REC_DB_NAME, REC_DB_VER);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains(REC_DB_STORE)){
+        db.createObjectStore(REC_DB_STORE, {keyPath:'draftId'});
+      }
+    };
+    req.onsuccess = e => { recDB = e.target.result; resolve(recDB); };
+    req.onerror   = e => { console.error('RecDB open failed:', e); reject(e); };
+  });
+}
+
+async function saveRecordingDraft(){
+  try {
+    const db = await openRecDB();
+    const draftId = recordingSession.draftId || ('rec_draft_' + Date.now());
+    recordingSession.draftId = draftId;
+
+    // Collect all audio chunks across all segments into one array
+    const allChunks = recordingSession.segments.flatMap(s => s.audioChunks || []);
+    const audioBlob = allChunks.length > 0 ? new Blob(allChunks, {type: allChunks[0].type || 'audio/webm'}) : null;
+
+    const draft = {
+      draftId,
+      savedAt:           new Date().toISOString(),
+      status:            recordingSession.status,
+      combinedTranscript:recordingSession.combinedTranscript,
+      totalElapsed:      recordingSession.totalElapsed + (recordingSession.segmentStart ? Date.now() - recordingSession.segmentStart : 0),
+      segmentCount:      recordingSession.segments.length,
+      audioBlob,         // stored in IndexedDB
+      formDataSnapshot:  JSON.parse(JSON.stringify(formData)), // text snapshot in IndexedDB
+    };
+
+    return new Promise((resolve, reject) => {
+      const tx  = db.transaction(REC_DB_STORE, 'readwrite');
+      const req = tx.objectStore(REC_DB_STORE).put(draft);
+      req.onsuccess = () => { console.log('Recording draft saved:', draftId); resolve(draftId); };
+      req.onerror   = e => { console.error('Draft save failed:', e); reject(e); };
+    });
+  } catch(e){ console.error('saveRecordingDraft error:', e); }
+}
+
+async function loadRecordingDraft(draftId){
+  try {
+    const db = await openRecDB();
+    return new Promise((resolve, reject) => {
+      const tx  = db.transaction(REC_DB_STORE, 'readonly');
+      const req = tx.objectStore(REC_DB_STORE).get(draftId);
+      req.onsuccess = e => resolve(e.target.result);
+      req.onerror   = e => reject(e);
+    });
+  } catch(e){ console.error('loadRecordingDraft error:', e); return null; }
+}
+
+// ── TIMER HELPERS ─────────────────────────────────────────────────────────────
 function recordingStatusLabel(s){
   return {idle:'Not Recording',recording:'Recording',paused:'Paused',
-          ended:'Ended',processing:'Processing\u2026',draftReady:'Draft Ready'}[s] || s;
+          ended:'Ended',processing:'Building Report\u2026',draftReady:'Draft Ready',
+          error:'Error — try again'}[s] || s;
 }
 function recordingElapsedMs(){
   if(recordingSession.status==='recording' && recordingSession.segmentStart)
@@ -401,118 +548,545 @@ function stopRecordingTimer(){
   if(recordingSession.timerInterval){ clearInterval(recordingSession.timerInterval); recordingSession.timerInterval=null; }
 }
 
-// State transitions
-function recordingStart(){
+// ── LIVE SPEECH RECOGNITION (parallel to MediaRecorder) ──────────────────────
+// Builds the transcript live as the supervisor speaks. This is the "transcription"
+// step — no external API needed because we capture text in real time.
+function startTranscriptCapture(segment){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR){ console.warn('SpeechRecognition not available — transcript will be empty'); return null; }
+
+  const sr = new SR();
+  sr.continuous     = true;
+  sr.interimResults = false;  // final results only for the recording transcript
+  sr.lang           = 'en-US';
+  sr.maxAlternatives= 1;
+
+  sr.onresult = (e) => {
+    for(let i = e.resultIndex; i < e.results.length; i++){
+      if(e.results[i].isFinal){
+        const text = e.results[i][0].transcript.trim();
+        if(text){
+          segment.transcriptParts.push(text);
+          recordingSession.combinedTranscript = recordingSession.segments
+            .flatMap(s => s.transcriptParts)
+            .join(' ');
+          updateTranscriptPreview();
+        }
+      }
+    }
+  };
+  sr.onerror = (e) => {
+    if(e.error === 'not-allowed'){
+      addBubble('Microphone permission was denied. Please allow microphone access and try again.','ai');
+      recordingEnd();
+    }
+    // Other errors (network, no-speech) are non-fatal; transcript may be incomplete
+    console.warn('Transcript capture error:', e.error);
+  };
+  sr.onend = () => {
+    // Auto-restart if still recording (SpeechRecognition stops on silence)
+    if(recordingSession.status === 'recording' && recordingSession.speechRec === sr){
+      try { sr.start(); } catch(e){ /* already started */ }
+    }
+  };
+
+  try { sr.start(); } catch(e){ console.warn('SR start failed:', e); return null; }
+  return sr;
+}
+
+function updateTranscriptPreview(){
+  const el = document.getElementById('recTranscriptPreview');
+  if(el && recordingSession.combinedTranscript){
+    const words = recordingSession.combinedTranscript.split(' ');
+    // Show last 30 words as a live preview
+    el.textContent = (words.length > 30 ? '\u2026' : '') + words.slice(-30).join(' ');
+  }
+}
+
+// ── STATE TRANSITIONS ─────────────────────────────────────────────────────────
+async function recordingStart(){
+  // Request microphone access first
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({audio:true, video:false});
+  } catch(e){
+    addBubble('Microphone access denied or unavailable. Please allow microphone permission and try again.','ai');
+    return;
+  }
+
   if(!recordingSession.startedAt) recordingSession.startedAt = new Date().toISOString();
   recordingSession.status       = 'recording';
   recordingSession.segmentStart = Date.now();
-  recordingSession.segments.push({
-    segmentId:      'seg_'+Date.now(),
-    startedAt:      new Date().toISOString(),
-    endedAt:        null,
-    sequenceNumber: recordingSession.segments.length+1,
-    transcript:     null,
-  });
+
+  const segment = {
+    segmentId:       'seg_'+Date.now(),
+    startedAt:       new Date().toISOString(),
+    endedAt:         null,
+    sequenceNumber:  recordingSession.segments.length + 1,
+    audioChunks:     [],
+    transcriptParts: [],
+  };
+  recordingSession.segments.push(segment);
+
+  // Start MediaRecorder (audio blob capture)
+  const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
+                 : MediaRecorder.isTypeSupported('audio/webm')             ? 'audio/webm'
+                 : MediaRecorder.isTypeSupported('audio/mp4')              ? 'audio/mp4'
+                 : '';
+  const mr = new MediaRecorder(stream, mimeType ? {mimeType} : {});
+  mr.ondataavailable = e => { if(e.data && e.data.size > 0) segment.audioChunks.push(e.data); };
+  mr.onstop = () => { stream.getTracks().forEach(t => t.stop()); };
+  mr.start(1000); // collect chunks every 1s
+  recordingSession.mediaRecorder = mr;
+
+  // Start live transcript capture (parallel stream)
+  recordingSession.speechRec = startTranscriptCapture(segment);
+
   startRecordingTimer();
   updateRecordingUI();
-  if(typeof setField==='function') setField('_recSegStart',recordingSession.segments[recordingSession.segments.length-1].segmentId,'system',1.0);
+  if(typeof setField==='function') setField('_recSegStart', segment.segmentId, 'system', 1.0);
 }
+
 function recordingPause(){
-  if(recordingSession.status!=='recording') return;
-  recordingSession.totalElapsed += Date.now() - (recordingSession.segmentStart||Date.now());
+  if(recordingSession.status !== 'recording') return;
+
+  // Stop the MediaRecorder (triggers ondataavailable one final time)
+  if(recordingSession.mediaRecorder && recordingSession.mediaRecorder.state !== 'inactive'){
+    recordingSession.mediaRecorder.stop();
+    recordingSession.mediaRecorder = null;
+  }
+  // Stop the transcript capture
+  if(recordingSession.speechRec){
+    try { recordingSession.speechRec.stop(); } catch(e){}
+    recordingSession.speechRec = null;
+  }
+
+  // Accumulate elapsed time
+  recordingSession.totalElapsed += Date.now() - (recordingSession.segmentStart || Date.now());
   recordingSession.segmentStart  = null;
   recordingSession.status        = 'paused';
+
   const last = recordingSession.segments[recordingSession.segments.length-1];
   if(last) last.endedAt = new Date().toISOString();
-  stopRecordingTimer(); updateRecordingUI();
+
+  stopRecordingTimer();
+  updateRecordingUI();
+
+  // Auto-save draft on every pause
+  saveRecordingDraft().catch(e => console.warn('Draft save failed on pause:', e));
 }
-function recordingResume(){ if(recordingSession.status==='paused') recordingStart(); }
+
+function recordingResume(){
+  if(recordingSession.status === 'paused') recordingStart();
+}
+
 function recordingEnd(){
-  if(recordingSession.status==='recording') recordingPause();
-  recordingSession.status = 'ended';
-  stopRecordingTimer(); updateRecordingUI();
+  if(recordingSession.status === 'recording') recordingPause();
+  else {
+    // Already paused — just finalize
+    recordingSession.status = 'ended';
+    stopRecordingTimer();
+    updateRecordingUI();
+  }
+  // Transition to ended if we came through pause
+  if(recordingSession.status === 'paused'){
+    recordingSession.status = 'ended';
+    updateRecordingUI();
+  }
+  saveRecordingDraft().catch(e => console.warn('Draft save failed on end:', e));
 }
-function recordingGenerateDraft(){
-  recordingSession.status = 'processing'; updateRecordingUI();
-  setTimeout(()=>{ recordingSession.status='draftReady'; updateRecordingUI(); }, 2000);
+
+// ── AI FIELD EXTRACTION ───────────────────────────────────────────────────────
+async function extractFieldsFromTranscript(transcript){
+  const INCIDENT_FIELDS = [
+    'supervisorFirstName','supervisorLastName','supervisorTitle',
+    'incidentDate','incidentTime','incidentLocation','incidentCategory',
+    'incidentSeverity','incidentDescription','actionTaken',
+    'emsPolice','followUp','followUpDetails','recommendation',
+    'cameraCapture','safeOpsContacted','people',
+    'eventName','guestStatement','additionalComments',
+  ];
+
+  const systemPrompt = `You are an incident report data extraction specialist for S.A.F.E. Management at Ford Field, Detroit.
+Extract structured fields from a supervisor's spoken incident recording transcript.
+
+CRITICAL RULES:
+- Only extract information explicitly stated in the transcript.
+- If a field is clearly stated → set it with confidence 1.0
+- If a field is suggested but uncertain → set it with confidence 0.5 and mark it "unclear"
+- If a field is not mentioned → do not include it (it will be marked "missing")
+- NEVER invent names, badge numbers, injuries, EMS, police, witnesses, or ejection details
+- NEVER guess dates or times unless explicitly stated
+- For people: extract name, role/category (Subject/Witness/Employee/etc), description if given
+
+Return ONLY valid JSON with this structure:
+{
+  "fields": {
+    "incidentDescription": {"value": "...", "confidence": 0.9},
+    "incidentLocation": {"value": "Section 131, Row 7", "confidence": 1.0},
+    "actionTaken": {"value": "...", "confidence": 0.85}
+  },
+  "people": [
+    {"firstName": "...", "lastName": "...", "roleCategory": "Subject", "description": "...", "confidence": 0.9}
+  ],
+  "missingFields": ["incidentSeverity", "emsPolice", "followUp"],
+  "unclearFields": [{"field": "incidentCategory", "reason": "supervisor said vaping but category unclear", "suggestion": "Prohibited Item / Vaping"}],
+  "draftNarrative": "AP Style narrative paragraph based only on what was stated",
+  "suggestedFollowUp": [
+    {"field": "incidentSeverity", "question": "How would you rate the severity of this incident?"},
+    {"field": "emsPolice", "question": "Were EMS or police involved or notified?"}
+  ]
+}`;
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2000,
+      system: systemPrompt,
+      messages: [{
+        role: 'user',
+        content: `Extract incident report fields from this supervisor recording transcript:\n\n${transcript}\n\nReturn only JSON.`
+      }]
+    })
+  });
+
+  const data = await response.json();
+  if(!data.content || !data.content[0]) throw new Error('No response from AI');
+
+  let text = data.content[0].text.trim();
+  // Strip any markdown fences
+  text = text.replace(/^```(?:json)?\n?/,'').replace(/\n?```$/,'');
+  return JSON.parse(text);
+}
+
+// ── APPLY EXTRACTED FIELDS TO formData ────────────────────────────────────────
+function applyExtractedFields(extracted){
+  const {fields={}, people=[], draftNarrative} = extracted;
+
+  // Apply flat fields
+  const SAFE_FIELDS = new Set([
+    'incidentDescription','incidentLocation','incidentCategory','incidentSeverity',
+    'actionTaken','emsPolice','followUp','followUpDetails','recommendation',
+    'cameraCapture','safeOpsContacted','guestStatement','additionalComments',
+    'eventName','incidentDate','incidentTime',
+  ]);
+  Object.entries(fields).forEach(([key, {value, confidence}]) => {
+    if(SAFE_FIELDS.has(key) && value){
+      setField(key, value, 'ai_confirmed', confidence || 0.8);
+    }
+  });
+
+  // Apply supervisor name if extracted (only if not already set by the flow)
+  if(fields.supervisorFirstName && !formData.supervisorFirstName){
+    setField('supervisorFirstName', fields.supervisorFirstName.value, 'ai_confirmed', 0.7);
+  }
+
+  // Apply people using the existing person model and name parser
+  if(people && people.length > 0){
+    people.forEach(extracted_p => {
+      const p = newPerson();
+      // Use the shared name parser
+      if(extracted_p.firstName || extracted_p.lastName){
+        const raw = `${extracted_p.firstName||''} ${extracted_p.lastName||''}`.trim();
+        const parsed = parseNameTokens(raw);
+        if(parsed && parsed.lastName){
+          p.firstName     = toProperCase(parsed.firstName);
+          p.middleName    = parsed.middleName ? toProperCase(parsed.middleName) : '';
+          p.middleInitial = parsed.middleInitial || '';
+          p.lastName      = toProperCase(parsed.lastName);
+          p.suffix        = parsed.suffix || '';
+        } else {
+          p.firstName = toProperCase(extracted_p.firstName || raw);
+          p.lastName  = toProperCase(extracted_p.lastName  || '');
+        }
+      }
+      syncPersonName(p);
+      p.roleCategory = extracted_p.roleCategory || 'Subject';
+      p.role         = extracted_p.role || '';
+      // Only add if not a duplicate (use existing ambiguity detection)
+      const existing = formData.people.find(ep =>
+        (ep.displayName||ep.name).toLowerCase() === p.displayName.toLowerCase() &&
+        p.displayName.toLowerCase() !== 'unknown'
+      );
+      if(!existing) formData.people.push(p);
+    });
+  }
+
+  // Apply draft narrative
+  if(draftNarrative){
+    setField('professionalNarrative', draftNarrative, 'ai_draft', 0.7);
+  }
+
+  // Set incidentType so the rest of the flow knows what kind of report this is
+  if(!incidentType) incidentType = 'incident';
+  if(!activeFlow || activeFlow !== incidentFlow) activeFlow = incidentFlow;
+}
+
+// ── RESUME FLOW FOR MISSING/UNCLEAR FIELDS ────────────────────────────────────
+// After AI extraction, only ask follow-up questions for fields that are
+// missing or unclear. Skip everything already filled by the recording.
+async function resumeFlowForMissingFields(suggestedFollowUp, unclearFields){
+  const toAsk = [...(suggestedFollowUp||[]), ...(unclearFields||[]).map(u => ({
+    field: u.field,
+    question: u.suggestion
+      ? `I wasn't sure about ${u.field.replace(/([A-Z])/g,' $1').toLowerCase()}: ${u.reason}. Is it "${u.suggestion}"?`
+      : `Could you clarify: ${u.reason}?`
+  }))];
+
+  for(const item of toAsk){
+    // Skip if the field was already filled by the form flow or is in formData
+    if(formData[item.field] && formData[item.field] !== '' && formData[item.field] !== 'Unknown / Not Available') continue;
+
+    showTyping(); await delay(600); removeTyping();
+    addBubble(item.question || `What is the ${item.field.replace(/([A-Z])/g,' $1').toLowerCase()}?`,'ai');
+    inputArea.style.display='flex'; awaitingInput=true;
+    document.getElementById('inputHint').style.display='block';
+
+    const answer = await new Promise(resolve => {
+      sendInterceptor = async(val) => {
+        inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
+        resolve(val.trim());
+      };
+    });
+    addBubble(answer,'user');
+    if(answer && answer.toLowerCase() !== 'skip'){
+      setFieldSupervisor(item.field, answer);
+    }
+  }
+}
+
+// ── MAIN RECORDING → DRAFT PIPELINE ──────────────────────────────────────────
+async function recordingGenerateDraft(){
+  if(recordingSession.status !== 'ended') return;
+
+  recordingSession.status = 'processing';
+  updateRecordingUI();
+
+  const transcript = recordingSession.combinedTranscript.trim();
+
+  // Show the transcript so supervisor can see what was captured
+  chatWindow.innerHTML = '';
+  showVoiceFloat();
+
+  addBubble(`<strong>Recording Complete</strong><br>
+    ${recordingSession.segments.length} segment${recordingSession.segments.length!==1?'s':''} · ${formatElapsed(recordingSession.totalElapsed)} recorded`, 'ai');
+
+  if(transcript){
+    addBubble(`<strong>Transcript captured (${transcript.split(' ').length} words):</strong><br>
+      <div style="font-size:12px;color:var(--text-muted);max-height:120px;overflow-y:auto;margin-top:6px;line-height:1.6;border-left:3px solid var(--safe-navy);padding-left:8px;">${escapeHtml(transcript)}</div>`, 'ai');
+  } else {
+    addBubble(`No transcript was captured. This may happen if microphone permission was denied or speech recognition wasn't available.<br>
+      <strong>We'll ask you all the questions manually.</strong>`, 'ai');
+  }
+
+  showTyping();
+  addBubble('Extracting incident details from your recording…', 'ai');
+
+  try {
+    let extracted = null;
+
+    if(transcript){
+      extracted = await extractFieldsFromTranscript(transcript);
+      removeTyping();
+      applyExtractedFields(extracted);
+
+      // Show what was auto-filled
+      const filledCount = Object.keys(extracted.fields||{}).length + (extracted.people||[]).length;
+      addBubble(`<strong>✅ ${filledCount} field${filledCount!==1?'s':''} auto-filled from your recording.</strong><br>
+        ${extracted.missingFields?.length ? `<span style="color:var(--safe-red);">${extracted.missingFields.length} fields need follow-up questions.</span>` : 'All key fields were captured.'}`, 'ai');
+
+      // Show draft narrative if generated
+      if(extracted.draftNarrative){
+        addBubble(`<strong>Draft Narrative:</strong><br><em>"${escapeHtml(extracted.draftNarrative)}"</em><br><br>
+          You can refine this at the review stage.`, 'ai');
+      }
+    } else {
+      removeTyping();
+      extracted = { fields:{}, people:[], missingFields:[], unclearFields:[], suggestedFollowUp:[] };
+    }
+
+    // Set flow context so the review and submission flow works
+    incidentType = 'incident';
+    activeFlow   = incidentFlow;
+
+    // Answer missing/unclear fields conversationally
+    if(extracted.suggestedFollowUp?.length || extracted.unclearFields?.length){
+      addBubble('Let me ask a few quick follow-up questions for the missing details.','ai');
+      await delay(400);
+      await resumeFlowForMissingFields(extracted.suggestedFollowUp, extracted.unclearFields);
+    }
+
+    // Set supervisor name if not already in formData (required for the report)
+    if(!formData.supervisorFirstName){
+      showTyping(); await delay(400); removeTyping();
+      addBubble("One more thing — what's your first name?", 'ai');
+      inputArea.style.display='flex'; awaitingInput=true;
+      const fn = await new Promise(resolve => {
+        sendInterceptor = async(v) => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(v.trim()); };
+      });
+      addBubble(fn,'user');
+      setFieldSupervisor('supervisorFirstName', fn);
+    }
+
+    // Transition to draft ready — show the standard final form
+    recordingSession.status = 'draftReady';
+    updateRecordingUI();
+
+    addBubble('Your draft report is ready. Review it below, then sign and submit.','ai');
+    await delay(500);
+
+    // Hand off to the existing showFinalForm which handles PDF, Sheets, preview, signature
+    await showFinalForm();
+
+  } catch(e){
+    removeTyping();
+    recordingSession.status = 'error';
+    updateRecordingUI();
+    console.error('Recording pipeline error:', e);
+    addBubble(`Something went wrong building your report: ${escapeHtml(e.message||String(e))}<br><br>
+      Your transcript has been saved. You can complete the report manually using the standard workflow.`, 'ai');
+    // Fall back to manual flow
+    incidentType = 'incident';
+    activeFlow   = incidentFlow;
+    flowIndex    = 0;
+    await delay(600);
+    await askNextQuestion();
+  }
 }
 
 // ── RECORDING UI RENDERER ─────────────────────────────────────────────────────
 function updateRecordingUI(){
-  const bar = document.getElementById('recordingControlBar');
-  if(!bar) return;
-  const st = recordingSession.status;
-  const elapsed = recordingElapsedMs();
+  const panel = document.getElementById('incidentRecordingPanel');
+  if(!panel || !panel._mounted) return;
+
+  const st       = recordingSession.status;
+  const elapsed  = recordingElapsedMs();
   const segCount = recordingSession.segments.length;
 
-  const dot = document.getElementById('recStatusDot');
-  if(dot){
-    dot.style.background = {recording:'var(--safe-red)',paused:'#f59e0b',processing:'#3b82f6',draftReady:'#10b981'}[st]||'rgba(200,205,212,0.3)';
-    dot.style.animation  = st==='recording' ? 'recPulse 1.2s ease-in-out infinite' : 'none';
-  }
-  const setText = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
-  setText('recStatusText', recordingStatusLabel(st));
-  setText('recTimer', st==='idle'?'--:--':formatElapsed(elapsed));
-  setText('recSegCount', segCount>0?`${segCount} seg${segCount!==1?'s':''}`:'');
+  // Show the panel when the flag is on — always visible so the supervisor
+  // sees it immediately. It hides itself after recording ends and the draft
+  // pipeline hands off to showFinalForm().
+  const visible = enableVoiceIncidentCapture && st !== 'draftReady';
+  panel.style.display = visible ? 'block' : 'none';
 
-  const show=(id,v)=>{ const el=document.getElementById(id); if(el) el.style.display=v?'inline-flex':'none'; };
-  show('recBtnStart',    st==='idle');
-  show('recBtnPause',    st==='recording');
-  show('recBtnResume',   st==='paused');
-  show('recBtnEnd',      st==='recording'||st==='paused');
-  show('recBtnGenerate', st==='ended');
+  // Status dot
+  const dot = document.getElementById('irpDot');
+  if(dot){
+    const colors = {recording:'var(--safe-red)',paused:'#f59e0b',
+                    processing:'#3b82f6',draftReady:'#10b981',error:'#ef4444'};
+    dot.style.background = colors[st] || 'var(--border)';
+    dot.className = 'irp-dot' + (st === 'recording' ? ' recording' : '');
+  }
+
+  const setText = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+  const statLabels = {idle:'Ready to record',recording:'Recording\u2026',paused:'Paused',
+                      ended:'Recording complete',processing:'Building report\u2026',
+                      draftReady:'Draft ready',error:'Error — tap Record to retry'};
+  setText('irpStatus', statLabels[st] || st);
+  setText('irpTimer',  st==='idle' ? '' : formatElapsed(elapsed));
+  setText('irpSegs',   segCount > 0 ? `${segCount} segment${segCount!==1?'s':''}` : '');
+
+  // Subtext
+  const sub = document.getElementById('irpSubtext');
+  if(sub){
+    sub.textContent = st === 'idle'
+      ? 'Record the incident in your own words. Pause and resume as needed. AI will build a draft report when finished.'
+      : st === 'recording' ? 'Speak clearly. Tap Pause to take a break, or End Recording when done.'
+      : st === 'paused'    ? 'Recording paused. Tap Resume to continue or End Recording when done.'
+      : st === 'ended'     ? `${segCount} segment${segCount!==1?'s':''} recorded · ${formatElapsed(recordingSession.totalElapsed)} total`
+      : st === 'processing'? 'Extracting incident details from your recording\u2026'
+      : st === 'draftReady'? 'Your draft report is ready to review.'
+      : '';
+  }
+
+  // Button visibility
+  const show = (id,v) => { const el=document.getElementById(id); if(el) el.style.display=v?'inline-flex':'none'; };
+  show('irpBtnStart',    st==='idle'||st==='error');
+  show('irpBtnPause',    st==='recording');
+  show('irpBtnResume',   st==='paused');
+  show('irpBtnEnd',      st==='recording'||st==='paused');
+  show('irpBtnGenerate', st==='ended');
+
+  // Also keep the banner dot in sync (compact status only — no buttons there now)
+  const bannerDot = document.getElementById('recStatusDot');
+  if(bannerDot){
+    bannerDot.style.background = (document.getElementById('irpDot')||{}).style.background || 'rgba(200,205,212,.3)';
+  }
+  const setText2 = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+  setText2('recStatusText', st === 'idle' ? 'Not Recording' : statLabels[st] || st);
+  setText2('recTimer',      st === 'idle' ? '--:--' : formatElapsed(elapsed));
+  setText2('recSegCount',   segCount > 0 ? `${segCount} seg${segCount!==1?'s':''}` : '');
 }
 
-// ── MOUNT RECORDING CONTROLS INTO CONTEXT BANNER ─────────────────────────────
-// Inserts the recording control strip as the center column of the context banner.
-// Only called when enableVoiceIncidentCapture === true.
+// ── MOUNT INCIDENT RECORDING PANEL (inside .main, above the input area) ──────
+// Places the full recording panel in the white work area where the supervisor
+// is already looking — not hidden in the top banner.
 function mountRecordingControls(){
   if(!enableVoiceIncidentCapture) return;
-  const banner = document.getElementById('contextBanner');
-  if(!banner) return;
 
-  const ctrl = document.createElement('div');
-  ctrl.id = 'recordingControlBar';
-  ctrl.style.cssText = 'display:none;align-items:center;gap:8px;flex-shrink:0;';
+  // ── 1. Populate the in-work-area panel ─────────────────────────────────────
+  const panel = document.getElementById('incidentRecordingPanel');
+  if(!panel) return;
 
-  ctrl.innerHTML = `
-    <style>
-      @keyframes recPulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.35;transform:scale(.82);}}
-      .rec-btn{display:inline-flex;align-items:center;gap:5px;border:none;border-radius:6px;
-        cursor:pointer;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:12px;
-        letter-spacing:.06em;text-transform:uppercase;padding:7px 13px;white-space:nowrap;
-        transition:opacity .15s,transform .1s;line-height:1;}
-      .rec-btn:active{transform:scale(.95);}
-      .rec-btn-primary{background:var(--safe-red);color:#fff;border:2px solid rgba(255,255,255,.32);
-        font-size:13px;padding:8px 16px;box-shadow:0 2px 10px rgba(232,25,44,.5);}
-      .rec-btn-secondary{background:rgba(255,255,255,.1);color:#fff;border:1.5px solid rgba(255,255,255,.25);}
-      .rec-btn-end{background:rgba(26,46,74,.55);color:rgba(255,255,255,.7);border:1.5px solid rgba(255,255,255,.18);}
-      .rec-btn-generate{background:#10b981;color:#fff;border:2px solid rgba(255,255,255,.32);
-        font-size:13px;padding:8px 16px;box-shadow:0 2px 10px rgba(16,185,129,.45);}
-      #recStatusDot{width:7px;height:7px;border-radius:50%;flex-shrink:0;transition:background .3s;}
-    </style>
-    <div style="display:flex;align-items:center;gap:5px;font-family:'Barlow Condensed',sans-serif;
-                font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.6);">
-      <div id="recStatusDot" style="background:rgba(200,205,212,.3);"></div>
-      <span id="recStatusText">Not Recording</span>
-      <span id="recTimer" style="color:rgba(255,255,255,.4);font-size:10px;min-width:32px;font-variant-numeric:tabular-nums;">--:--</span>
-      <span id="recSegCount" style="color:rgba(255,255,255,.3);font-size:9px;"></span>
+  panel.innerHTML = `
+    <div class="irp-header">
+      <span class="irp-title">Incident Recording</span>
     </div>
-    <button id="recBtnStart"    class="rec-btn rec-btn-primary"   onclick="recordingStart()"        title="Begin recording the incident">⏺ Record Incident</button>
-    <button id="recBtnPause"    class="rec-btn rec-btn-secondary" onclick="recordingPause()"        title="Pause recording"             style="display:none">⏸ Pause</button>
-    <button id="recBtnResume"   class="rec-btn rec-btn-secondary" onclick="recordingResume()"       title="Resume recording"            style="display:none">▶ Resume Recording</button>
-    <button id="recBtnEnd"      class="rec-btn rec-btn-end"       onclick="recordingEnd()"          title="End the recording session"   style="display:none">■ End Recording</button>
-    <button id="recBtnGenerate" class="rec-btn rec-btn-generate"  onclick="recordingGenerateDraft()" title="AI will generate a draft Incident Report from your recording" style="display:none">✦ Generate Draft Report</button>
+    <div class="irp-status-row">
+      <div class="irp-dot" id="irpDot" style="background:var(--border);"></div>
+      <span class="irp-status" id="irpStatus">Ready to record</span>
+      <span class="irp-timer" id="irpTimer"></span>
+      <span class="irp-segs"  id="irpSegs"></span>
+    </div>
+    <p class="irp-subtext" id="irpSubtext">Record the incident in your own words. Pause and resume as needed. AI will build a draft report when finished.</p>
+    <div class="irp-buttons">
+      <button id="irpBtnStart"
+              class="irp-btn-record"
+              onclick="recordingStart()"
+              title="Begin recording the incident">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" style="flex-shrink:0">
+          <circle cx="7" cy="7" r="7"/>
+        </svg>
+        Record Incident
+      </button>
+      <button id="irpBtnPause"    class="irp-btn"          onclick="recordingPause()"         title="Pause recording"              style="display:none">⏸ Pause</button>
+      <button id="irpBtnResume"   class="irp-btn"          onclick="recordingResume()"        title="Resume recording"             style="display:none">▶ Resume</button>
+      <button id="irpBtnEnd"      class="irp-btn irp-btn-end" onclick="recordingEnd()"        title="End the recording session"    style="display:none">■ End Recording</button>
+      <button id="irpBtnGenerate" class="irp-btn-build"    onclick="recordingGenerateDraft()" title="Build an Incident Report from your recording" style="display:none">🎤 Finish &amp; Build Report</button>
+    </div>
   `;
+  panel._mounted = true;
 
-  // Insert as the center child: [bannerText] → [ctrl] → [scrollBtn]
-  const bannerRow = banner.querySelector('div');
-  const scrollBtn = document.getElementById('contextScrollTopBtn');
-  if(bannerRow && scrollBtn) bannerRow.insertBefore(ctrl, scrollBtn);
-  else if(bannerRow) bannerRow.appendChild(ctrl);
+  // ── 2. Keep a compact status strip in the context banner (no buttons) ──────
+  // The banner just shows the current recording state as text. All controls
+  // are in the panel above the chat input where the supervisor can see them.
+  const banner = document.getElementById('contextBanner');
+  if(banner){
+    const ctrl = document.createElement('div');
+    ctrl.id = 'recordingControlBar';
+    ctrl.style.cssText = 'display:none;align-items:center;gap:6px;flex-shrink:0;';
+    ctrl.innerHTML = `
+      <div id="recStatusDot" style="width:7px;height:7px;border-radius:50%;background:rgba(200,205,212,.3);flex-shrink:0;"></div>
+      <span id="recStatusText" style="font-family:'Barlow Condensed',sans-serif;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.6);">Not Recording</span>
+      <span id="recTimer" style="font-size:10px;color:rgba(255,255,255,.4);min-width:32px;font-variant-numeric:tabular-nums;">--:--</span>
+      <span id="recSegCount" style="font-size:9px;color:rgba(255,255,255,.3);"></span>
+    `;
+    const bannerRow = banner.querySelector('div');
+    const scrollBtn = document.getElementById('contextScrollTopBtn');
+    if(bannerRow && scrollBtn) bannerRow.insertBefore(ctrl, scrollBtn);
+    else if(bannerRow) bannerRow.appendChild(ctrl);
+  }
 
   updateRecordingUI();
 }
+
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1293,12 +1867,14 @@ function updateContextBanner(ctx){
   banner.style.display = 'block';
   if(scrollBtn) scrollBtn.style.display = 'inline-block';
 
-  // Show/hide recording controls based on report type and feature flag
+  // Show the compact recording status in the banner when an incident is active
   const recBar = document.getElementById('recordingControlBar');
   if(recBar){
-    const showRec = enableVoiceIncidentCapture && incidentType === 'incident';
-    recBar.style.display = showRec ? 'inline-flex' : 'none';
+    recBar.style.display = enableVoiceIncidentCapture ? 'inline-flex' : 'none';
   }
+
+  // Refresh the in-work-area recording panel visibility
+  if(typeof updateRecordingUI === 'function') updateRecordingUI();
 }
 
 function scrollBottom(){setTimeout(()=>chatWindow.scrollTop=chatWindow.scrollHeight,80);}
