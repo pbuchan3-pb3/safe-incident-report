@@ -1,9 +1,6 @@
 /**
- * app_logic.js — Auto-generated from the S.A.F.E. app source file.
- * DO NOT EDIT MANUALLY. Re-generate with: python3 tests/extract_logic.py
- *
- * Source: safe_incident_form_24.html
- * Blocks: escapeHtml, roleModel, nameCorrection, analytics
+ * app_logic.js — Auto-generated from safe_incident_form_24.html
+ * DO NOT EDIT MANUALLY.
  */
 
 // ── SECURITY: HTML escaping for all user-controlled content ────────────────
@@ -34,9 +31,18 @@ var WITNESS_ROLES = ['Witness'];
 function newPerson(){
   return {
     id: 'person_' + Date.now() + '_' + Math.floor(Math.random()*10000),
-    name: '',
-    role: '',           // free-text role/position (e.g. "Event Security", job title)
-    roleCategory: '',   // one of ROLE_CATEGORIES — drives report section placement
+    // ── Structured name fields (source of truth) ──────────────────────────
+    firstName:     '',
+    middleName:    '',   // e.g. "Nicole"
+    middleInitial: '',   // e.g. "N." (set if only an initial was given)
+    lastName:      '',
+    suffix:        '',   // e.g. "Jr.", "III", "Sr."
+    displayName:   '',   // computed: rendered name for PDF, narrative, UI
+    name:          '',   // alias kept for backward compat with all rendering sites
+    // ── Role / categorization ─────────────────────────────────────────────
+    role: '',            // free-text role/position (e.g. "Event Security")
+    roleCategory: '',    // one of ROLE_CATEGORIES — drives report section placement
+    // ── Physical description ──────────────────────────────────────────────
     gender: '',
     ageRange: '',
     height: '',
@@ -46,12 +52,34 @@ function newPerson(){
     clothing: '',
     features: '',
     seatLocation: '',
+    // ── Statement & evidence ─────────────────────────────────────────────
     statement: '',
     photoDataUrls: [],
     photoMeta: [],
+    // ── Additional ────────────────────────────────────────────────────────
     contactInfo: '',
     notes: '',
   };
+}
+
+// Builds the canonical display name from structured fields.
+// Used everywhere a full name needs to be rendered: PDF, live card, AI narrative, Sheets.
+function buildDisplayName(p){
+  var parts = [p.firstName];
+  if(p.middleName)    parts.push(p.middleName);
+  else if(p.middleInitial) parts.push(p.middleInitial);
+  if(p.lastName)      parts.push(p.lastName);
+  if(p.suffix)        parts.push(p.suffix);
+  var full = parts.filter(Boolean).join(' ').trim();
+  return full || 'Unknown';
+}
+
+// Applies displayName → name alias so all existing rendering sites
+// that reference p.name still work without modification.
+function syncPersonName(p){
+  p.displayName = buildDisplayName(p);
+  p.name = p.displayName; // backward-compat alias
+  return p;
 }
 
 formData.people = [];
@@ -65,7 +93,20 @@ function migrateLegacyGuestToPeople(){
   if(!formData.guestName && !formData.guestGender) return; // nothing to migrate
 
   var p = newPerson();
-  p.name = formData.guestName || 'Unknown';
+  // Parse legacy flat name into structured fields where possible
+  var legacyName = formData.guestName || 'Unknown';
+  var legacyParsed = parseNameTokens(legacyName);
+  if(legacyParsed && legacyParsed.confidence !== 'first_only' && legacyParsed.lastName){
+    p.firstName     = toProperCase(legacyParsed.firstName);
+    p.middleName    = legacyParsed.middleName    ? toProperCase(legacyParsed.middleName)    : '';
+    p.middleInitial = legacyParsed.middleInitial || '';
+    p.lastName      = legacyParsed.lastName      ? toProperCase(legacyParsed.lastName)      : '';
+    p.suffix        = legacyParsed.suffix        || '';
+  } else {
+    // Only one name word, or unparseable — store it all in firstName
+    p.firstName = legacyName !== 'Unknown' ? legacyName : '';
+  }
+  syncPersonName(p);
   p.role = formData.guestRole || '';
   p.roleCategory = formData.incidentCategory === 'Employee Misconduct' ? 'Employee' : 'Subject';
   p.gender = formData.guestGender || '';
@@ -90,8 +131,142 @@ function getWitnessPeople(){
   return (formData.people||[]).filter(p => WITNESS_ROLES.includes(p.roleCategory));
 }
 
+function toProperCase(s){
+  if(!s) return '';
+  return s.replace(/\w\S*/g, t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
+}
+
+// ── INTELLIGENT NAME PARSER ───────────────────────────────────────────────────
+// Attempts to parse a raw string into structured name components.
+// Returns: { firstName, middleName, middleInitial, lastName, suffix, confidence }
+// confidence: 'full_name' | 'first_middle_last' | 'first_initial_last' |
+//             'first_only' | 'unknown'
+
+var NAME_SUFFIXES = ['jr','jr.','sr','sr.','ii','iii','iv','v','esq','esq.','phd','md'];
+
+// Known compound surname prefixes — never split these from what follows
+var COMPOUND_PREFIXES = ['van','de','del','della','di','da','la','le','les','los',
+  'mac','mc','st','st.','von','zu','al','el','bin','binte','den','der','des',
+  'du','im','in','op','te','ten','ter','ver'];
+
+// Known two-part first names — if someone enters one of these as "firstName",
+// we should NOT suggest splitting them
+var COMPOUND_FIRST_NAMES = [
+  'mary ann','mary jane','mary beth','mary jo','mary lou','mary sue',
+  'billy bob','billy joe','bobby joe','betty sue','betty jo',
+  'jean luc','jean claude','jean pierre','jean paul',
+  'anna marie','anne marie','anna lee','anna belle',
+  'joe bob','jim bob','james lee','james paul','james ray',
+  'sarah jane','sarah beth','sarah ann','sarah jo',
+  'lily ann','lily rose','lily grace',
+];
+
+function parseNameTokens(raw){
+  if(!raw || !raw.trim()) return null;
+  var trimmed = raw.trim();
+  var tokens = trimmed.split(/\s+/);
+
+  // Single token — just a first name (or unknown)
+  if(tokens.length === 1){
+    return { firstName: tokens[0], middleName:'', middleInitial:'', lastName:'', suffix:'', confidence:'first_only' };
+  }
+
+  // Check for a suffix at the end
+  var suffix = '';
+  var remaining = [...tokens];
+  var lastToken = remaining[remaining.length - 1].toLowerCase().replace(/\./g,'');
+  if(NAME_SUFFIXES.includes(lastToken) || NAME_SUFFIXES.includes(remaining[remaining.length-1].toLowerCase())){
+    suffix = remaining.pop();
+  }
+
+  // Now work with the remaining tokens
+  if(remaining.length === 1){
+    return { firstName: remaining[0], middleName:'', middleInitial:'', lastName:'', suffix, confidence:'first_only' };
+  }
+
+  // Check if the input starts with a known compound first name
+  var lowerInput = trimmed.toLowerCase();
+  var compoundFirst = COMPOUND_FIRST_NAMES.find(cf => lowerInput.startsWith(cf + ' ') || lowerInput === cf);
+  if(compoundFirst){
+    var cfTokens = compoundFirst.split(' ');
+    var cfPart = cfTokens.map((t,i) => remaining[i] || '').join(' ');
+    var rest = remaining.slice(cfTokens.length);
+    if(rest.length === 0){
+      // It's just a compound first name
+      return { firstName: cfPart, middleName:'', middleInitial:'', lastName:'', suffix, confidence:'first_only' };
+    }
+    // Compound first + something after
+    var lastName = buildCompoundLastName(rest);
+    return { firstName: cfPart, middleName:'', middleInitial:'', lastName, suffix, confidence:'full_name' };
+  }
+
+  // Check for compound last name prefix in positions >= 1
+  // e.g. "Whitney Van Dyke" → firstName=Whitney, lastName=Van Dyke
+  var firstName = remaining[0];
+  var afterFirst = remaining.slice(1);
+
+  if(afterFirst.length === 1){
+    // "First Last" — two tokens, clearly first + last
+    var isInitial = /^[A-Za-z]\.$/.test(afterFirst[0]);
+    if(isInitial){
+      return { firstName, middleName:'', middleInitial: afterFirst[0], lastName:'', suffix, confidence:'first_only' };
+    }
+    return { firstName, middleName:'', middleInitial:'', lastName: afterFirst[0], suffix, confidence:'full_name' };
+  }
+
+  if(afterFirst.length === 2){
+    // Could be: First Middle Last, First M. Last, First CompoundLast
+    var second = afterFirst[0];
+    var third = afterFirst[1];
+    var secondIsInitial = /^[A-Za-z]\.$/.test(second);
+    var thirdIsCompoundStart = COMPOUND_PREFIXES.includes(second.toLowerCase());
+
+    if(secondIsInitial){
+      // First M. Last
+      return { firstName, middleName:'', middleInitial: second, lastName: third, suffix, confidence:'first_initial_last' };
+    }
+    if(thirdIsCompoundStart){
+      // First (CompoundPrefix) Next — last name is "CompoundPrefix Next"
+      return { firstName, middleName:'', middleInitial:'', lastName: buildCompoundLastName(afterFirst), suffix, confidence:'full_name' };
+    }
+    // First Middle Last
+    return { firstName, middleName: second, middleInitial:'', lastName: third, suffix, confidence:'first_middle_last' };
+  }
+
+  if(afterFirst.length >= 3){
+    // First Middle Last Compound, or First M. Last Compound, etc.
+    var second = afterFirst[0];
+    var secondIsInitial = /^[A-Za-z]\.$/.test(second);
+    if(secondIsInitial){
+      // First M. RestIsLastName
+      return { firstName, middleName:'', middleInitial: second, lastName: buildCompoundLastName(afterFirst.slice(1)), suffix, confidence:'first_initial_last' };
+    }
+    // First Middle RestIsLastName
+    return { firstName, middleName: second, middleInitial:'', lastName: buildCompoundLastName(afterFirst.slice(1)), suffix, confidence:'first_middle_last' };
+  }
+
+  return { firstName: trimmed, middleName:'', middleInitial:'', lastName:'', suffix, confidence:'first_only' };
+}
+
+function buildCompoundLastName(tokens){
+  // Rejoin compound last names: ["Van","Dyke"] → "Van Dyke"
+  return tokens.join(' ');
+}
+
+function formatParsedNameSuggestion(parsed){
+  // Returns a human-readable summary of the parsed name for the AI to display
+  var lines = [];
+  if(parsed.firstName)     lines.push(`First Name: ${parsed.firstName}`);
+  if(parsed.middleName)    lines.push(`Middle Name: ${parsed.middleName}`);
+  if(parsed.middleInitial) lines.push(`Middle Initial: ${parsed.middleInitial}`);
+  if(parsed.lastName)      lines.push(`Last Name: ${parsed.lastName}`);
+  if(parsed.suffix)        lines.push(`Suffix: ${parsed.suffix}`);
+  return lines.join('\n');
+}
+
 function correctKnownNames(raw){
-  var allKnownNames = (formData.people||[]).map(p=>p.name).filter(n=>n && n!=='Unknown');
+  // Use displayName (computed from structured fields) as the authoritative name for correction
+  var allKnownNames = (formData.people||[]).map(p=>p.displayName||p.name).filter(n=>n && n!=='Unknown');
   if(formData.guestName && formData.guestName!=='Unknown') allKnownNames.push(formData.guestName);
   allKnownNames.forEach(fullName => {
     var nameParts = fullName.trim().split(' ').filter(p=>p.length>2);
@@ -107,6 +282,134 @@ function correctKnownNames(raw){
     });
   });
   return raw;
+}
+
+// ── INTELLIGENT NAME PARSER ───────────────────────────────────────────────────
+// Attempts to parse a raw string into structured name components.
+// Returns: { firstName, middleName, middleInitial, lastName, suffix, confidence }
+// confidence: 'full_name' | 'first_middle_last' | 'first_initial_last' |
+//             'first_only' | 'unknown'
+
+var NAME_SUFFIXES = ['jr','jr.','sr','sr.','ii','iii','iv','v','esq','esq.','phd','md'];
+
+// Known compound surname prefixes — never split these from what follows
+var COMPOUND_PREFIXES = ['van','de','del','della','di','da','la','le','les','los',
+  'mac','mc','st','st.','von','zu','al','el','bin','binte','den','der','des',
+  'du','im','in','op','te','ten','ter','ver'];
+
+// Known two-part first names — if someone enters one of these as "firstName",
+// we should NOT suggest splitting them
+var COMPOUND_FIRST_NAMES = [
+  'mary ann','mary jane','mary beth','mary jo','mary lou','mary sue',
+  'billy bob','billy joe','bobby joe','betty sue','betty jo',
+  'jean luc','jean claude','jean pierre','jean paul',
+  'anna marie','anne marie','anna lee','anna belle',
+  'joe bob','jim bob','james lee','james paul','james ray',
+  'sarah jane','sarah beth','sarah ann','sarah jo',
+  'lily ann','lily rose','lily grace',
+];
+
+function parseNameTokens(raw){
+  if(!raw || !raw.trim()) return null;
+  var trimmed = raw.trim();
+  var tokens = trimmed.split(/\s+/);
+
+  // Single token — just a first name (or unknown)
+  if(tokens.length === 1){
+    return { firstName: tokens[0], middleName:'', middleInitial:'', lastName:'', suffix:'', confidence:'first_only' };
+  }
+
+  // Check for a suffix at the end
+  var suffix = '';
+  var remaining = [...tokens];
+  var lastToken = remaining[remaining.length - 1].toLowerCase().replace(/\./g,'');
+  if(NAME_SUFFIXES.includes(lastToken) || NAME_SUFFIXES.includes(remaining[remaining.length-1].toLowerCase())){
+    suffix = remaining.pop();
+  }
+
+  // Now work with the remaining tokens
+  if(remaining.length === 1){
+    return { firstName: remaining[0], middleName:'', middleInitial:'', lastName:'', suffix, confidence:'first_only' };
+  }
+
+  // Check if the input starts with a known compound first name
+  var lowerInput = trimmed.toLowerCase();
+  var compoundFirst = COMPOUND_FIRST_NAMES.find(cf => lowerInput.startsWith(cf + ' ') || lowerInput === cf);
+  if(compoundFirst){
+    var cfTokens = compoundFirst.split(' ');
+    var cfPart = cfTokens.map((t,i) => remaining[i] || '').join(' ');
+    var rest = remaining.slice(cfTokens.length);
+    if(rest.length === 0){
+      // It's just a compound first name
+      return { firstName: cfPart, middleName:'', middleInitial:'', lastName:'', suffix, confidence:'first_only' };
+    }
+    // Compound first + something after
+    var lastName = buildCompoundLastName(rest);
+    return { firstName: cfPart, middleName:'', middleInitial:'', lastName, suffix, confidence:'full_name' };
+  }
+
+  // Check for compound last name prefix in positions >= 1
+  // e.g. "Whitney Van Dyke" → firstName=Whitney, lastName=Van Dyke
+  var firstName = remaining[0];
+  var afterFirst = remaining.slice(1);
+
+  if(afterFirst.length === 1){
+    // "First Last" — two tokens, clearly first + last
+    var isInitial = /^[A-Za-z]\.$/.test(afterFirst[0]);
+    if(isInitial){
+      return { firstName, middleName:'', middleInitial: afterFirst[0], lastName:'', suffix, confidence:'first_only' };
+    }
+    return { firstName, middleName:'', middleInitial:'', lastName: afterFirst[0], suffix, confidence:'full_name' };
+  }
+
+  if(afterFirst.length === 2){
+    // Could be: First Middle Last, First M. Last, First CompoundLast
+    var second = afterFirst[0];
+    var third = afterFirst[1];
+    var secondIsInitial = /^[A-Za-z]\.$/.test(second);
+    var thirdIsCompoundStart = COMPOUND_PREFIXES.includes(second.toLowerCase());
+
+    if(secondIsInitial){
+      // First M. Last
+      return { firstName, middleName:'', middleInitial: second, lastName: third, suffix, confidence:'first_initial_last' };
+    }
+    if(thirdIsCompoundStart){
+      // First (CompoundPrefix) Next — last name is "CompoundPrefix Next"
+      return { firstName, middleName:'', middleInitial:'', lastName: buildCompoundLastName(afterFirst), suffix, confidence:'full_name' };
+    }
+    // First Middle Last
+    return { firstName, middleName: second, middleInitial:'', lastName: third, suffix, confidence:'first_middle_last' };
+  }
+
+  if(afterFirst.length >= 3){
+    // First Middle Last Compound, or First M. Last Compound, etc.
+    var second = afterFirst[0];
+    var secondIsInitial = /^[A-Za-z]\.$/.test(second);
+    if(secondIsInitial){
+      // First M. RestIsLastName
+      return { firstName, middleName:'', middleInitial: second, lastName: buildCompoundLastName(afterFirst.slice(1)), suffix, confidence:'first_initial_last' };
+    }
+    // First Middle RestIsLastName
+    return { firstName, middleName: second, middleInitial:'', lastName: buildCompoundLastName(afterFirst.slice(1)), suffix, confidence:'first_middle_last' };
+  }
+
+  return { firstName: trimmed, middleName:'', middleInitial:'', lastName:'', suffix, confidence:'first_only' };
+}
+
+function buildCompoundLastName(tokens){
+  // Rejoin compound last names: ["Van","Dyke"] → "Van Dyke"
+  return tokens.join(' ');
+}
+
+function formatParsedNameSuggestion(parsed){
+  // Returns a human-readable summary of the parsed name for the AI to display
+  var lines = [];
+  if(parsed.firstName)     lines.push(`First Name: ${parsed.firstName}`);
+  if(parsed.middleName)    lines.push(`Middle Name: ${parsed.middleName}`);
+  if(parsed.middleInitial) lines.push(`Middle Initial: ${parsed.middleInitial}`);
+  if(parsed.lastName)      lines.push(`Last Name: ${parsed.lastName}`);
+  if(parsed.suffix)        lines.push(`Suffix: ${parsed.suffix}`);
+  return lines.join('\n');
 }
 
 function generateAnalyticsTags(fd){
