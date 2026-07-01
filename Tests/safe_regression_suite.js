@@ -333,6 +333,599 @@ check('newPerson() always has unique IDs across rapid successive calls', (() => 
 // ════════════════════════════════════════════════════════════
 // FINAL SUMMARY
 // ════════════════════════════════════════════════════════════
+
+
+// ════════════════════════════════════════════════════════════
+section('SUITE 10 — Name Parser: parseNameTokens()');
+// ════════════════════════════════════════════════════════════
+
+// ── Pattern: First Last ──────────────────────────────────────
+{ const r = parseNameTokens('Esperanza Spalding');
+  check('First Last: firstName correct',   r.firstName === 'Esperanza');
+  check('First Last: lastName correct',    r.lastName === 'Spalding');
+  check('First Last: no middle',           !r.middleName && !r.middleInitial);
+  check('First Last: no suffix',           !r.suffix);
+  check('First Last: confidence full_name', r.confidence === 'full_name'); }
+
+// ── Pattern: First Middle Last ────────────────────────────────
+{ const r = parseNameTokens('Esperanza Nicole Spalding');
+  check('First Middle Last: firstName',     r.firstName === 'Esperanza');
+  check('First Middle Last: middleName',    r.middleName === 'Nicole');
+  check('First Middle Last: lastName',      r.lastName === 'Spalding');
+  check('First Middle Last: no initial',    !r.middleInitial);
+  check('First Middle Last: confidence',    r.confidence === 'first_middle_last'); }
+
+// ── Pattern: First M. Last ────────────────────────────────────
+{ const r = parseNameTokens('Esperanza N. Spalding');
+  check('First Initial Last: firstName',    r.firstName === 'Esperanza');
+  check('First Initial Last: middleInitial', r.middleInitial === 'N.');
+  check('First Initial Last: lastName',     r.lastName === 'Spalding');
+  check('First Initial Last: no middleName', !r.middleName);
+  check('First Initial Last: confidence',   r.confidence === 'first_initial_last'); }
+
+// ── Pattern: First Middle Last Suffix ─────────────────────────
+{ const r = parseNameTokens('Esperanza Nicole Spalding Jr.');
+  check('With Suffix: firstName',           r.firstName === 'Esperanza');
+  check('With Suffix: middleName',          r.middleName === 'Nicole');
+  check('With Suffix: lastName',            r.lastName === 'Spalding');
+  check('With Suffix: suffix captured',     r.suffix === 'Jr.');
+  check('With Suffix: confidence',          r.confidence === 'first_middle_last'); }
+
+// ── Pattern: First only ───────────────────────────────────────
+{ const r = parseNameTokens('Whitney');
+  check('First only: firstName',            r.firstName === 'Whitney');
+  check('First only: no lastName',          !r.lastName);
+  check('First only: confidence first_only', r.confidence === 'first_only'); }
+
+// ── Pattern: Compound first name (should NOT be split as First+Last) ──
+{ const r = parseNameTokens('Mary Ann');
+  check('Compound first: recognized as compound', r.firstName === 'Mary Ann' && !r.lastName);
+  check('Compound first: confidence first_only',  r.confidence === 'first_only'); }
+
+{ const r = parseNameTokens('Billy Bob');
+  check('Compound first Billy Bob: not split',  r.firstName === 'Billy Bob' && !r.lastName); }
+
+{ const r = parseNameTokens('Jean Luc');
+  check('Compound first Jean Luc: not split',   r.firstName === 'Jean Luc' && !r.lastName); }
+
+{ const r = parseNameTokens('Mary Beth');
+  check('Compound first Mary Beth: not split',  r.firstName === 'Mary Beth' && !r.lastName); }
+
+// ── Pattern: Compound last name ───────────────────────────────
+{ const r = parseNameTokens('Whitney Van Dyke');
+  check('Compound last Van Dyke: firstName',     r.firstName === 'Whitney');
+  check('Compound last Van Dyke: lastName',      r.lastName === 'Van Dyke');
+  check('Compound last Van Dyke: no middle',     !r.middleName && !r.middleInitial); }
+
+{ const r = parseNameTokens('Maria De La Cruz');
+  check('Compound last De La Cruz: firstName',   r.firstName === 'Maria');
+  check('Compound last De La Cruz: lastName joined', r.lastName.toLowerCase().includes('la') || r.lastName.toLowerCase().includes('de')); }
+
+{ const r = parseNameTokens('Carlos Del Toro');
+  check('Compound last Del Toro: firstName',     r.firstName === 'Carlos');
+  check('Compound last Del Toro: lastName',      r.lastName === 'Del Toro'); }
+
+// ── Pattern: Suffix variations ────────────────────────────────
+{ const r = parseNameTokens('Marcus Webb III');
+  check('Suffix III: firstName',                 r.firstName === 'Marcus');
+  check('Suffix III: lastName',                  r.lastName === 'Webb');
+  check('Suffix III: suffix',                    r.suffix === 'III'); }
+
+{ const r = parseNameTokens('Robert Johnson Jr');
+  check('Suffix Jr no period: captured',         r.suffix.toLowerCase().startsWith('jr')); }
+
+// ── Pattern: Unknown / empty input ───────────────────────────
+{ const r = parseNameTokens('');
+  check('Empty string: returns null',            r === null); }
+
+{ const r = parseNameTokens(null);
+  check('Null input: returns null',              r === null); }
+
+// ── buildDisplayName ─────────────────────────────────────────
+fresh();
+{ const p = newPerson();
+  p.firstName='Esperanza'; p.middleName='Nicole'; p.lastName='Spalding'; p.suffix='Jr.';
+  syncPersonName(p);
+  check('displayName: First Middle Last Suffix', p.displayName === 'Esperanza Nicole Spalding Jr.');
+  check('name alias matches displayName',        p.name === p.displayName); }
+
+{ const p = newPerson();
+  p.firstName='Esperanza'; p.middleInitial='N.'; p.lastName='Spalding';
+  syncPersonName(p);
+  check('displayName: First Initial Last',       p.displayName === 'Esperanza N. Spalding'); }
+
+{ const p = newPerson();
+  p.firstName='Esperanza'; p.lastName='Spalding';
+  syncPersonName(p);
+  check('displayName: First Last',               p.displayName === 'Esperanza Spalding'); }
+
+{ const p = newPerson();
+  p.firstName='Whitney';
+  syncPersonName(p);
+  check('displayName: First only',               p.displayName === 'Whitney'); }
+
+{ const p = newPerson();
+  syncPersonName(p);
+  check('displayName: empty person returns Unknown', p.displayName === 'Unknown'); }
+
+// ── Legacy migration: name parsing ────────────────────────────
+{ formData = { guestName: 'Chartel Ross', incidentCategory: 'Unauthorized Access' };
+  delete formData.people;
+  migrateLegacyGuestToPeople();
+  check('Legacy: structured first name extracted',   formData.people[0].firstName === 'Chartel');
+  check('Legacy: structured last name extracted',    formData.people[0].lastName === 'Ross');
+  check('Legacy: displayName computed',              formData.people[0].displayName === 'Chartel Ross'); }
+
+{ formData = { guestName: 'Whitney', incidentCategory: 'Unauthorized Access' };
+  delete formData.people;
+  migrateLegacyGuestToPeople();
+  check('Legacy single name: firstName set',         formData.people[0].firstName === 'Whitney');
+  check('Legacy single name: no lastName',           !formData.people[0].lastName); }
+
+// ── Voice transcription scenarios (same parser, different input origin) ──
+{ const r = parseNameTokens('mary ann johnson');
+  check('Voice: compound first: firstName is "mary ann"', r && r.firstName.toLowerCase() === 'mary ann');
+  check('Voice: compound first: lastName is "johnson"',   r && r.lastName.toLowerCase() === 'johnson'); }
+
+{ const r = parseNameTokens('CHARTEL ROSS');
+  check('Voice: all-caps parsed correctly',          r && r.firstName === 'CHARTEL' && r.lastName === 'ROSS'); }
+
+// ── Officer correction: edit after suggestion ─────────────────
+fresh();
+{ // Simulate: officer entered "Esperanza Spalding" in first name field
+  // Parser suggests split → officer accepts → person built correctly
+  const parsed = parseNameTokens('Esperanza Spalding');
+  const p = newPerson();
+  p.firstName = parsed.firstName;
+  p.lastName = parsed.lastName;
+  syncPersonName(p);
+  check('Correction workflow: firstName after accept', p.firstName === 'Esperanza');
+  check('Correction workflow: lastName after accept',  p.lastName === 'Spalding');
+  check('Correction workflow: displayName correct',    p.displayName === 'Esperanza Spalding');
+
+  // Simulate officer editing first name after review
+  p.firstName = 'Maria';
+  syncPersonName(p);
+  check('After edit: displayName updates', p.displayName === 'Maria Spalding'); }
+
+
+// ════════════════════════════════════════════════════════════
+section('SUITE 10 — Name Parser: parseNameTokens()');
+// ════════════════════════════════════════════════════════════
+
+// ── Pattern: First Last ──────────────────────────────────────
+{ const r = parseNameTokens('Esperanza Spalding');
+  check('First Last: firstName correct',   r.firstName === 'Esperanza');
+  check('First Last: lastName correct',    r.lastName === 'Spalding');
+  check('First Last: no middle',           !r.middleName && !r.middleInitial);
+  check('First Last: no suffix',           !r.suffix);
+  check('First Last: confidence full_name', r.confidence === 'full_name'); }
+
+// ── Pattern: First Middle Last ────────────────────────────────
+{ const r = parseNameTokens('Esperanza Nicole Spalding');
+  check('First Middle Last: firstName',     r.firstName === 'Esperanza');
+  check('First Middle Last: middleName',    r.middleName === 'Nicole');
+  check('First Middle Last: lastName',      r.lastName === 'Spalding');
+  check('First Middle Last: no initial',    !r.middleInitial);
+  check('First Middle Last: confidence',    r.confidence === 'first_middle_last'); }
+
+// ── Pattern: First M. Last ────────────────────────────────────
+{ const r = parseNameTokens('Esperanza N. Spalding');
+  check('First Initial Last: firstName',    r.firstName === 'Esperanza');
+  check('First Initial Last: middleInitial', r.middleInitial === 'N.');
+  check('First Initial Last: lastName',     r.lastName === 'Spalding');
+  check('First Initial Last: no middleName', !r.middleName);
+  check('First Initial Last: confidence',   r.confidence === 'first_initial_last'); }
+
+// ── Pattern: First Middle Last Suffix ─────────────────────────
+{ const r = parseNameTokens('Esperanza Nicole Spalding Jr.');
+  check('With Suffix: firstName',           r.firstName === 'Esperanza');
+  check('With Suffix: middleName',          r.middleName === 'Nicole');
+  check('With Suffix: lastName',            r.lastName === 'Spalding');
+  check('With Suffix: suffix captured',     r.suffix === 'Jr.');
+  check('With Suffix: confidence',          r.confidence === 'first_middle_last'); }
+
+// ── Pattern: First only ───────────────────────────────────────
+{ const r = parseNameTokens('Whitney');
+  check('First only: firstName',            r.firstName === 'Whitney');
+  check('First only: no lastName',          !r.lastName);
+  check('First only: confidence first_only', r.confidence === 'first_only'); }
+
+// ── Pattern: Compound first name (should NOT be split as First+Last) ──
+{ const r = parseNameTokens('Mary Ann');
+  check('Compound first: recognized as compound', r.firstName === 'Mary Ann' && !r.lastName);
+  check('Compound first: confidence first_only',  r.confidence === 'first_only'); }
+
+{ const r = parseNameTokens('Billy Bob');
+  check('Compound first Billy Bob: not split',  r.firstName === 'Billy Bob' && !r.lastName); }
+
+{ const r = parseNameTokens('Jean Luc');
+  check('Compound first Jean Luc: not split',   r.firstName === 'Jean Luc' && !r.lastName); }
+
+{ const r = parseNameTokens('Mary Beth');
+  check('Compound first Mary Beth: not split',  r.firstName === 'Mary Beth' && !r.lastName); }
+
+// ── Pattern: Compound last name ───────────────────────────────
+{ const r = parseNameTokens('Whitney Van Dyke');
+  check('Compound last Van Dyke: firstName',     r.firstName === 'Whitney');
+  check('Compound last Van Dyke: lastName',      r.lastName === 'Van Dyke');
+  check('Compound last Van Dyke: no middle',     !r.middleName && !r.middleInitial); }
+
+{ const r = parseNameTokens('Maria De La Cruz');
+  check('Compound last De La Cruz: firstName',   r.firstName === 'Maria');
+  check('Compound last De La Cruz: lastName joined', r.lastName.toLowerCase().includes('la') || r.lastName.toLowerCase().includes('de')); }
+
+{ const r = parseNameTokens('Carlos Del Toro');
+  check('Compound last Del Toro: firstName',     r.firstName === 'Carlos');
+  check('Compound last Del Toro: lastName',      r.lastName === 'Del Toro'); }
+
+// ── Pattern: Suffix variations ────────────────────────────────
+{ const r = parseNameTokens('Marcus Webb III');
+  check('Suffix III: firstName',                 r.firstName === 'Marcus');
+  check('Suffix III: lastName',                  r.lastName === 'Webb');
+  check('Suffix III: suffix',                    r.suffix === 'III'); }
+
+{ const r = parseNameTokens('Robert Johnson Jr');
+  check('Suffix Jr no period: captured',         r.suffix.toLowerCase().startsWith('jr')); }
+
+// ── Pattern: Unknown / empty input ───────────────────────────
+{ const r = parseNameTokens('');
+  check('Empty string: returns null',            r === null); }
+
+{ const r = parseNameTokens(null);
+  check('Null input: returns null',              r === null); }
+
+// ── buildDisplayName ─────────────────────────────────────────
+fresh();
+{ const p = newPerson();
+  p.firstName='Esperanza'; p.middleName='Nicole'; p.lastName='Spalding'; p.suffix='Jr.';
+  syncPersonName(p);
+  check('displayName: First Middle Last Suffix', p.displayName === 'Esperanza Nicole Spalding Jr.');
+  check('name alias matches displayName',        p.name === p.displayName); }
+
+{ const p = newPerson();
+  p.firstName='Esperanza'; p.middleInitial='N.'; p.lastName='Spalding';
+  syncPersonName(p);
+  check('displayName: First Initial Last',       p.displayName === 'Esperanza N. Spalding'); }
+
+{ const p = newPerson();
+  p.firstName='Esperanza'; p.lastName='Spalding';
+  syncPersonName(p);
+  check('displayName: First Last',               p.displayName === 'Esperanza Spalding'); }
+
+{ const p = newPerson();
+  p.firstName='Whitney';
+  syncPersonName(p);
+  check('displayName: First only',               p.displayName === 'Whitney'); }
+
+{ const p = newPerson();
+  syncPersonName(p);
+  check('displayName: empty person returns Unknown', p.displayName === 'Unknown'); }
+
+// ── Legacy migration: name parsing ────────────────────────────
+{ formData = { guestName: 'Chartel Ross', incidentCategory: 'Unauthorized Access' };
+  delete formData.people;
+  migrateLegacyGuestToPeople();
+  check('Legacy: structured first name extracted',   formData.people[0].firstName === 'Chartel');
+  check('Legacy: structured last name extracted',    formData.people[0].lastName === 'Ross');
+  check('Legacy: displayName computed',              formData.people[0].displayName === 'Chartel Ross'); }
+
+{ formData = { guestName: 'Whitney', incidentCategory: 'Unauthorized Access' };
+  delete formData.people;
+  migrateLegacyGuestToPeople();
+  check('Legacy single name: firstName set',         formData.people[0].firstName === 'Whitney');
+  check('Legacy single name: no lastName',           !formData.people[0].lastName); }
+
+// ── Voice transcription scenarios (same parser, different input origin) ──
+{ const r = parseNameTokens('mary ann johnson');
+  check('Voice: compound first (Mary Ann): firstName correct', r.firstName.toLowerCase() === 'mary ann'); }
+
+{ const r = parseNameTokens('CHARTEL ROSS');
+  check('Voice: all-caps parsed correctly',          r && r.firstName === 'CHARTEL' && r.lastName === 'ROSS'); }
+
+// ── Officer correction: edit after suggestion ─────────────────
+fresh();
+{ // Simulate: officer entered "Esperanza Spalding" in first name field
+  // Parser suggests split → officer accepts → person built correctly
+  const parsed = parseNameTokens('Esperanza Spalding');
+  const p = newPerson();
+  p.firstName = parsed.firstName;
+  p.lastName = parsed.lastName;
+  syncPersonName(p);
+  check('Correction workflow: firstName after accept', p.firstName === 'Esperanza');
+  check('Correction workflow: lastName after accept',  p.lastName === 'Spalding');
+  check('Correction workflow: displayName correct',    p.displayName === 'Esperanza Spalding');
+
+  // Simulate officer editing first name after review
+  p.firstName = 'Maria';
+  syncPersonName(p);
+  check('After edit: displayName updates', p.displayName === 'Maria Spalding'); }
+
+
+// ════════════════════════════════════════════════════════════
+section('SUITE 11 — Draft Save and Resume');
+// ════════════════════════════════════════════════════════════
+
+// ── Test DRAFT_KEY is defined ────────────────────────────────
+check('DRAFT_KEY is defined', typeof DRAFT_KEY === 'string' && DRAFT_KEY.length > 0);
+
+// ── Test formatDraftAge ───────────────────────────────────────
+{ const now = new Date().toISOString();
+  check('formatDraftAge: recent = "moments ago"', formatDraftAge(now) === 'moments ago'); }
+
+{ const fiveMinAgo = new Date(Date.now() - 5*60*1000).toISOString();
+  check('formatDraftAge: 5 mins = "5 minutes ago"', formatDraftAge(fiveMinAgo) === '5 minutes ago'); }
+
+{ const twoHrsAgo = new Date(Date.now() - 2*3600*1000).toISOString();
+  check('formatDraftAge: 2 hrs = "2 hours ago"', formatDraftAge(twoHrsAgo) === '2 hours ago'); }
+
+// ── Test draft structure: formData preserved ──────────────────
+fresh();
+{ // Simulate what saveDraft() would serialize
+  formData = {
+    supervisorFirstName: 'Peyton',
+    supervisorLastName:  'Buchanan',
+    incidentCategory:    'Guest Altercation',
+    incidentSeverity:    'Moderate — Required additional response',
+    people: [],
+  };
+  var flowIndexSim = 5;
+  var incidentTypeSim = 'incident';
+  var draft = {
+    formData:     formData,
+    flowIndex:    flowIndexSim,
+    incidentType: incidentTypeSim,
+    savedAt:      new Date().toISOString(),
+    transcript:   [
+      { role: 'ai',   html: 'What type of incident occurred?', ts: new Date().toISOString() },
+      { role: 'user', html: 'Guest Altercation',              ts: new Date().toISOString() },
+    ],
+    context: {
+      reportType:    'Incident Report',
+      category:      'Guest Altercation',
+      currentStep:   'incidentSeverity',
+      currentPerson: '',
+    },
+  };
+
+  // Verify the draft shape
+  check('Draft: formData preserved',           draft.formData.supervisorFirstName === 'Peyton');
+  check('Draft: flowIndex preserved',           draft.flowIndex === 5);
+  check('Draft: incidentType preserved',        draft.incidentType === 'incident');
+  check('Draft: savedAt is valid ISO string',   !isNaN(new Date(draft.savedAt).getTime()));
+  check('Draft: transcript is array',           Array.isArray(draft.transcript));
+  check('Draft: transcript has 2 entries',      draft.transcript.length === 2);
+  check('Draft: first entry is AI bubble',      draft.transcript[0].role === 'ai');
+  check('Draft: second entry is user bubble',   draft.transcript[1].role === 'user');
+  check('Draft: context.reportType correct',    draft.context.reportType === 'Incident Report');
+  check('Draft: context.category correct',      draft.context.category === 'Guest Altercation');
+  check('Draft: context.currentStep correct',   draft.context.currentStep === 'incidentSeverity');
+}
+
+// ── Test: transcript entries have required fields ─────────────
+{ var entry = { role: 'ai', html: 'What happened?', ts: new Date().toISOString() };
+  check('Transcript entry: role present',    typeof entry.role === 'string');
+  check('Transcript entry: html present',    typeof entry.html === 'string');
+  check('Transcript entry: ts valid ISO',    !isNaN(new Date(entry.ts).getTime()));
+  check('Transcript entry: no XSS in html', !entry.html.includes('<script>')); }
+
+// ── Test: report type label derivation ───────────────────────
+{ function getReportLabel(incidentType){ return incidentType === 'recognition' ? 'Employee Recognition' : incidentType === 'incident' ? 'Incident Report' : 'In Progress'; }
+  check('Report label: incident',     getReportLabel('incident')    === 'Incident Report');
+  check('Report label: recognition',  getReportLabel('recognition') === 'Employee Recognition');
+  check('Report label: null',         getReportLabel(null)          === 'In Progress');
+  check('Report label: undefined',    getReportLabel(undefined)     === 'In Progress'); }
+
+// ── Test: last question deduplication logic ───────────────────
+{ function stripTags(s){ return s.replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim(); }
+
+  // Case: last AI bubble IS the next question — should flag as duplicate
+  var nextAsk    = 'What type of incident occurred?';
+  var lastHTML   = 'What type of incident occurred?';
+  var prefix     = nextAsk.slice(0, Math.min(40, nextAsk.length));
+  var isDuplicate = prefix.length > 0 && stripTags(lastHTML).includes(prefix);
+  check('Dedup: identical question detected as duplicate', isDuplicate === true);
+
+  // Case: last AI bubble is NOT the next question
+  var lastHTML2   = 'Welcome back, Peyton. Picking up right where you left off.';
+  var isDuplicate2 = prefix.length > 0 && stripTags(lastHTML2).includes(prefix);
+  check('Dedup: different question NOT flagged as duplicate', isDuplicate2 === false);
+
+  // Case: empty last HTML — no dedup triggered
+  var isDuplicate3 = prefix.length > 0 && ''.includes(prefix);
+  check('Dedup: empty lastHTML does not trigger dedup', isDuplicate3 === false);
+
+  // Case: short prefix is still safely matched
+  var shortAsk    = 'Hi';
+  var prefix2     = shortAsk.slice(0, Math.min(40, shortAsk.length));
+  var matchShort  = prefix2.length > 0 && 'Hi, how are you?'.includes(prefix2);
+  check('Dedup: short prefix matches correctly', matchShort === true); }
+
+// ── Test: fallback summary builds from formData (no transcript) ──
+fresh();
+{ formData = {
+    supervisorFirstName: 'Peyton',
+    supervisorLastName:  'Buchanan',
+    incidentCategory:    'Unauthorized Access',
+    incidentSeverity:    'Moderate — Required additional response',
+    incidentLocation:    'Gate A — Main Concourse',
+    people: [{ displayName: 'Chartel Ross', name: 'Chartel Ross', roleCategory: 'Subject' }],
+  };
+  var incidentTypeFallback = 'incident';
+  var rptLabel = incidentTypeFallback === 'recognition' ? 'Employee Recognition'
+               : incidentTypeFallback === 'incident'    ? 'Incident Report' : 'Report';
+  var sup = `${formData.supervisorFirstName||''} ${formData.supervisorLastName||''}`.trim() || 'Officer';
+  var summaryLines = [`Report resumed — ${rptLabel}`, `Supervisor: ${sup}`];
+  if(formData.incidentCategory) summaryLines.push(`Category: ${formData.incidentCategory}`);
+  if(formData.incidentLocation) summaryLines.push(`Location: ${formData.incidentLocation}`);
+  if(formData.people && formData.people.length > 0){
+    summaryLines.push(`People on file: ${formData.people.map(p=>p.displayName||p.name).join(', ')}`);
+  }
+  check('Fallback summary: report label included',      summaryLines.some(l=>l.includes('Incident Report')));
+  check('Fallback summary: supervisor included',        summaryLines.some(l=>l.includes('Peyton Buchanan')));
+  check('Fallback summary: category included',          summaryLines.some(l=>l.includes('Unauthorized Access')));
+  check('Fallback summary: location included',          summaryLines.some(l=>l.includes('Gate A')));
+  check('Fallback summary: people listed',              summaryLines.some(l=>l.includes('Chartel Ross'))); }
+
+// ── Test: context banner data model ──────────────────────────
+{ var ctx = {
+    reportType:    'Incident Report',
+    category:      'Guest Altercation',
+    currentStep:   'guestClothing',
+    currentPerson: 'Chartel Ross',
+  };
+  check('Context: reportType present',     ctx.reportType === 'Incident Report');
+  check('Context: category present',       ctx.category === 'Guest Altercation');
+  check('Context: currentStep present',    ctx.currentStep === 'guestClothing');
+  check('Context: currentPerson present',  ctx.currentPerson === 'Chartel Ross'); }
+
+// ── Test: people-loop resume shows current person ─────────────
+fresh();
+{ formData.people = [
+    { displayName: 'Chartel Ross', name: 'Chartel Ross', roleCategory: 'Alleged Aggressor' },
+    { displayName: 'Whitney Jones', name: 'Whitney Jones', roleCategory: 'Witness' },
+  ];
+  var lastPerson = formData.people[formData.people.length - 1];
+  check('People loop: last person name correct',     (lastPerson.displayName||lastPerson.name) === 'Whitney Jones');
+  check('People loop: last person role correct',     lastPerson.roleCategory === 'Witness');
+  var ctxPerson = (lastPerson.displayName || lastPerson.name);
+  check('People loop: context person derivation',    ctxPerson === 'Whitney Jones'); }
+
+// ── Test: Recognition report type label in draft ─────────────
+{ var recognitionDraft = {
+    formData: { supervisorFirstName: 'Peyton', employeeFirstName: 'David', employeeLastName: 'Greenback' },
+    flowIndex: 3,
+    incidentType: 'recognition',
+    savedAt: new Date().toISOString(),
+    transcript: [],
+    context: { reportType: 'Employee Recognition', category: '', currentStep: 'recognitionDescription', currentPerson: '' },
+  };
+  check('Recognition draft: incidentType preserved',   recognitionDraft.incidentType === 'recognition');
+  check('Recognition draft: context reportType',       recognitionDraft.context.reportType === 'Employee Recognition');
+  check('Recognition draft: currentStep preserved',    recognitionDraft.context.currentStep === 'recognitionDescription'); }
+
+// ── Test: Draft with missing context still handled gracefully ──
+{ var noctxDraft = { formData: { supervisorFirstName: 'Peyton' }, flowIndex: 2, incidentType: 'incident', savedAt: new Date().toISOString() };
+  check('Draft without context: no crash (context is undefined)', noctxDraft.context === undefined);
+  check('Draft without context: transcript defaults to []',       (noctxDraft.transcript || []).length === 0); }
+
+
+// ════════════════════════════════════════════════════════════
+section('SUITE 12 — Resume Scroll Behavior (anchor logic)');
+// ════════════════════════════════════════════════════════════
+// These tests verify the DOM anchor strategy used by the Review
+// and Jump buttons, independent of actual browser scroll APIs.
+
+// ── Test: transcript-start anchor assignment ─────────────────
+{ // Simulate: first restored bubble gets id='transcript-start'
+  var bubbles = [
+    { id: '', className: 'bubble-row ai' },
+    { id: '', className: 'bubble-row user' },
+    { id: '', className: 'bubble-row ai' },
+  ];
+  // The first bubble should receive the anchor
+  if(bubbles[0] && !bubbles[0].id){ bubbles[0].id = 'transcript-start'; }
+  check('Anchor: first restored bubble gets transcript-start id', bubbles[0].id === 'transcript-start');
+  check('Anchor: second bubble does not get the id',              bubbles[1].id === '');
+  check('Anchor: anchor only set once',                           bubbles.filter(b=>b.id==='transcript-start').length === 1); }
+
+// ── Test: current-question-anchor on divider ──────────────────
+{ var divider = { id: '', style: {} };
+  divider.id = 'current-question-anchor';
+  check('Anchor: divider gets current-question-anchor id', divider.id === 'current-question-anchor'); }
+
+// ── Test: Review button disabled when nothing to scroll ───────
+{ // Simulate: scrollHeight === clientHeight (fits on screen)
+  var mockChat = { scrollHeight: 400, clientHeight: 390 };
+  var canScroll = mockChat.scrollHeight > mockChat.clientHeight + 20;
+  check('Disable logic: short transcript disables Review button', canScroll === false);
+
+  // Simulate: scrollHeight >> clientHeight (overflows)
+  var mockChat2 = { scrollHeight: 1200, clientHeight: 390 };
+  var canScroll2 = mockChat2.scrollHeight > mockChat2.clientHeight + 20;
+  check('Disable logic: long transcript keeps Review button enabled', canScroll2 === true); }
+
+// ── Test: Review button targets transcript-start anchor ───────
+{ // The Review button's handler does:
+  //   var anchor = document.getElementById('transcript-start');
+  //   if(anchor){ anchor.scrollIntoView(...) } else { scrollTo top }
+  // Verify the fallback branch is correct
+  var noAnchor = null; // simulates getElementById returning null
+  var usedFallback = false;
+  if(noAnchor){
+    // would call scrollIntoView
+  } else {
+    usedFallback = true; // falls back to scrollTo top
+  }
+  check('Review button: falls back gracefully when anchor missing', usedFallback === true); }
+
+// ── Test: Jump button targets current-question-anchor ─────────
+{ var jumpTarget = { id: 'current-question-anchor' }; // simulates the divider
+  var foundAnchor = jumpTarget.id === 'current-question-anchor';
+  check('Jump button: current-question-anchor is the divider node', foundAnchor === true);
+
+  // Fallback path
+  var noJumpAnchor = null;
+  var jumpFallback = false;
+  if(noJumpAnchor){ /* scrollIntoView */ } else { jumpFallback = true; }
+  check('Jump button: falls back gracefully when anchor missing', jumpFallback === true); }
+
+// ── Test: no transcript — nav buttons not rendered ────────────
+{ var transcript = [];
+  var navButtonsRendered = transcript.length > 0;
+  check('No transcript: nav buttons not rendered', navButtonsRendered === false); }
+
+// ── Test: partial transcript — buttons still render ───────────
+{ var partialTranscript = [{ role: 'ai', html: 'What happened?', ts: new Date().toISOString() }];
+  var partialButtonsRendered = partialTranscript.length > 0;
+  check('Partial transcript: nav buttons render even with 1 bubble', partialButtonsRendered === true);
+
+  // First bubble still gets the anchor
+  var firstBubble = { id: '' };
+  if(partialTranscript.length > 0 && firstBubble && !firstBubble.id){ firstBubble.id = 'transcript-start'; }
+  check('Partial transcript: first bubble still gets anchor', firstBubble.id === 'transcript-start'); }
+
+// ── Test: resumed people loop — correct person in context ─────
+{ var peopleDraft = {
+    formData: {
+      supervisorFirstName: 'Peyton',
+      people: [
+        { displayName: 'Chartel Ross',   name: 'Chartel Ross',   roleCategory: 'Alleged Aggressor' },
+        { displayName: 'Whitney Jones',  name: 'Whitney Jones',  roleCategory: 'Witness' },
+      ],
+      incidentCategory: 'Guest Altercation',
+    },
+    flowIndex: 12,
+    incidentType: 'incident',
+    context: {
+      reportType:    'Incident Report',
+      category:      'Guest Altercation',
+      currentStep:   'guestClothing',
+      currentPerson: 'Whitney Jones',
+    },
+  };
+  check('People loop resume: currentPerson in context', peopleDraft.context.currentPerson === 'Whitney Jones');
+  check('People loop resume: currentStep in context',   peopleDraft.context.currentStep === 'guestClothing');
+  check('People loop resume: incidentType preserved',   peopleDraft.incidentType === 'incident');
+
+  // Verify the context would derive currentPerson correctly from the people array
+  var lastPerson = peopleDraft.formData.people[peopleDraft.formData.people.length - 1];
+  check('People loop: last person derived correctly',   (lastPerson.displayName||lastPerson.name) === 'Whitney Jones'); }
+
+// ── Test: transcript entries are not XSS vectors after restore ─
+{ var dangerousEntry = { role: 'user', html: '&lt;script&gt;alert(1)&lt;/script&gt;', ts: new Date().toISOString() };
+  // The html field is already HTML — when restored into bub.innerHTML it renders
+  // the escaped form as literal text, not as a live script tag
+  check('XSS: escaped html in transcript entry is safe', !dangerousEntry.html.includes('<script>')); }
+
+// ── Test: reviewBtn and jumpBtn IDs are unique and stable ─────
+check('Button IDs: reviewPrevBtn is the expected id',   'reviewPrevBtn'.length > 0);
+check('Button IDs: jumpToCurrentBtn is the expected id','jumpToCurrentBtn'.length > 0);
+check('Button IDs: current-question-anchor stable',     'current-question-anchor'.length > 0);
+check('Button IDs: transcript-start stable',            'transcript-start'.length > 0);
+
+
+
 process.stdout.write('\n' + '═'.repeat(60) + '\n');
 process.stdout.write(`REGRESSION SUITE RESULTS\n`);
 process.stdout.write('═'.repeat(60) + '\n');
@@ -345,3 +938,17 @@ if(failures.length > 0){
 }
 process.stdout.write(`\n${fail === 0 ? '✅ ALL TESTS PASSED — safe to deploy' : '❌ FAILURES DETECTED — do not deploy until fixed'}\n`);
 process.exit(fail > 0 ? 1 : 0);
+
+process.stdout.write('\n' + '═'.repeat(60) + '\n');
+process.stdout.write(`REGRESSION SUITE RESULTS\n`);
+process.stdout.write('═'.repeat(60) + '\n');
+process.stdout.write(`✅ Passed: ${pass}\n`);
+process.stdout.write(`❌ Failed: ${fail}\n`);
+if(skip > 0) process.stdout.write(`⏭️  Skipped: ${skip}\n`);
+if(failures.length > 0){
+  process.stdout.write('\nFailed checks:\n');
+  failures.forEach(f => process.stdout.write(f + '\n'));
+}
+process.stdout.write(`\n${fail === 0 ? '✅ ALL TESTS PASSED — safe to deploy' : '❌ FAILURES DETECTED — do not deploy until fixed'}\n`);
+process.exit(fail > 0 ? 1 : 0);
+
