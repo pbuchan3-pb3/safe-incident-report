@@ -1029,28 +1029,34 @@ async function cleanWithAI(rawText, context, fieldType, fieldKey){
     } else if(fieldKey === 'recognitionDescription'){
       fieldInstruction = `This is an EMPLOYEE RECOGNITION description for ${recognitionEmployeeName}.
 
-RULES:
-1. Rewrite in AP Style, past tense, third person.
-2. NEVER use "subject", "female subject", "male subject", or "individual".
-3. Use the employee's name ("${recognitionEmployeeName}") or "the employee".
-4. PRESERVE every specific observation the supervisor described — the exact behaviors, situations, and details they mentioned.
-5. You may improve the sentence structure and vocabulary, but do NOT replace specific observations with generic praise.
-6. Do NOT add accomplishments, leadership qualities, awards, or initiative that the supervisor did not describe.
-7. If the supervisor described a specific action (e.g. "always volunteered to move sections"), keep that specific action — do not replace it with a general phrase like "demonstrated exceptional work ethic."
+Answer these two questions in the rewrite, in this order:
+1. WHAT did the employee actually do? (the specific action or behavior the supervisor observed)
+2. HOW did they do it? (the manner, attitude, or approach — e.g. without complaint, consistently, with a positive attitude)
 
-BAD (replaces observation with generic praise): "She demonstrated exceptional leadership and work ethic."
-GOOD (expands the supervisor's actual observation): "${recognitionEmployeeName} consistently volunteered to relocate between sections as needed, doing so without complaint and with a positive attitude."`;
+RULES:
+- Rewrite in AP Style, past tense, third person.
+- NEVER use "subject", "female subject", "male subject", or "individual".
+- Use the employee's name ("${recognitionEmployeeName}") or "the employee".
+- PRESERVE every specific observation — keep the actual behaviors the supervisor described.
+- Do NOT replace specific observations with generic conclusions.
+- Do NOT add accomplishments, leadership qualities, or initiative the supervisor did not describe.
+
+BAD (replaces observation): "She demonstrated exceptional leadership and work ethic."
+GOOD (answers what + how from supervisor's words): "${recognitionEmployeeName} consistently volunteered to relocate between sections as needed, doing so without complaint and with a positive attitude."\`;
     } else if(fieldKey === 'recognitionImpact'){
       fieldInstruction = `This is an EMPLOYEE RECOGNITION impact statement for ${recognitionEmployeeName}.
 
+Answer this question in the rewrite:
+3. WHY did it matter? (the effect on operations, guests, or fellow staff — based only on what the supervisor described or clearly implied)
+
 RULES:
-1. Rewrite in AP Style, past tense, third person.
-2. NEVER use "subject", "female subject", "male subject", or "individual".
-3. Use the employee's name ("${recognitionEmployeeName}") or "the employee" or "the recognized employee".
-4. PRESERVE every specific observation — the supervisor's exact descriptions of what the employee did and how it helped.
-5. Do NOT replace specific behaviors with generic conclusions like "exceeded expectations" or "demonstrated exceptional work ethic" unless the supervisor used those phrases.
-6. Do NOT invent leadership, initiative, awards, or accomplishments not described by the supervisor.
-7. Connect the supervisor's observations to S.A.F.E. values or Ford Field operations only when those connections are clearly implied by what the supervisor wrote.`;
+- Rewrite in AP Style, past tense, third person.
+- NEVER use "subject", "female subject", "male subject", or "individual".
+- Use the employee's name ("${recognitionEmployeeName}") or "the employee" or "the recognized employee".
+- PRESERVE every specific observation — do not swap them for generic conclusions.
+- Do NOT add accomplishments, awards, or initiative the supervisor did not describe.
+- Only state that something benefited operations or guests if the supervisor clearly implied it.
+- If the supervisor provided general chip selections, rewrite them without inventing supporting details.\`;
     } else {
       fieldInstruction = `Rewrite in AP Style past tense. Third person only. If referring to the person involved, use "the ${subjectTerm}".`;
     }
@@ -1058,15 +1064,22 @@ RULES:
     // System prompt — recognition reports get their own distinct branch
     let systemPrompt;
     if(isRecognitionReport){
-      systemPrompt = `You are a professional HR documentation specialist for S.A.F.E. Management at Ford Field, Detroit. Your job is to rewrite employee recognition entries in AP Style, third person past tense — improving grammar, structure, and vocabulary without changing what the supervisor actually described.
+      systemPrompt = `You are a professional HR documentation specialist for S.A.F.E. Management at Ford Field, Detroit. Your job is to rewrite employee recognition entries in AP Style, third person past tense.
+
+A well-structured recognition entry answers three questions in order:
+1. What did the employee actually do?
+2. How did they do it? (manner, consistency, attitude)
+3. Why did it matter to operations, guests, or fellow staff?
+
+Each field you receive answers one or two of these questions. Your rewrite must preserve the supervisor's answers — not replace them with generalized praise.
 
 CRITICAL RULES:
-1. NEVER use "subject", "female subject", "male subject", or "individual subject" — these terms belong to incident reports only. Always use the employee's name ("${recognitionEmployeeName}") or "the employee."
-2. PRESERVE the supervisor's specific observations. If they described a behavior, keep that behavior in the rewrite.
-3. Do NOT replace specific observations with generic praise. "Always volunteered to move sections without complaint" is a specific observation. "Demonstrated exceptional work ethic" is generic praise. Keep the specific observation; do not substitute the generic.
-4. Do NOT add accomplishments, leadership qualities, initiative, or awards that the supervisor did not describe.
-5. You may expand the language professionally — better word choice, cleaner sentence structure — but the facts must come entirely from the supervisor's input.
-6. Return ONLY the rewritten text. No preamble.`;
+- NEVER use "subject", "female subject", "male subject", or "individual subject". Use the employee's name ("${recognitionEmployeeName}") or "the employee."
+- PRESERVE the supervisor's specific observations. Keep actual behaviors; do not substitute generic conclusions.
+- "Always volunteered to move sections without complaint" is a specific observation. "Demonstrated exceptional work ethic" is generic praise. Keep the specific observation.
+- Do NOT add accomplishments, leadership qualities, initiative, or awards the supervisor did not describe.
+- You may improve grammar, word choice, and sentence structure — but all facts must come from the supervisor's input.
+- Return ONLY the rewritten text. No preamble.\`;
     } else if(isEmployeeCase){
       systemPrompt = fieldType === 'description'
         ? `You are a professional security report writer for S.A.F.E. Management. Rewrite incident descriptions in AP Style, third person past tense. Never use I, we, she, he, they. This is an EMPLOYEE MISCONDUCT report — refer to the person involved as "the employee", never "subject". Return ONLY the rewritten text.`
@@ -3434,16 +3447,23 @@ async function askNextQuestion(){
           body: JSON.stringify({
             model: 'claude-sonnet-4-6',
             max_tokens: 300,
-            system: `You are a professional HR documentation specialist for S.A.F.E. Management at Ford Field, Detroit. Your job is to rewrite employee recognition impact statements in AP Style, past tense, third person — improving language without altering or replacing what the supervisor described.
+            system: `You are a professional HR documentation specialist for S.A.F.E. Management at Ford Field, Detroit. Your job is to rewrite employee recognition impact statements in AP Style, past tense, third person.
+
+A well-written recognition paragraph answers three questions in order:
+1. What did the employee actually do? (specific action or behavior)
+2. How did they do it? (manner, consistency, attitude)
+3. Why did it matter? (effect on operations, guests, or fellow staff)
+
+Your rewrite must follow this structure using only the facts the supervisor provided. Do not invent content to fill any of the three questions — if the supervisor did not describe a "why," do not add one.
 
 CRITICAL RULES:
-1. Reference the employee by name (${employeeName}) naturally.
-2. NEVER use "subject", "female subject", "male subject", or "individual subject" — those terms belong to incident reports only.
-3. PRESERVE the supervisor's specific observations. Do NOT replace specific behaviors with generic conclusions.
-4. BAD: "demonstrated exceptional work ethic and exceeded expectations" (generic, invented).
-5. GOOD: Expand the supervisor's actual words into professional AP Style while keeping their specific observations intact.
-6. Do NOT invent accomplishments, awards, leadership qualities, or initiative the supervisor did not describe.
-7. Write one concise AP Style paragraph. No bullet points. Return ONLY the paragraph, no preamble.`,
+- Reference the employee by name (${employeeName}) naturally.
+- NEVER use "subject", "female subject", "male subject", or "individual subject."
+- PRESERVE the supervisor's specific observations. Do NOT replace specific behaviors with generic conclusions.
+- BAD: "demonstrated exceptional work ethic and exceeded expectations" (generic, not from supervisor input).
+- GOOD: Answer what + how + why using the supervisor's actual words, expanded into clean AP Style.
+- Do NOT invent accomplishments, awards, leadership qualities, or initiative the supervisor did not describe.
+- Write one concise AP Style paragraph. No bullet points. Return ONLY the paragraph, no preamble.`,
             messages: [{ role: 'user', content: `Rewrite this recognition impact statement professionally: ${raw}` }]
           })
         });
