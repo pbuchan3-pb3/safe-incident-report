@@ -1595,6 +1595,49 @@ function logFinalFormData(fd){
   }
 }
 
+// ── STAGE 4: aiDraft INTERMEDIATE OBJECT ─────────────────────────────────────
+// AI-generated text is held here until the supervisor explicitly confirms it.
+// formData is only written when promoteAIDraft() is called.
+//
+// Flow:
+//   AI generates text → setFieldAIDraft(key, text)   → aiDraft[key] = text, auditLog(ai_draft)
+//   Supervisor: Yes  → promoteAIDraft(key)            → setFieldAIConfirmed(key, aiDraft[key]), delete aiDraft[key]
+//   Supervisor: Edit → setFieldSupervisor(key, edited) → formData[key] = edited, auditLog(supervisor_typed)
+//   Supervisor: No   → discardAIDraft(key)            → delete aiDraft[key] (formData unchanged)
+//
+// This ensures formData never contains an unconfirmed AI-generated value.
+const aiDraft = {};
+
+// Override setFieldAIDraft to also write to aiDraft
+function setFieldAIDraft(key, value){
+  aiDraft[key] = value;  // hold here — do NOT write to formData yet
+  auditLog.push({
+    key,
+    value: typeof value === 'string' ? value.slice(0, 200) : value,
+    source: 'ai_draft',
+    confidence: 0.4,
+    ts: new Date().toISOString(),
+    flowIndex: typeof flowIndex !== 'undefined' ? flowIndex : null,
+  });
+}
+
+// Promote a pending AI draft to confirmed — writes to formData
+function promoteAIDraft(key){
+  if(!(key in aiDraft)){
+    console.warn('promoteAIDraft: no draft for key', key);
+    return;
+  }
+  const value = aiDraft[key];
+  delete aiDraft[key];
+  setFieldAIConfirmed(key, value); // writes to formData + auditLog(ai_confirmed)
+}
+
+// Discard a pending AI draft — formData is never written
+function discardAIDraft(key){
+  if(key in aiDraft) delete aiDraft[key];
+  // Nothing logged — supervisor chose to re-describe; raw input was never stored
+}
+
 // Returns the audit log as a structured object for debugging or future reporting
 function getAuditSummary(){
   return {
@@ -4463,6 +4506,7 @@ CRITICAL RULES:
         const cd = await cr.json();
         removeTyping();
         const cleaned = cd.content && cd.content[0] ? cd.content[0].text.trim() : raw;
+        setFieldAIDraft('recognitionImpact', cleaned); // stage in aiDraft — not in formData yet
 
         // Confirmation step — same pattern as clothing and statement fields
         addBubble(`Here's how it will read on the report: <em>"${escapeHtml(cleaned)}"</em>`, 'ai', true); // suppressSpeak — speakRewritePreview handles it
@@ -4474,11 +4518,11 @@ CRITICAL RULES:
           showInlineOptions(['✓ Yes, that looks right', '✗ No, let me re-describe'], async (choice) => {
             addBubble(choice, 'user');
             if(choice.startsWith('✓')){
-              setFieldAIConfirmed('recognitionImpact', cleaned);
+              promoteAIDraft('recognitionImpact');
               flowIndex++;
               await askNextQuestion();
             } else {
-              // Re-show the picker for another attempt
+              discardAIDraft('recognitionImpact'); // supervisor chose to re-describe — no draft stored
               showTyping(); await delay(400); removeTyping();
               addBubble("No problem — describe it again.", 'ai');
               await showRecognitionImpactPicker(async (raw2) => {
@@ -4540,7 +4584,7 @@ async function processAnswer(raw){
 
   // venue routing
   if(key==='venue'){
-    formData.venue='Ford Field, Detroit, Michigan'; // confirmed by officer
+    setFieldTapped('venue','Ford Field, Detroit, Michigan'); // confirmed by officer
     // Update timestamp bar
     document.getElementById('timestampBar').textContent = `📍 ${formData.venue.split(',')[0]}  ·  ${formData.date}  ·  ${formData.time}  ·  Auto-captured`;
     flowIndex++; await askNextQuestion(); return;
@@ -4548,7 +4592,7 @@ async function processAnswer(raw){
 
   // formType routing
   if(key==='formType'){
-    formData[key]=raw;
+    setFieldTapped(key,raw);
     incidentType=raw.includes('Incident')?'incident':'recognition';
     activeFlow=incidentType==='incident'?incidentFlow:recognitionFlow;
     flowIndex=0; updateContextBanner(); await askNextQuestion(); return;
@@ -4556,7 +4600,7 @@ async function processAnswer(raw){
 
   // Email field with remember option
   if(step.isEmail){
-    formData[key]=raw;
+    setFieldSupervisor(key,raw);
     if(raw.includes('@')){
       // Save email to localStorage immediately
       localStorage.setItem('safe_supervisor_email', raw);
@@ -4574,7 +4618,7 @@ async function processAnswer(raw){
         else localStorage.removeItem('safe_supervisor_email');
       });
     } else {
-      formData[key]='Not provided'; flowIndex++; await askNextQuestion();
+      setFieldSupervisor(key,'Not provided'); flowIndex++; await askNextQuestion();
     }
     return;
   }
@@ -4588,13 +4632,14 @@ async function processAnswer(raw){
       inputArea.style.display='none'; awaitingInput=false;
       const ctx=`Incident report action taken field for ${formData.venue}.`;
       const cleaned=await cleanWithAI(val,ctx,'field');
+      setFieldAIDraft('actionTaken',cleaned); // stage in aiDraft — not in formData yet
       addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this look right?`,'ai', true); // suppressSpeak
       speakRewritePreview(cleaned, "Here's how it will read on the report");
       addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
         clearQuickReplies(); addBubble(confirm,'user');
-        if(confirm.startsWith('Yes')){formData.actionTaken=cleaned;flowIndex++;await askNextQuestion();}
-        else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{formData.actionTaken=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
-        else{addBubble("No problem — describe it again.",'ai');inputArea.style.display='flex';awaitingInput=true;}
+        if(confirm.startsWith('Yes')){promoteAIDraft('actionTaken');flowIndex++;await askNextQuestion();}
+        else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{discardAIDraft('actionTaken');setFieldSupervisor('actionTaken',e);inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
+        else{discardAIDraft('actionTaken');addBubble("No problem — describe it again.",'ai');inputArea.style.display='flex';awaitingInput=true;}
       });
     };
     return;
@@ -4602,13 +4647,13 @@ async function processAnswer(raw){
 
   // guestSeat typed
   if(key==='guestSeat'){
-    formData[key]=isSkip?'Unknown':raw;
+    setFieldSupervisor(key,isSkip?'Unknown':raw);
     flowIndex++; await askNextQuestion(); return;
   }
 
   // witnesses typed
   if(key==='witnesses'){
-    if(isSkip){ formData[key]='None'; flowIndex++; await askNextQuestion(); return; }
+    if(isSkip){ setFieldSupervisor(key,'None'); flowIndex++; await askNextQuestion(); return; }
     const ctx=`Incident report witness field for ${formData.venue}.`;
     const witnessPrompt = 'Rewrite in professional AP Style as a witness list. ' +
       'Format: "Witnesses included [name], [role], and [name], [role]." ' +
@@ -4624,45 +4669,48 @@ async function processAnswer(raw){
     });
     const d2=await r2.json();
     const cleaned=d2.content&&d2.content[0]?d2.content[0].text.trim():raw;
+    setFieldAIDraft(key,cleaned); // stage in aiDraft — not in formData yet
     addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this look right?`,'ai', true); // suppressSpeak
     speakRewritePreview(cleaned, "Here's how it will read on the report");
     addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
-      if(confirm.startsWith('Yes')){setFieldAIConfirmed(key,cleaned);flowIndex++;await askNextQuestion();}
-      else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{formData[key]=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
-      else{addBubble("No problem — describe it again.",'ai');inputArea.style.display='flex';awaitingInput=true;}
+      if(confirm.startsWith('Yes')){promoteAIDraft(key);flowIndex++;await askNextQuestion();}
+      else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{discardAIDraft(key);setFieldSupervisor(key,e);inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
+      else{discardAIDraft(key);addBubble("No problem — describe it again.",'ai');inputArea.style.display='flex';awaitingInput=true;}
     });
     return;
   }
 
   // emsPolice typed
   if(key==='emsPolice'){
-    if(isSkip||raw.toLowerCase().includes('not applicable')){formData[key]='Not applicable';flowIndex++;await askNextQuestion();return;}
+    if(isSkip||raw.toLowerCase().includes('not applicable')){setFieldSupervisor(key,'Not applicable');flowIndex++;await askNextQuestion();return;}
     const ctx=`Incident report EMS/police involvement field for ${formData.venue}.`;
     const cleaned=await cleanWithAI(raw,ctx,'field');
+    setFieldAIDraft(key,cleaned); // stage in aiDraft — not in formData yet
     addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this look right?`,'ai', true); // suppressSpeak
     speakRewritePreview(cleaned, "Here's how it will read on the report");
     addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
-      if(confirm.startsWith('Yes')){setFieldAIConfirmed(key,cleaned);flowIndex++;await askNextQuestion();}
-      else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{formData[key]=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
-      else{addBubble("No problem — describe it again.",'ai');inputArea.style.display='flex';awaitingInput=true;}
+      if(confirm.startsWith('Yes')){promoteAIDraft(key);flowIndex++;await askNextQuestion();}
+      else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{discardAIDraft(key);setFieldSupervisor(key,e);inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
+      else{discardAIDraft(key);addBubble("No problem — describe it again.",'ai');inputArea.style.display='flex';awaitingInput=true;}
     });
     return;
   }
 
   // additionalComments typed
   if(key==='additionalComments'){
-    if(isSkip){ formData[key]='None'; flowIndex++; await askNextQuestion(); return; }
+    if(isSkip){ setFieldSupervisor(key,'None'); flowIndex++; await askNextQuestion(); return; }
     const ctx=`Incident report additional comments field for ${formData.venue}.`;
     const cleaned=await cleanWithAI(raw,ctx,'field');
+    setFieldAIDraft(key,cleaned); // stage in aiDraft — not in formData yet
     addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this look right?`,'ai', true); // suppressSpeak
     speakRewritePreview(cleaned, "Here's how it will read on the report");
     addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
-      if(confirm.startsWith('Yes')){setFieldAIConfirmed(key,cleaned);flowIndex++;await askNextQuestion();}
-      else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{formData[key]=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
-      else{addBubble("No problem — describe it again.",'ai');inputArea.style.display='flex';awaitingInput=true;}
+      if(confirm.startsWith('Yes')){promoteAIDraft(key);flowIndex++;await askNextQuestion();}
+      else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{discardAIDraft(key);setFieldSupervisor(key,e);inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
+      else{discardAIDraft(key);addBubble("No problem — describe it again.",'ai');inputArea.style.display='flex';awaitingInput=true;}
     });
     return;
   }
@@ -4675,7 +4723,7 @@ async function processAnswer(raw){
 
     const finishName = async(lastName) => {
       sendInterceptor = null;
-      formData.guestName = escapeHtml(lastName ? `${firstName} ${lastName}`.trim() : firstName);
+      setFieldSupervisor('guestName', escapeHtml(lastName ? `${firstName} ${lastName}`.trim() : firstName));
       flowIndex++; await askNextQuestion();
     };
 
@@ -4726,8 +4774,8 @@ async function processAnswer(raw){
     rawLower === 'refuse to speak' || rawLower === 'none' || rawLower === 'n/a' ||
     raw.startsWith('📍') || raw.startsWith('✅') || raw.startsWith('📅');
   if(isPreDefined){
-    if(rawLower.includes('refuse') || rawLower.includes('refused')) formData[key] = 'Refused to Speak';
-    else formData[key] = raw;
+    const tappedVal = (rawLower.includes('refuse') || rawLower.includes('refused')) ? 'Refused to Speak' : raw;
+    setFieldTapped(key, tappedVal);
     flowIndex++; await askNextQuestion();
     return;
   }
@@ -4751,12 +4799,13 @@ async function processAnswer(raw){
       });
       const cd = await cr.json();
       const cleaned = cd.content&&cd.content[0] ? cd.content[0].text.trim() : `${genderRef} was wearing ${raw}.`;
+      setFieldAIDraft(key,cleaned); // stage in aiDraft — not in formData yet
       removeTyping(); showTyping(); await delay(300); removeTyping();
       addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this accurately capture what happened?`,'ai', true); // suppressSpeak
       speakRewritePreview(cleaned, "Here's how it will read on the report");
       addQuickReplies(['Yes, that looks right','✏️ Edit — change a word or two','No, let me re-describe'],async(confirm)=>{
         clearQuickReplies(); addBubble(confirm,'user');
-        if(confirm.startsWith('Yes')){setFieldAIConfirmed(key,cleaned);flowIndex++;await askNextQuestion();}
+        if(confirm.startsWith('Yes')){promoteAIDraft(key);flowIndex++;await askNextQuestion();}
         else if(confirm.startsWith('✏️')){
           showTyping(); await delay(300); removeTyping();
           addBubble('Here is the text — edit it directly, then tap send:','ai');
@@ -4766,7 +4815,7 @@ async function processAnswer(raw){
           sendInterceptor=async(_intercepted)=>{
             const edited=_intercepted.trim();
             if(!edited){flowIndex++;await askNextQuestion();return;}
-            formData[key]=edited; inputArea.style.display='none'; awaitingInput=false;
+            discardAIDraft(key); setFieldSupervisor(key,edited); inputArea.style.display='none'; awaitingInput=false;
             sendInterceptor=null; flowIndex++;await askNextQuestion();
           };
         }
@@ -4774,7 +4823,7 @@ async function processAnswer(raw){
       });
     } catch(e) {
       const fallback = `${genderRef} was wearing ${raw}.`;
-      formData[key]=fallback; flowIndex++; await askNextQuestion();
+      setFieldSupervisor(key,fallback); // error fallback — treated as supervisor typed flowIndex++; await askNextQuestion();
     }
     return;
   }
@@ -4796,12 +4845,13 @@ async function processAnswer(raw){
     const descriptionFields = ['incidentDescription','guestStatement','guestStatementDetail','recognitionDescription','recognitionImpact'];
     const fieldType = descriptionFields.includes(key) ? 'description' : 'field';
     const cleaned=await cleanWithAI(raw,ctx,fieldType,key);
+    setFieldAIDraft(key,cleaned); // stage in aiDraft — not in formData yet
     removeTyping(); showTyping(); await delay(500); removeTyping();
     addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this accurately capture what happened?`,'ai', true); // suppressSpeak
     speakRewritePreview(cleaned, "Here's how it will read on the report");
     addQuickReplies(['Yes, that looks right','✏️ Edit — change a word or two','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
-      if(confirm.startsWith('Yes')){setFieldAIConfirmed(key,cleaned);flowIndex++;await askNextQuestion();}
+      if(confirm.startsWith('Yes')){promoteAIDraft(key);flowIndex++;await askNextQuestion();}
       else if(confirm.startsWith('✏️')){
         showTyping(); await delay(400); removeTyping();
         addBubble('Here is the text — edit it directly, then tap send:','ai');
@@ -4812,17 +4862,17 @@ async function processAnswer(raw){
         sendInterceptor=async(_intercepted)=>{
           const edited=_intercepted.trim();
           if(!edited){ flowIndex++; await askNextQuestion(); return; }
-          formData[key]=edited; inputArea.style.display='none'; awaitingInput=false;
+          discardAIDraft(key); setFieldSupervisor(key,edited); inputArea.style.display='none'; awaitingInput=false;
           sendInterceptor=null;
           flowIndex++; await askNextQuestion();
         };
       }
-      else{addBubble("No problem — describe it again and I'll rewrite it.",'ai');inputArea.style.display='flex';awaitingInput=true;}
+      else{discardAIDraft(key);addBubble("No problem — describe it again and I'll rewrite it.",'ai');inputArea.style.display='flex';awaitingInput=true;}
     });
     return;
   }
 
-  formData[key]=isSkip?'Unknown / Not Available':raw;
+  setFieldSupervisor(key, isSkip?'Unknown / Not Available':raw);
   flowIndex++; await askNextQuestion();
 }
 
@@ -4952,7 +5002,7 @@ Return ONLY the narrative text. No preamble, no labels, no markdown.`;
     editMode = false;
     card.querySelectorAll('.editable-input').forEach(inp => {
       const key = inp.dataset.key;
-      if(key) formData[key] = inp.value;
+      if(key) setFieldSupervisor(key, inp.value); // supervisor edited inline on final card
       inp.style.display='none';
       inp.previousElementSibling.textContent = inp.value;
       inp.previousElementSibling.style.display='block';
@@ -6082,7 +6132,7 @@ async function startFlow(){
     const fillers = [/^(it'?s|i'?m|my name is|this is|i am)\s+/i, /^(is|im|ive)\s+/i];
     fillers.forEach(re => { cleaned = cleaned.replace(re, ''); });
     const name = cleaned.trim().split(' ')[0] || firstName.trim().split(' ')[0];
-    formData.supervisorFirstName = escapeHtml(name);
+    setFieldSupervisor('supervisorFirstName', escapeHtml(name));
     inputArea.style.display='none'; awaitingInput=false;
     sendInterceptor=null;
     // Ask last name
@@ -6095,7 +6145,7 @@ async function startFlow(){
       let cleanedLast = lastName.trim();
       const fillersLast = [/^(it'?s|i'?m|my last name is|this is|i am)\s+/i, /^(is|im|ive)\s+/i];
       fillersLast.forEach(re => { cleanedLast = cleanedLast.replace(re, ''); });
-      formData.supervisorLastName = escapeHtml(cleanedLast.trim() || lastName.trim());
+      setFieldSupervisor('supervisorLastName', escapeHtml(cleanedLast.trim() || lastName.trim()));
       inputArea.style.display='none'; awaitingInput=false;
       sendInterceptor=null;
       // Now ask when incident occurred
@@ -6105,8 +6155,8 @@ async function startFlow(){
     addQuickReplies(['Just now','Earlier today','Yesterday','Another date'],async(val)=>{
       clearQuickReplies(); addBubble(val,'user');
       if(val==='Just now'){
-        formData.incidentDate=formData.date;
-        formData.incidentTime=formData.time;
+        setFieldTapped('incidentDate',formData.date);
+        setFieldTapped('incidentTime',formData.time);
         await askNextQuestion();
       } else if(val==='Earlier today'){
         showTyping(); await delay(500); removeTyping();
@@ -6114,8 +6164,8 @@ async function startFlow(){
         const defaultDt = new Date();
         showDateTimePicker(defaultDt, async(dateStr, timeStr)=>{
           addBubble(`📅 ${dateStr} at ${timeStr}`,'user');
-          formData.incidentDate = dateStr;
-          formData.incidentTime = timeStr;
+          setFieldTapped('incidentDate',dateStr);
+          setFieldTapped('incidentTime',timeStr);
           await askNextQuestion();
         });
       } else if(val==='Yesterday'){
@@ -6125,8 +6175,8 @@ async function startFlow(){
         yesterday.setDate(yesterday.getDate()-1);
         showDateTimePicker(yesterday, async(dateStr, timeStr)=>{
           addBubble(`📅 ${dateStr} at ${timeStr}`,'user');
-          formData.incidentDate = dateStr;
-          formData.incidentTime = timeStr;
+          setFieldTapped('incidentDate',dateStr);
+          setFieldTapped('incidentTime',timeStr);
           await askNextQuestion();
         });
       } else {
@@ -6135,8 +6185,8 @@ async function startFlow(){
         const defaultDt = new Date();
         showDateTimePicker(defaultDt, async(dateStr, timeStr)=>{
           addBubble(`📅 ${dateStr} at ${timeStr}`,'user');
-          formData.incidentDate = dateStr;
-          formData.incidentTime = timeStr;
+          setFieldTapped('incidentDate',dateStr);
+          setFieldTapped('incidentTime',timeStr);
           await askNextQuestion();
         });
       }
