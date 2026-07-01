@@ -326,6 +326,14 @@
   <span class="progress-pct" id="progressPct">0%</span>
 </div>
 
+<!-- CONTEXT BANNER — shows report type, category, step, current person during active report -->
+<div id="contextBanner" style="display:none;background:rgba(26,46,74,0.97);border-bottom:1px solid rgba(232,25,44,0.3);padding:6px 14px;flex-shrink:0;">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+    <div id="contextBannerText" style="font-size:11px;color:rgba(255,255,255,0.85);font-family:'Barlow Condensed',sans-serif;letter-spacing:.04em;line-height:1.6;"></div>
+    <button id="contextScrollTopBtn" onclick="chatWindow.scrollTo({top:0,behavior:'smooth'})" style="display:none;font-size:10px;padding:3px 8px;background:rgba(232,25,44,0.85);color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;font-family:'Inter',sans-serif;">↑ Review answers</button>
+  </div>
+</div>
+
 <div class="main">
   <div class="chat-window" id="chatWindow"></div>
   <div id="pickerPanel" style="background:#fff;border-top:2px solid var(--border);max-height:320px;overflow-y:auto;display:none;"></div>
@@ -687,16 +695,60 @@ function saveDraft(){
   clearTimeout(autosaveTimer);
   autosaveTimer = setTimeout(() => {
     try {
+      // Capture the current chat transcript as a serialized array of bubbles
+      // Each entry: { role: 'ai'|'user', html: string, ts: ISO timestamp }
+      const transcript = [];
+      const bubbleRows = chatWindow.querySelectorAll('.bubble-row');
+      bubbleRows.forEach(row => {
+        const isAI   = row.classList.contains('ai');
+        const isUser = row.classList.contains('user');
+        const bub    = row.querySelector('.bubble');
+        if(bub && (isAI || isUser)){
+          transcript.push({
+            role: isAI ? 'ai' : 'user',
+            html: bub.innerHTML,
+            ts:   new Date().toISOString(),
+          });
+        }
+      });
+
+      // Current context: who we're editing in the people loop, what step label we're on
+      const currentStep = (activeFlow && activeFlow[flowIndex]) ? activeFlow[flowIndex].key : null;
       const draft = {
-        formData: formData,
-        flowIndex: flowIndex,
-        incidentType: incidentType,
-        savedAt: new Date().toISOString(),
+        formData:      formData,
+        flowIndex:     flowIndex,
+        incidentType:  incidentType,
+        savedAt:       new Date().toISOString(),
+        transcript,
+        context: {
+          reportType:    incidentType === 'recognition' ? 'Employee Recognition'
+                       : incidentType === 'incident'    ? 'Incident Report'
+                       : 'In Progress',
+          category:      formData.incidentCategory || formData.recognitionType || '',
+          currentStep:   currentStep,
+          currentPerson: formData.people && formData.people.length > 0
+                           ? (formData.people[formData.people.length - 1].displayName || formData.people[formData.people.length - 1].name || '')
+                           : '',
+        },
       };
-      localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-      flashAutosaveIndicator();
-    } catch(e) { console.error('Draft save failed:', e); }
-  }, 400); // debounce — avoid hammering localStorage on every keystroke
+
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+        flashAutosaveIndicator();
+      } catch(quotaErr){
+        // If the full draft (with base64 photos) exceeds localStorage quota,
+        // fall back to saving without the transcript (photos are the likely culprit)
+        console.warn('Draft save with transcript failed — retrying without transcript:', quotaErr);
+        const slimDraft = { ...draft, transcript: [] };
+        try {
+          localStorage.setItem(DRAFT_KEY, JSON.stringify(slimDraft));
+          flashAutosaveIndicator();
+        } catch(e2){
+          console.error('Draft save failed even without transcript:', e2);
+        }
+      }
+    } catch(e){ console.error('Draft save error:', e); }
+  }, 400);
 }
 
 function loadDraft(){
@@ -791,6 +843,43 @@ function flashAutosaveIndicator(){
     label.textContent = original;
     label.style.color = '';
   }, 1200);
+}
+
+// ── CONTEXT BANNER ────────────────────────────────────────────────────────────
+// Shows persistent summary of the active report at the top of chat.
+// Called after resume and after each step completes.
+function updateContextBanner(ctx){
+  const banner     = document.getElementById('contextBanner');
+  const bannerText = document.getElementById('contextBannerText');
+  const scrollBtn  = document.getElementById('contextScrollTopBtn');
+  if(!banner || !bannerText) return;
+
+  // Build from live formData if no ctx provided
+  if(!ctx){
+    ctx = {
+      reportType:    incidentType === 'recognition' ? 'Employee Recognition'
+                   : incidentType === 'incident'    ? 'Incident Report'
+                   : '',
+      category:      formData.incidentCategory || formData.recognitionType || '',
+      currentStep:   (activeFlow && activeFlow[flowIndex]) ? activeFlow[flowIndex].key : '',
+      currentPerson: formData.people && formData.people.length > 0
+                       ? (formData.people[formData.people.length-1].displayName || formData.people[formData.people.length-1].name || '')
+                       : '',
+    };
+  }
+
+  if(!ctx.reportType){ banner.style.display='none'; return; }
+
+  const stepLabel = ctx.currentStep ? ctx.currentStep.replace(/([A-Z])/g,' $1').replace(/_/g,' ').trim() : '';
+  const parts = [];
+  parts.push(`<strong style="color:#fff;">${ctx.reportType}</strong>`);
+  if(ctx.category) parts.push(`<span style="color:var(--safe-red);">${ctx.category}</span>`);
+  if(ctx.currentPerson) parts.push(`Person: <em>${ctx.currentPerson}</em>`);
+  if(stepLabel) parts.push(`Step: ${stepLabel}`);
+
+  bannerText.innerHTML = parts.join('  ·  ');
+  banner.style.display = 'block';
+  if(scrollBtn) scrollBtn.style.display = 'inline-block';
 }
 
 function scrollBottom(){setTimeout(()=>chatWindow.scrollTop=chatWindow.scrollHeight,80);}
@@ -2602,6 +2691,7 @@ async function askNextQuestion(){
     break;
   }
   updateProgress();
+  updateContextBanner();
   saveDraft();
   if(flowIndex>=activeFlow.length){await showFinalForm();return;}
   const step=activeFlow[flowIndex];
@@ -2950,7 +3040,7 @@ async function processAnswer(raw){
     formData[key]=raw;
     incidentType=raw.includes('Incident')?'incident':'recognition';
     activeFlow=incidentType==='incident'?incidentFlow:recognitionFlow;
-    flowIndex=0; await askNextQuestion(); return;
+    flowIndex=0; updateContextBanner(); await askNextQuestion(); return;
   }
 
   // Email field with remember option
@@ -4079,27 +4169,109 @@ function init(){
 }
 
 // ── RESUME FLOW — restores state from a saved draft and continues the conversation ──
+// ── RESUME FLOW — restores state, chat history, and context from a saved draft ──
 async function resumeFlow(draft){
-  chatWindow.innerHTML='';
+  chatWindow.innerHTML = '';
   showVoiceFloat();
 
-  // Restore state
+  // 1. Restore app state
   Object.assign(formData, draft.formData);
   if(!formData.people) formData.people = [];
-  migrateLegacyGuestToPeople(); // upgrade any pre-people-array draft data
-  incidentType = draft.incidentType;
-  activeFlow = incidentType === 'incident' ? incidentFlow : (incidentType === 'recognition' ? recognitionFlow : baseFlow);
+  migrateLegacyGuestToPeople();
+  incidentType  = draft.incidentType;
+  activeFlow    = incidentType === 'incident'   ? incidentFlow
+                : incidentType === 'recognition' ? recognitionFlow
+                : baseFlow;
   flowIndex = draft.flowIndex || 0;
+  if(!incidentType){ activeFlow = baseFlow; flowIndex = Math.min(flowIndex, baseFlow.length); }
 
-  // If we never made it past the base flow (no formType chosen yet), restart from base flow
-  if(!incidentType){
-    activeFlow = baseFlow;
-    flowIndex = Math.min(flowIndex, baseFlow.length);
+  // 2. Restore or rebuild chat transcript
+  const transcript = draft.transcript || [];
+  let lastRestoredHTML = '';
+
+  if(transcript.length > 0){
+    transcript.forEach(entry => {
+      if(!entry.html || !entry.html.trim()) return;
+      const row = document.createElement('div');
+      row.className = `bubble-row ${entry.role}`;
+      const av = document.createElement('div');
+      av.className = `avatar ${entry.role}`;
+      av.textContent = entry.role === 'ai' ? 'AI' : 'YOU';
+      const bub = document.createElement('div');
+      bub.className = `bubble ${entry.role}`;
+      bub.innerHTML = entry.html;
+      if(entry.role === 'user'){ row.appendChild(bub); row.appendChild(av); }
+      else                     { row.appendChild(av);  row.appendChild(bub); }
+      chatWindow.appendChild(row);
+      lastRestoredHTML = entry.html;
+    });
+  } else {
+    // Fallback: rebuild a summary card from formData when no transcript was saved
+    const sup = `${formData.supervisorFirstName||''} ${formData.supervisorLastName||''}`.trim() || 'Officer';
+    const rptLabel = incidentType === 'recognition' ? 'Employee Recognition'
+                   : incidentType === 'incident'    ? 'Incident Report' : 'Report';
+    const summaryLines = [`<strong>Report resumed — ${rptLabel}</strong>`, `Supervisor: ${escapeHtml(sup)}`];
+    if(formData.incidentCategory) summaryLines.push(`Category: ${escapeHtml(formData.incidentCategory)}`);
+    if(formData.incidentSeverity) summaryLines.push(`Severity: ${escapeHtml(formData.incidentSeverity)}`);
+    if(formData.incidentLocation)  summaryLines.push(`Location: ${escapeHtml(formData.incidentLocation)}`);
+    if(formData.people && formData.people.length > 0){
+      summaryLines.push(`People on file: ${formData.people.map(p=>escapeHtml(p.displayName||p.name)).join(', ')}`);
+    }
+    const summaryDiv = document.createElement('div');
+    summaryDiv.style.cssText = 'background:#eef3f9;border-left:3px solid var(--safe-navy);border-radius:6px;padding:10px 14px;margin:6px 0;font-size:13px;line-height:1.7;color:var(--text-main);';
+    summaryDiv.innerHTML = summaryLines.join('<br>');
+    chatWindow.appendChild(summaryDiv);
   }
 
+  // 3. Context banner
+  updateContextBanner(draft.context || null);
+
+  // 4. Navigation buttons (review / jump) — only when there's a real transcript
+  if(transcript.length > 0){
+    const navRow = document.createElement('div');
+    navRow.style.cssText = 'display:flex;gap:8px;justify-content:center;padding:6px 0;flex-wrap:wrap;';
+    const reviewBtn = document.createElement('button');
+    reviewBtn.style.cssText = 'font-size:11px;padding:5px 12px;background:var(--light-bg);border:1px solid var(--border);color:var(--safe-navy);border-radius:6px;cursor:pointer;font-family:Inter,sans-serif;';
+    reviewBtn.textContent = '↑ Review previous answers';
+    reviewBtn.onclick = () => chatWindow.scrollTo({ top: 0, behavior: 'smooth' });
+    const jumpBtn = document.createElement('button');
+    jumpBtn.id = 'jumpToCurrentBtn';
+    jumpBtn.style.cssText = 'font-size:11px;padding:5px 12px;background:var(--safe-navy);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:Inter,sans-serif;';
+    jumpBtn.textContent = '↓ Jump to current question';
+    jumpBtn.onclick = () => chatWindow.scrollTo({ top: chatWindow.scrollHeight, behavior: 'smooth' });
+    navRow.appendChild(reviewBtn);
+    navRow.appendChild(jumpBtn);
+    chatWindow.appendChild(navRow);
+  }
+
+  // 5. Session divider
+  const divider = document.createElement('div');
+  divider.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0;';
+  divider.innerHTML = `<div style="flex:1;height:1px;background:var(--border);"></div><span style="font-size:10px;color:var(--text-muted);white-space:nowrap;font-family:'Barlow Condensed',sans-serif;letter-spacing:.06em;text-transform:uppercase;">Resumed</span><div style="flex:1;height:1px;background:var(--border);"></div>`;
+  chatWindow.appendChild(divider);
+
+  // 6. Welcome back message
   showTyping(); await delay(700); removeTyping();
-  addBubble(`Welcome back${formData.supervisorFirstName?', '+formData.supervisorFirstName:''}. Picking up right where you left off.`,'ai');
+  addBubble(`Welcome back${formData.supervisorFirstName ? ', ' + escapeHtml(formData.supervisorFirstName) : ''}. Picking up right where you left off.`, 'ai');
   await delay(400);
+
+  // 7. Deduplicate: skip re-asking if the last saved AI bubble IS the next question
+  const nextStep = activeFlow && activeFlow[flowIndex];
+  if(nextStep && lastRestoredHTML){
+    const stripTags = s => s.replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim();
+    const nextAsk = typeof nextStep.ask === 'function' ? nextStep.ask() : (nextStep.ask || '');
+    const nextPlain = stripTags(nextAsk);
+    const lastPlain = stripTags(lastRestoredHTML);
+    const prefix = nextPlain.slice(0, Math.min(40, nextPlain.length));
+    if(prefix.length > 0 && lastPlain.includes(prefix)){
+      // Already displayed — just set up input and return
+      inputArea.style.display = 'flex';
+      awaitingInput = true;
+      document.getElementById('inputHint').style.display = 'block';
+      return;
+    }
+  }
+
   await askNextQuestion();
 }
 
