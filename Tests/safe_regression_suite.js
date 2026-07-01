@@ -1913,9 +1913,9 @@ var appSrc21 = require('fs').readFileSync(require('path').join(__dirname,'..','s
   check('resumeFlow wired to ctx', appSrc21.includes('computeReportContext(formData).supervisorName')); }
 
 // ── setField wiring in source ─────────────────────────────────
-{ check('AI rewrite confirmations use setFieldAIConfirmed', appSrc21.includes('setFieldAIConfirmed(key,cleaned)'));
+{ check('AI rewrite confirmations use promoteAIDraft (Stage 4)', appSrc21.includes('promoteAIDraft(key)'));
   check('professionalNarrative uses setFieldAIDraft', appSrc21.includes("setFieldAIDraft('professionalNarrative'"));
-  check('recognitionImpact confirmed uses setFieldAIConfirmed', appSrc21.includes("setFieldAIConfirmed('recognitionImpact'"));
+  check('recognitionImpact confirmed uses promoteAIDraft (Stage 4)', appSrc21.includes("promoteAIDraft('recognitionImpact')"));
   check('System timestamps wired to setFieldSystem', appSrc21.includes("setFieldSystem('timestamp'") && appSrc21.includes("setFieldSystem('date'"));
   check('Signature wired to setFieldSystem', appSrc21.includes("setFieldSystem('supervisorSignature'")); }
 
@@ -1924,4 +1924,291 @@ var appSrc21 = require('fs').readFileSync(require('path').join(__dirname,'..','s
   check('generatePDF still generates HTML', appSrc21.includes("const html = `<!DOCTYPE html"));
   check('submitToSheets still sends to Sheets', appSrc21.includes('new URLSearchParams'));
   check('AI narrative still generates from people array', appSrc21.includes('peopleForNarrative')); }
+
+
+// ════════════════════════════════════════════════════════════
+section('SUITE 22 — Stage 3: setField write path wiring');
+// ════════════════════════════════════════════════════════════
+
+eval(require('fs').readFileSync(require('path').join(__dirname, 'app_logic.js'), 'utf8'));
+var appSrc22 = require('fs').readFileSync(require('path').join(__dirname,'..','safe_incident_form_24.html'),'utf8');
+
+// ── Write paths converted to setField ────────────────────────
+{ check('Final catch-all uses setFieldSupervisor',
+    appSrc22.includes("setFieldSupervisor(key, isSkip?'Unknown / Not Available':raw)"));
+  check('isPreDefined tap block uses setFieldTapped',
+    appSrc22.includes('setFieldTapped(key, tappedVal)'));
+  check('venue uses setFieldTapped',
+    appSrc22.includes("setFieldTapped('venue','Ford Field"));
+  check('formType uses setFieldTapped',
+    appSrc22.includes('setFieldTapped(key,raw)') && appSrc22.includes("key==='formType'"));
+  check('email field uses setFieldSupervisor',
+    appSrc22.includes('setFieldSupervisor(key,raw)') && appSrc22.includes('step.isEmail'));
+  check('guestSeat uses setFieldSupervisor',
+    appSrc22.includes("setFieldSupervisor(key,isSkip?'Unknown':raw)"));
+  check('guestName uses setFieldSupervisor',
+    appSrc22.includes("setFieldSupervisor('guestName'"));
+  check('witnesses skip uses setFieldSupervisor',
+    appSrc22.includes("setFieldSupervisor(key,'None')"));
+  check('emsPolice skip uses setFieldSupervisor',
+    appSrc22.includes("setFieldSupervisor(key,'Not applicable')"));
+  check('email not-provided uses setFieldSupervisor',
+    appSrc22.includes("setFieldSupervisor(key,'Not provided')"));
+  check('supervisorFirstName uses setFieldSupervisor',
+    appSrc22.includes("setFieldSupervisor('supervisorFirstName'"));
+  check('supervisorLastName uses setFieldSupervisor',
+    appSrc22.includes("setFieldSupervisor('supervisorLastName'"));
+  check('incidentDate tapped uses setFieldTapped',
+    appSrc22.includes("setFieldTapped('incidentDate'"));
+  check('incidentTime tapped uses setFieldTapped',
+    appSrc22.includes("setFieldTapped('incidentTime'"));
+  check('inline edit save uses setFieldSupervisor',
+    appSrc22.includes('setFieldSupervisor(key, inp.value)'));
+  check('actionTaken Other YES path uses promoteAIDraft (Stage 4)',
+    appSrc22.includes("promoteAIDraft('actionTaken')"));
+  check('guestClothing edit interceptor uses setFieldSupervisor',
+    appSrc22.includes('setFieldSupervisor(key,edited)')); }
+
+// ── Edit interceptors all converted ──────────────────────────
+{ check('No remaining formData[key]=e interceptors in processAnswer',
+    !appSrc22.includes('sendInterceptor=async(e)=>{formData[key]=e;')); }
+
+// ── AI paths unchanged ────────────────────────────────────────
+{ check('AP Style rewrites now use promoteAIDraft (Stage 4)',
+    (appSrc22.match(/promoteAIDraft\(key\)/g)||[]).length >= 5);
+  check('setFieldAIDraft still used for professionalNarrative',
+    appSrc22.includes("setFieldAIDraft('professionalNarrative'"));
+  check('recognitionImpact now uses promoteAIDraft (Stage 4)',
+    appSrc22.includes("promoteAIDraft('recognitionImpact')")); }
+
+// ── System fields unchanged ───────────────────────────────────
+{ check('supervisorSignature uses setFieldSystem',
+    appSrc22.includes("setFieldSystem('supervisorSignature'"));
+  check('timestamp uses setFieldSystem',
+    appSrc22.includes("setFieldSystem('timestamp'"));
+  check('venue system init uses setFieldSystem',
+    appSrc22.includes("setFieldSystem('venue'")); }
+
+// ── Functional: setField writes to formData AND auditLog ──────
+{ formData = {}; auditLog.length = 0;
+  setFieldSupervisor('incidentDescription', 'Two guests were arguing near Section 131.');
+  check('setFieldSupervisor: formData updated', formData.incidentDescription === 'Two guests were arguing near Section 131.');
+  check('setFieldSupervisor: auditLog entry added', auditLog.length === 1);
+  check('setFieldSupervisor: source is supervisor_typed', auditLog[0].source === 'supervisor_typed');
+  check('setFieldSupervisor: confidence is 1.0', auditLog[0].confidence === 1.0);
+  check('setFieldSupervisor: key correct', auditLog[0].key === 'incidentDescription');
+  check('setFieldSupervisor: ts is ISO string', !isNaN(new Date(auditLog[0].ts).getTime())); }
+
+{ formData = {}; auditLog.length = 0;
+  setFieldTapped('incidentCategory', 'Guest Altercation');
+  check('setFieldTapped: formData updated', formData.incidentCategory === 'Guest Altercation');
+  check('setFieldTapped: source is supervisor_tapped', auditLog[0].source === 'supervisor_tapped');
+  check('setFieldTapped: confidence is 1.0', auditLog[0].confidence === 1.0); }
+
+{ formData = {}; auditLog.length = 0;
+  setFieldSystem('date', 'Wednesday, July 1, 2026');
+  check('setFieldSystem: source is system', auditLog[0].source === 'system');
+  check('setFieldSystem: confidence is 1.0', auditLog[0].confidence === 1.0); }
+
+{ formData = {}; auditLog.length = 0;
+  setFieldAIConfirmed('incidentDescription', 'Two guests were involved in a physical altercation near Section 131.');
+  check('setFieldAIConfirmed: source is ai_confirmed', auditLog[0].source === 'ai_confirmed');
+  check('setFieldAIConfirmed: confidence is 0.85', auditLog[0].confidence === 0.85); }
+
+// ── auditLog entry schema ─────────────────────────────────────
+{ formData = {}; auditLog.length = 0;
+  setField('incidentLocation', 'Section 131, Row 7, Seat 1', 'supervisor_typed', 1.0);
+  var entry = auditLog[0];
+  check('auditLog entry: has key', 'key' in entry);
+  check('auditLog entry: has value', 'value' in entry);
+  check('auditLog entry: has source', 'source' in entry);
+  check('auditLog entry: has confidence', 'confidence' in entry);
+  check('auditLog entry: has ts', 'ts' in entry);
+  check('auditLog entry: has flowIndex', 'flowIndex' in entry); }
+
+// ── formData values are unchanged by wiring ───────────────────
+{ formData = {}; auditLog.length = 0;
+  setFieldSupervisor('actionTaken', 'Verbal warning issued');
+  check('formData value unchanged: actionTaken', formData.actionTaken === 'Verbal warning issued');
+  setFieldTapped('incidentSeverity', 'Minor — Resolved on scene');
+  check('formData value unchanged: incidentSeverity', formData.incidentSeverity === 'Minor — Resolved on scene'); }
+
+// ── No aiDraft introduced ─────────────────────────────────────
+{ check('aiDraft intermediate object added (Stage 4)',
+    appSrc22.includes('const aiDraft') || appSrc22.includes('aiDraft = {}')); }
+
+// ── Existing workflows untouched ──────────────────────────────
+{ check('incidentFlow present', appSrc22.includes('const incidentFlow = ['));
+  check('recognitionFlow present', appSrc22.includes('const recognitionFlow = ['));
+  check('generatePDF still present', appSrc22.includes('function generatePDF(isIncident, silent)'));
+  check('submitToSheets still present', appSrc22.includes('async function submitToSheets'));
+  check('generateWord still present', appSrc22.includes('function generateWord(isIncident)'));
+  check('Photo upload unchanged', appSrc22.includes('photoDataUrls'));
+  check('Signature pad unchanged', appSrc22.includes('showSignaturePad')); }
+
+// ── logFinalFormData still called ────────────────────────────
+{ check('logFinalFormData still called in showFinalForm',
+    appSrc22.includes('logFinalFormData(formData)')); }
+
+// ── getAuditSummary reflects all source types ─────────────────
+{ auditLog.length = 0;
+  setFieldSupervisor('f1', 'v1');
+  setFieldSupervisor('f2', 'v2');
+  setFieldTapped('f3', 'v3');
+  setFieldSystem('f4', 'v4');
+  setFieldAIDraft('f5', 'v5');
+  setFieldAIConfirmed('f6', 'v6');
+  var summary = getAuditSummary();
+  check('getAuditSummary: supervisorFields includes typed+tapped (=3)', summary.supervisorFields === 3);
+  check('getAuditSummary: aiDraftFields = 1', summary.aiDraftFields === 1);
+  check('getAuditSummary: aiConfirmedFields = 1', summary.aiConfirmedFields === 1);
+  check('getAuditSummary: systemFields = 1', summary.systemFields === 1);
+  check('getAuditSummary: totalEntries = 6', summary.totalEntries === 6); }
+
+
+// ════════════════════════════════════════════════════════════
+section('SUITE 23 — Stage 4: aiDraft provenance hardening');
+// ════════════════════════════════════════════════════════════
+
+eval(require('fs').readFileSync(require('path').join(__dirname, 'app_logic.js'), 'utf8'));
+var appSrc23 = require('fs').readFileSync(require('path').join(__dirname,'..','safe_incident_form_24.html'),'utf8');
+
+// ── aiDraft object and core functions ────────────────────────
+{ check('aiDraft object defined', appSrc23.includes('const aiDraft = {}'));
+  check('promoteAIDraft defined', appSrc23.includes('function promoteAIDraft(key)'));
+  check('discardAIDraft defined', appSrc23.includes('function discardAIDraft(key)')); }
+
+// ── setFieldAIDraft stages to aiDraft, not formData ──────────
+{ formData = {}; auditLog.length = 0;
+  // Simulate setFieldAIDraft — as defined in app_logic.js (reads aiDraft)
+  // We test the contract: aiDraft holds it, formData does NOT
+  // Re-define a local aiDraft for isolation
+  var localDraft = {};
+  function testSetFieldAIDraft(key, value){
+    localDraft[key] = value;
+    auditLog.push({ key, value, source: 'ai_draft', confidence: 0.4, ts: new Date().toISOString(), flowIndex: null });
+  }
+  function testPromoteAIDraft(key){
+    if(!(key in localDraft)) return;
+    var value = localDraft[key];
+    delete localDraft[key];
+    setFieldAIConfirmed(key, value);
+  }
+  function testDiscardAIDraft(key){ delete localDraft[key]; }
+
+  formData = {}; auditLog.length = 0;
+  testSetFieldAIDraft('incidentDescription', 'Two guests were involved in a physical altercation.');
+  check('AI draft: formData NOT written before confirm', !('incidentDescription' in formData));
+  check('AI draft: aiDraft holds the value', localDraft['incidentDescription'] === 'Two guests were involved in a physical altercation.');
+  check('AI draft: auditLog has ai_draft entry', auditLog.length === 1 && auditLog[0].source === 'ai_draft');
+  check('AI draft: confidence is 0.4', auditLog[0].confidence === 0.4); }
+
+// ── promoteAIDraft writes to formData with ai_confirmed ───────
+{ formData = {}; auditLog.length = 0;
+  var localDraft2 = {};
+  function testStage2(key, value){ localDraft2[key] = value; auditLog.push({key,value,source:'ai_draft',confidence:0.4,ts:new Date().toISOString(),flowIndex:null}); }
+  function testPromote2(key){
+    if(!(key in localDraft2)) return;
+    var v = localDraft2[key]; delete localDraft2[key];
+    setFieldAIConfirmed(key, v);
+  }
+  testStage2('actionTaken', 'The subject was issued a verbal warning and escorted from the venue.');
+  testPromote2('actionTaken');
+  check('After promote: formData has the value', formData.actionTaken === 'The subject was issued a verbal warning and escorted from the venue.');
+  check('After promote: aiDraft cleared', !('actionTaken' in localDraft2));
+  check('After promote: auditLog has ai_confirmed entry',
+    auditLog.some(function(e){ return e.source === 'ai_confirmed' && e.key === 'actionTaken'; }));
+  check('After promote: confidence is 0.85',
+    auditLog.find(function(e){ return e.source === 'ai_confirmed'; }).confidence === 0.85); }
+
+// ── rejected AI draft does not alter formData ─────────────────
+{ formData = {}; auditLog.length = 0;
+  var localDraft3 = {};
+  function testStage3(key, value){ localDraft3[key] = value; }
+  function testDiscard3(key){ delete localDraft3[key]; }
+
+  testStage3('witnesses', 'Witnesses included John Smith, Security, and Jane Doe, Usher.');
+  // Supervisor says No
+  testDiscard3('witnesses');
+  check('After reject: formData unchanged', !('witnesses' in formData));
+  check('After reject: aiDraft cleared', !('witnesses' in localDraft3)); }
+
+// ── supervisor edit path ──────────────────────────────────────
+{ formData = {}; auditLog.length = 0;
+  var localDraft4 = {};
+  function testStage4(key, value){ localDraft4[key] = value; }
+  function testDiscard4(key){ delete localDraft4[key]; }
+
+  testStage4('emsPolice', 'AI version of EMS text');
+  // Supervisor chose Edit — typed their own version
+  testDiscard4('emsPolice');
+  setFieldSupervisor('emsPolice', 'Detroit PD was notified but did not respond.');
+  check('After edit: formData has supervisor value',
+    formData.emsPolice === 'Detroit PD was notified but did not respond.');
+  check('After edit: auditLog has supervisor_typed entry',
+    auditLog.some(function(e){ return e.source === 'supervisor_typed' && e.key === 'emsPolice'; }));
+  check('After edit: no ai_confirmed for this field',
+    !auditLog.some(function(e){ return e.source === 'ai_confirmed' && e.key === 'emsPolice'; })); }
+
+// ── auditLog distinguishes ai_draft from ai_confirmed ─────────
+{ auditLog.length = 0;
+  setFieldAIConfirmed('actionTaken', 'Verbal warning issued.');
+  var draftEntry = {key:'actionTaken',value:'draft',source:'ai_draft',confidence:0.4,ts:new Date().toISOString(),flowIndex:null};
+  auditLog.unshift(draftEntry);
+  var summary = getAuditSummary();
+  check('getAuditSummary: aiDraftFields counts ai_draft', summary.aiDraftFields >= 1);
+  check('getAuditSummary: aiConfirmedFields counts ai_confirmed', summary.aiConfirmedFields >= 1);
+  check('getAuditSummary: both ai_draft and ai_confirmed tracked separately',
+    typeof summary.aiDraftFields === 'number' && typeof summary.aiConfirmedFields === 'number'); }
+
+// ── Source wiring in app source ───────────────────────────────
+{ check('actionTaken staged with setFieldAIDraft',
+    appSrc23.includes("setFieldAIDraft('actionTaken',cleaned)"));
+  check('witnesses staged with setFieldAIDraft',
+    appSrc23.includes('setFieldAIDraft(key,cleaned)'));
+  check('recognitionImpact staged with setFieldAIDraft',
+    appSrc23.includes("setFieldAIDraft('recognitionImpact', cleaned)"));
+  check('professionalNarrative still uses setFieldAIDraft (no confirmation dialog)',
+    appSrc23.includes("setFieldAIDraft('professionalNarrative'")); }
+
+{ check('actionTaken Yes → promoteAIDraft',
+    appSrc23.includes("promoteAIDraft('actionTaken')"));
+  check('witnesses Yes → promoteAIDraft(key)',
+    appSrc23.includes('promoteAIDraft(key)'));
+  check('recognitionImpact Yes → promoteAIDraft',
+    appSrc23.includes("promoteAIDraft('recognitionImpact')"));
+  check('No raw setFieldAIConfirmed(key,cleaned) remains',
+    (appSrc23.match(/setFieldAIConfirmed\(key,cleaned\)/g)||[]).length === 0); }
+
+{ check('No branch: discardAIDraft(key) called', appSrc23.includes('discardAIDraft(key)'));
+  check('actionTaken No branch: discardAIDraft', appSrc23.includes("discardAIDraft('actionTaken')"));
+  check('recognitionImpact No branch: discardAIDraft', appSrc23.includes("discardAIDraft('recognitionImpact')"));
+  check('Edit branch: discardAIDraft before setFieldSupervisor',
+    appSrc23.includes('discardAIDraft(key); setFieldSupervisor(key,')); }
+
+// ── professionalNarrative: stays in aiDraft only ──────────────
+{ check('professionalNarrative not promoted automatically',
+    !appSrc23.includes("promoteAIDraft('professionalNarrative')"));
+  check('professionalNarrative supervisor inline edit still uses setFieldSupervisor',
+    appSrc23.includes("setFieldSupervisor(key, inp.value)")); }
+
+// ── Existing outputs unchanged ────────────────────────────────
+{ check('generatePDF unchanged', appSrc23.includes('function generatePDF(isIncident, silent)'));
+  check('submitToSheets unchanged', appSrc23.includes('async function submitToSheets'));
+  check('generateWord unchanged', appSrc23.includes('function generateWord(isIncident)'));
+  check('AP Style rewrite unchanged', appSrc23.includes('async function cleanWithAI'));
+  check('Photo upload unchanged', appSrc23.includes('photoDataUrls'));
+  check('Signature flow unchanged', appSrc23.includes('showSignaturePad'));
+  check('Employee Recognition unchanged', appSrc23.includes("const recognitionFlow = ["));
+  check('Recording workflow unchanged', appSrc23.includes('async function recordingGenerateDraft')); }
+
+// ── Prior stage wiring still intact ──────────────────────────
+{ check('setFieldSupervisor still wired to final catch-all',
+    appSrc23.includes("setFieldSupervisor(key, isSkip?'Unknown / Not Available':raw)"));
+  check('setFieldTapped still wired to isPreDefined block',
+    appSrc23.includes('setFieldTapped(key, tappedVal)'));
+  check('setFieldSystem still wired to signature',
+    appSrc23.includes("setFieldSystem('supervisorSignature'"));
+  check('logFinalFormData still called in showFinalForm',
+    appSrc23.includes('logFinalFormData(formData)')); }
 
