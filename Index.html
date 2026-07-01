@@ -687,6 +687,24 @@ function syncPersonName(p){
   return p;
 }
 
+// ── EMPLOYEE NAME HELPERS (Recognition reports) ───────────────────────────
+// Mirrors the person name model but applied to the recognized employee fields.
+// Keeps incident-report and recognition-report name models separate.
+function buildEmployeeDisplayName(){
+  const parts = [formData.employeeFirstName];
+  if(formData.employeeMiddleName)    parts.push(formData.employeeMiddleName);
+  else if(formData.employeeMiddleInitial) parts.push(formData.employeeMiddleInitial);
+  if(formData.employeeLastName)      parts.push(formData.employeeLastName);
+  if(formData.employeeSuffix)        parts.push(formData.employeeSuffix);
+  return parts.filter(Boolean).join(' ').trim() || 'the employee';
+}
+
+function syncEmployeeDisplayName(){
+  formData.employeeDisplayName = buildEmployeeDisplayName();
+  // Also keep the legacy flat field for backward compat with any code that reads fd.employeeName
+  formData.employeeName = formData.employeeDisplayName;
+}
+
 formData.people = [];
 
 // Migration shim: if older saved drafts or any legacy code path still writes
@@ -868,8 +886,7 @@ const incidentFlow = [
 const recognitionFlow = [
   {key:'supervisorTitle', ask:"What is your title or role?"},
   {key:'supervisorEmail', ask:()=>savedEmail ? `What is your email address? We have <strong>${savedEmail}</strong> on file — tap to use it, or type a new one.` : 'What is your email address? A copy of this recognition will be sent to you automatically.', isEmail:true, savedEmailChip:true},
-  {key:'employeeFirstName', ask:"What is the first name of the employee you are recognizing?"},
-  {key:'employeeLastName', ask:"And their last name?"},
+  {key:'employeeFirstName', ask:"What is the employee's first name?<br><span style=\"font-size:12px;color:var(--text-muted);\">If you accidentally enter the full name, I'll help separate it correctly.</span>", isEmployeeName:true},
   {key:'employeeRole', ask:"What is their role or position?"},
   {key:'recognitionDescription', ask:"Tell me what this employee did. Describe the situation and their actions — don't worry about wording, I'll write it up professionally."},
   {key:'recognitionImpact', ask:"How did this employee's actions reflect S.A.F.E. values or benefit Ford Field operations, guests, or fellow staff?", isRecognitionImpact:true},
@@ -1003,7 +1020,7 @@ async function cleanWithAI(rawText, context, fieldType, fieldKey){
 
     // Build the employee's display name for recognition reports
     const recognitionEmployeeName = isRecognitionReport
-      ? (`${formData.employeeFirstName||''} ${formData.employeeLastName||''}`.trim() || 'the employee')
+      ? ((formData.employeeDisplayName || `${formData.employeeFirstName||''} ${formData.employeeLastName||''}`.trim()) || 'the employee')
       : null;
 
     // Subject term: recognition and misconduct both avoid "subject" language
@@ -1157,7 +1174,7 @@ function sendViaMailto(isIncident){
     body += `EMS/Police: ${fd.emsPolice||'N/A'}\nGuest Transported: ${fd.guestTransported||'N/A'}\n\n`;
     body += `FOLLOW-UP\n---------\nRequired: ${fd.followUp||'N/A'}\nDetails: ${fd.followUpDetails||'N/A'}\nRecommendation: ${fd.recommendation||'N/A'}\n\n`;
   } else {
-    const empName=`${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim();
+    const empName=(fd.employeeDisplayName || `${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim());
     body += `RECOGNITION DETAILS\n-------------------\n`;
     body += `Employee: ${empName}\nRole: ${fd.employeeRole||'N/A'}\n\n`;
     body += `Description:\n${fd.recognitionDescription||'N/A'}\n\n`;
@@ -1247,7 +1264,7 @@ async function submitToSheets(isIncident) {
         followUpDetails: fd.followUpDetails || '',
         recommendation: fd.recommendation || '',
         analyticsTags: generateAnalyticsTags(fd),
-        employeeName: fd.employeeName || '',
+        employeeName: fd.employeeDisplayName || fd.employeeName || '',
         employeeRole: fd.employeeRole || '',
         recognitionDescription: fd.recognitionDescription || '',
         recognitionImpact: fd.recognitionImpact || '',
@@ -2895,6 +2912,233 @@ function toProperCase(s){
   return s.replace(/\w\S*/g, t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
 }
 
+// ── EMPLOYEE NAME CAPTURE (Recognition flow) ─────────────────────────────────
+// Handles the isEmployeeName:true step in recognitionFlow.
+// Uses the existing parseNameTokens parser to detect full-name entries,
+// shows a confirmation/review screen, and populates all structured fields
+// without ever asking the separate last-name question when the split is accepted.
+
+async function reviewEmployeeName(){
+  // Shows the employee name review screen.
+  // Returns true when officer accepts; false to restart capture.
+  syncEmployeeDisplayName();
+
+  const structured = formatParsedNameSuggestion({
+    firstName:     formData.employeeFirstName,
+    middleName:    formData.employeeMiddleName,
+    middleInitial: formData.employeeMiddleInitial,
+    lastName:      formData.employeeLastName,
+    suffix:        formData.employeeSuffix,
+  });
+
+  showTyping(); await delay(400); removeTyping();
+  addBubble(
+    `<strong>Employee Name</strong><br>` +
+    `<span style="font-size:16px;font-weight:700;">${escapeHtml(formData.employeeDisplayName)}</span>` +
+    `<pre style="font-size:12px;margin:6px 0;background:var(--light-bg);padding:8px;border-radius:6px;border-left:3px solid var(--safe-navy);color:var(--text-muted);">${structured}</pre>` +
+    `Is this correct?`,
+    'ai'
+  );
+
+  const choice = await new Promise(resolve => {
+    showInlineOptions(
+      ['✓ Yes, this is correct','Edit first name','Edit middle name','Edit last name','Edit suffix'],
+      val => resolve(val)
+    );
+  });
+  addBubble(choice, 'user');
+
+  if(choice === '✓ Yes, this is correct') return true;
+
+  // Edit paths
+  if(choice === 'Edit first name'){
+    showTyping(); await delay(300); removeTyping();
+    addBubble('Please enter the correct first name.','ai');
+    inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
+    const val = await new Promise(resolve => {
+      sendInterceptor = async v => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(v.trim()); };
+    });
+    formData.employeeFirstName = toProperCase(val);
+  }
+  if(choice === 'Edit middle name'){
+    showTyping(); await delay(300); removeTyping();
+    addBubble('Please enter the middle name or initial, or tap Skip.','ai');
+    inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
+    const val = await new Promise(resolve => {
+      showInlineOptions(['Skip / No middle name'], v => { sendInterceptor=null; resolve(v.startsWith('Skip') ? '' : v.trim()); });
+      sendInterceptor = async v => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(v.trim()); };
+    });
+    if(val && /^[A-Za-z]\.?$/.test(val)){
+      formData.employeeMiddleInitial = val.replace('.','').toUpperCase() + '.';
+      formData.employeeMiddleName = '';
+    } else {
+      formData.employeeMiddleName = val ? toProperCase(val) : '';
+      formData.employeeMiddleInitial = '';
+    }
+  }
+  if(choice === 'Edit last name'){
+    showTyping(); await delay(300); removeTyping();
+    addBubble('Please enter the correct last name.<br><span style="color:var(--text-muted);font-size:12px;">Example: Spalding · Van Dyke · De La Cruz</span>','ai');
+    inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
+    const val = await new Promise(resolve => {
+      showInlineOptions(['Unknown / Not provided'], v => { sendInterceptor=null; resolve(v.startsWith('Unknown') ? '' : v.trim()); });
+      sendInterceptor = async v => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(v.trim()); };
+    });
+    formData.employeeLastName = val ? toProperCase(val) : '';
+  }
+  if(choice === 'Edit suffix'){
+    showTyping(); await delay(300); removeTyping();
+    addBubble('Please enter the correct suffix, or tap No suffix.','ai');
+    const val = await new Promise(resolve => {
+      showInlineOptions(['No suffix','Jr.','Sr.','II','III','IV'], v => resolve(v));
+    });
+    addBubble(val,'user');
+    formData.employeeSuffix = val === 'No suffix' ? '' : val;
+  }
+
+  return false; // loop back to review
+}
+
+async function collectEmployeeName(){
+  // Entry point called by the isEmployeeName handler in processAnswer.
+  // Loops until the officer confirms the review screen.
+  let nameAccepted = false;
+  let firstRun = true;
+
+  while(!nameAccepted){
+    if(!firstRun){
+      // Re-ask for first name on rejection or re-entry
+      showTyping(); await delay(400); removeTyping();
+      addBubble(
+        "What is the employee's <strong>first name only</strong>.<br>" +
+        `<span style="color:var(--text-muted);font-size:12px;">Example: Esperanza</span>`,
+        'ai'
+      );
+    }
+    firstRun = false;
+
+    inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
+    const rawFirst = await new Promise(resolve => {
+      showInlineOptions(['Unknown / Not provided'], val => { sendInterceptor=null; resolve(val==='Unknown / Not provided' ? '__UNKNOWN__' : val.trim()); });
+      sendInterceptor = async val => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(val.trim()); };
+    });
+    inputArea.style.display='none';
+
+    if(rawFirst === '__UNKNOWN__'){
+      formData.employeeFirstName = 'Unknown';
+      formData.employeeLastName = '';
+      formData.employeeMiddleName = '';
+      formData.employeeMiddleInitial = '';
+      formData.employeeSuffix = '';
+      syncEmployeeDisplayName();
+      break;
+    }
+
+    // Run through the name parser — same logic as collectPersonName
+    const parsed = parseNameTokens(rawFirst);
+
+    if(parsed && parsed.lastName){
+      // Multi-word input detected — looks like a full name
+      const suggestion = formatParsedNameSuggestion(parsed);
+      showTyping(); await delay(400); removeTyping();
+      addBubble(
+        `It looks like you entered a full name. I detected:<br>` +
+        `<pre style="font-size:12px;margin:6px 0;background:var(--light-bg);padding:8px;border-radius:6px;border-left:3px solid var(--safe-navy);">${suggestion}</pre>` +
+        `Would you like me to use this?`,
+        'ai'
+      );
+      const confirm = await new Promise(resolve => {
+        showInlineOptions(['✓ Yes, use this','✏️ No, let me correct it'], val => resolve(val));
+      });
+      addBubble(confirm, 'user');
+
+      if(confirm.startsWith('✓')){
+        // Accept the parsed split — populate all structured fields
+        formData.employeeFirstName     = toProperCase(parsed.firstName);
+        formData.employeeMiddleName    = parsed.middleName    ? toProperCase(parsed.middleName)    : '';
+        formData.employeeMiddleInitial = parsed.middleInitial ? parsed.middleInitial.toUpperCase() : '';
+        formData.employeeLastName      = parsed.lastName      ? toProperCase(parsed.lastName)      : '';
+        formData.employeeSuffix        = parsed.suffix        || '';
+        syncEmployeeDisplayName();
+        // Skip to review
+        nameAccepted = await reviewEmployeeName();
+        continue;
+      }
+      // Officer chose to correct — loop restarts
+      continue;
+    }
+
+    // Single word or recognized compound first name — accept as first name only
+    formData.employeeFirstName = toProperCase(rawFirst);
+    formData.employeeMiddleName = '';
+    formData.employeeMiddleInitial = '';
+    formData.employeeSuffix = '';
+
+    // Ask for last name separately
+    showTyping(); await delay(400); removeTyping();
+    addBubble(
+      `And ${formData.employeeFirstName}'s <strong>last name</strong>?<br>` +
+      `<span style="color:var(--text-muted);font-size:12px;">Example: Spalding · Van Dyke · De La Cruz</span>`,
+      'ai'
+    );
+    inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
+    const rawLast = await new Promise(resolve => {
+      showInlineOptions(['Unknown / Not provided'], val => { sendInterceptor=null; resolve(val==='Unknown / Not provided' ? '' : val.trim()); });
+      sendInterceptor = async val => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(val.trim()); };
+    });
+    inputArea.style.display='none';
+    formData.employeeLastName = rawLast ? toProperCase(rawLast) : '';
+
+    // Optional middle name / initial
+    showTyping(); await delay(300); removeTyping();
+    addBubble(`Does ${formData.employeeFirstName} have a middle name or initial on record?`,'ai');
+    const middleChoice = await new Promise(resolve => {
+      showInlineOptions(['No middle name','Add middle name','Add middle initial'], val => resolve(val));
+    });
+    addBubble(middleChoice,'user');
+
+    if(middleChoice === 'Add middle name'){
+      showTyping(); await delay(300); removeTyping();
+      addBubble(`What is ${formData.employeeFirstName}'s middle name?`,'ai');
+      inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
+      const m = await new Promise(resolve => {
+        sendInterceptor = async v => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(v.trim()); };
+      });
+      formData.employeeMiddleName = toProperCase(m);
+      formData.employeeMiddleInitial = '';
+    } else if(middleChoice === 'Add middle initial'){
+      showTyping(); await delay(300); removeTyping();
+      addBubble(`What is ${formData.employeeFirstName}'s middle initial? (e.g. N.)`,'ai');
+      inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
+      const m = await new Promise(resolve => {
+        sendInterceptor = async v => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(v.trim()); };
+      });
+      const norm = m.replace(/\./g,'').toUpperCase().charAt(0);
+      formData.employeeMiddleInitial = norm ? norm + '.' : '';
+      formData.employeeMiddleName = '';
+    } else {
+      formData.employeeMiddleName = '';
+      formData.employeeMiddleInitial = '';
+    }
+
+    // Optional suffix
+    showTyping(); await delay(300); removeTyping();
+    addBubble('Any suffix? (e.g. Jr., Sr., III — or skip)','ai');
+    const suffixChoice = await new Promise(resolve => {
+      showInlineOptions(['No suffix','Jr.','Sr.','II','III','IV'], val => resolve(val));
+    });
+    addBubble(suffixChoice,'user');
+    formData.employeeSuffix = suffixChoice === 'No suffix' ? '' : suffixChoice;
+
+    syncEmployeeDisplayName();
+    nameAccepted = await reviewEmployeeName();
+  }
+
+  // Advance past the employeeFirstName step in the flow
+  flowIndex++;
+  await askNextQuestion();
+}
+
 async function collectPerson(){
   // ── 1. Name — intelligent structured capture ──────────────────────────────
   const person = await collectPersonName();
@@ -3393,6 +3637,20 @@ async function askNextQuestion(){
     return;
   }
 
+  if(step.isEmployeeName){
+    // Delegate to the dedicated employee name capture flow.
+    // It handles: full-name detection, structured field population,
+    // middle name/initial, suffix, review screen, and advancing flowIndex.
+    inputArea.style.display='none';
+    addBubble(
+      "What is the employee's <strong>first name only</strong>.<br>" +
+      `<span style="color:var(--text-muted);font-size:12px;">If you enter their full name, I'll help separate it correctly.</span>`,
+      'ai'
+    );
+    await collectEmployeeName();
+    return;
+  }
+
   if(step.isPeopleLoop){
     addBubble("✓ Got it. Tap below to begin adding people involved.",'user');
     showTyping(); await delay(400); removeTyping();
@@ -3434,7 +3692,7 @@ async function askNextQuestion(){
       // AP Style rewrite — same pattern as clothing/statement fields
       showTyping(); await delay(500);
       addBubble('Writing that up in professional language...', 'ai'); // speak handled by speakRewritePreview below
-      const employeeName = `${formData.employeeFirstName||'The employee'} ${formData.employeeLastName||''}`.trim();
+      const employeeName = (formData.employeeDisplayName || `${formData.employeeFirstName||'The employee'} ${formData.employeeLastName||''}`.trim());
       try {
         const cr = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
@@ -3839,8 +4097,9 @@ async function showFinalForm(){
   const isIncident=incidentType==='incident';
   const supName=`${formData.supervisorFirstName||''} ${formData.supervisorLastName||''}`.trim();
   formData.supervisorName=supName;
-  const empName=`${formData.employeeFirstName||''} ${formData.employeeLastName||''}`.trim();
+  const empName=(formData.employeeDisplayName || `${formData.employeeFirstName||''} ${formData.employeeLastName||''}`.trim());
   formData.employeeName=empName;
+  if(!formData.employeeDisplayName) formData.employeeDisplayName = empName; // ensure it's set for downstream use
 
   // Generate professional narrative for incidents
   if(isIncident && !formData.professionalNarrative){
@@ -4043,7 +4302,7 @@ Return ONLY the narrative text. No preamble, no labels, no markdown.`;
 function generatePDF(isIncident, silent) {
   const fd = formData;
   const supName = `${fd.supervisorFirstName||''} ${fd.supervisorLastName||''}`.trim();
-  const empName = `${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim();
+  const empName = (fd.employeeDisplayName || `${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim());
   const title = isIncident ? 'Incident Report' : 'Employee Recognition Report';
   const submissionId = 'SAFE-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(Math.random()*9000+1000);
 
@@ -4465,7 +4724,7 @@ function generateWord(isIncident) {
     content += `FOLLOW-UP\n${'-'.repeat(30)}\n`;
     content += `Required: ${fd.followUp||'N/A'}\nDetails: ${fd.followUpDetails||'N/A'}\nRecommendation: ${fd.recommendation||'N/A'}\n\n`;
   } else {
-    const empName=`${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim();
+    const empName=(fd.employeeDisplayName || `${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim());
     content += `RECOGNITION DETAILS\n${'-'.repeat(30)}\n`;
     content += `Employee: ${empName}\nRole: ${fd.employeeRole||'N/A'}\n\n`;
     content += `Description:\n${fd.recognitionDescription||'N/A'}\n\n`;
