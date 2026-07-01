@@ -2075,10 +2075,22 @@ function getRoleAwareCategoryOrder(employeeRole){
   return ['Guest Experience','Teamwork','Safety & Security','Professionalism','Operations','Recognition'];
 }
 
+// Category metadata: icon, header bg, header text color, border accent.
+// Colors are kept to S.A.F.E. theme — navy, red, blue, slate, gold.
+// ONLY the category header row is color-coded; chips stay neutral.
+const RECOGNITION_CATEGORY_META = {
+  'Safety & Security': { icon:'🛡️', bg:'#1A2E4A', color:'#fff',   border:'#1A2E4A' },
+  'Guest Experience':  { icon:'😊', bg:'#E8192C', color:'#fff',   border:'#E8192C' },
+  'Professionalism':   { icon:'⭐', bg:'#fff',     color:'#1A2E4A',border:'#1A2E4A' },
+  'Teamwork':          { icon:'🤝', bg:'#1B4B8A', color:'#fff',   border:'#1B4B8A' },
+  'Operations':        { icon:'⚙️', bg:'#4b5563', color:'#fff',   border:'#4b5563' },
+  'Recognition':       { icon:'🏆', bg:'#92701a', color:'#fff',   border:'#92701a' },
+};
+
 async function showRecognitionImpactPicker(onComplete){
-  const employeeRole = formData.employeeRole || '';
-  const employeeName = `${formData.employeeFirstName||'this employee'}`.trim();
+  const employeeRole  = formData.employeeRole || '';
   const categoryOrder = getRoleAwareCategoryOrder(employeeRole);
+  const preExpanded   = categoryOrder[0]; // first in role-aware order pre-expands
 
   const wrap = document.createElement('div');
   wrap.id = 'recognitionImpactPicker';
@@ -2086,90 +2098,195 @@ async function showRecognitionImpactPicker(onComplete){
 
   // Coaching prompt
   const prompt = document.createElement('p');
-  prompt.style.cssText = 'font-size:13px;color:var(--text-muted);margin:0 0 10px;line-height:1.5;';
-  prompt.innerHTML = `Need ideas? Tap one or more examples below${employeeRole ? ` for <strong>${employeeRole}</strong>` : ''}, or type your own response.`;
+  prompt.style.cssText = 'font-size:13px;color:var(--text-muted);margin:0 0 12px;line-height:1.5;';
+  prompt.innerHTML = `Need ideas? Tap a category to expand it, then select one or more${employeeRole ? ` for <strong>${employeeRole}</strong>` : ''}. Or type your own response below.`;
   wrap.appendChild(prompt);
 
-  // Track selected chip text
-  const selected = new Map(); // chipText → { btn, edited: bool }
+  // Central selection state — persists across collapse/expand
+  const selected = new Map(); // chipText → btn reference
 
-  // Build categorized chip sections in role-aware order
+  // Selected-summary area — shown above free text once anything is selected
+  const summaryWrap = document.createElement('div');
+  summaryWrap.id = 'impactSummaryWrap';
+  summaryWrap.style.cssText = 'display:none;background:#f0f4f9;border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:10px;';
+  const summaryLabel = document.createElement('div');
+  summaryLabel.style.cssText = 'font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:4px;font-family:"Barlow Condensed",sans-serif;';
+  summaryLabel.textContent = 'Selected:';
+  summaryWrap.appendChild(summaryLabel);
+  const summaryList = document.createElement('ul');
+  summaryList.style.cssText = 'margin:0;padding-left:16px;font-size:12px;color:var(--text-main);line-height:1.7;';
+  summaryWrap.appendChild(summaryList);
+
+  function updateSummary(){
+    summaryList.innerHTML = '';
+    if(selected.size === 0){
+      summaryWrap.style.display = 'none';
+    } else {
+      summaryWrap.style.display = 'block';
+      selected.forEach((_, text) => {
+        const li = document.createElement('li');
+        li.textContent = text;
+        summaryList.appendChild(li);
+      });
+    }
+    // Also refresh all category header badges
+    wrap.querySelectorAll('[data-cat-badge]').forEach(badge => {
+      const catName = badge.dataset.catBadge;
+      const count = Array.from(selected.keys()).filter(t =>
+        (RECOGNITION_IMPACT_CATEGORIES[catName]||[]).includes(t)
+      ).length;
+      badge.textContent = count > 0 ? `${count} selected` : '';
+      badge.style.display = count > 0 ? 'inline-block' : 'none';
+    });
+  }
+
+  function updateSubmitState(){
+    const hasChips = selected.size > 0;
+    const hasText  = freeText.value.trim().length > 0;
+    const active   = hasChips || hasText;
+    submitBtn.style.opacity       = active ? '1' : '0.4';
+    submitBtn.style.pointerEvents = active ? 'auto' : 'none';
+  }
+
+  // Build each category as a collapsible section
   categoryOrder.forEach(catName => {
     const chips = RECOGNITION_IMPACT_CATEGORIES[catName];
     if(!chips) return;
+    const meta  = RECOGNITION_CATEGORY_META[catName] || { icon:'•', bg:'#1A2E4A', color:'#fff', border:'#1A2E4A' };
+    const isPreExpanded = catName === preExpanded;
 
-    const catLabel = document.createElement('div');
-    catLabel.style.cssText = 'font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--safe-navy);margin:10px 0 5px;font-family:"Barlow Condensed",sans-serif;';
-    catLabel.textContent = catName;
-    wrap.appendChild(catLabel);
+    // ── Category header row (tap to toggle) ──────────────────────────────
+    const header = document.createElement('button');
+    header.setAttribute('aria-expanded', isPreExpanded ? 'true' : 'false');
+    header.style.cssText = [
+      `width:100%;display:flex;align-items:center;justify-content:space-between;`,
+      `padding:9px 12px;margin:5px 0 0;border-radius:8px;cursor:pointer;`,
+      `border:1.5px solid ${meta.border};background:${meta.bg};color:${meta.color};`,
+      `font-family:"Barlow Condensed",sans-serif;font-size:14px;font-weight:700;`,
+      `letter-spacing:.04em;text-align:left;transition:opacity .15s;`,
+      // Professionalism has navy border on white — needs extra care for contrast
+      meta.bg === '#fff' ? 'box-shadow:0 0 0 1px #1A2E4A inset;' : '',
+    ].join('');
 
-    const chipRow = document.createElement('div');
-    chipRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;';
+    const headerLeft = document.createElement('span');
+    headerLeft.style.cssText = 'display:flex;align-items:center;gap:7px;';
+    const iconSpan = document.createElement('span');
+    iconSpan.setAttribute('aria-hidden','true');
+    iconSpan.textContent = meta.icon;
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = `${catName} (${chips.length})`;
+    headerLeft.appendChild(iconSpan);
+    headerLeft.appendChild(nameSpan);
+
+    // Selection badge (shows "N selected" when collapsed with chips chosen)
+    const badge = document.createElement('span');
+    badge.dataset.catBadge = catName;
+    badge.style.cssText = [
+      `display:none;font-size:10px;font-weight:600;`,
+      `background:rgba(255,255,255,0.25);border-radius:10px;padding:1px 7px;`,
+      meta.bg === '#fff' ? 'background:rgba(26,46,74,0.12);color:#1A2E4A;' : '',
+    ].join('');
+    headerLeft.appendChild(badge);
+
+    const chevron = document.createElement('span');
+    chevron.setAttribute('aria-hidden','true');
+    chevron.textContent = isPreExpanded ? '▲' : '▼';
+    chevron.style.cssText = 'font-size:10px;opacity:0.7;';
+
+    header.appendChild(headerLeft);
+    header.appendChild(chevron);
+
+    // ── Chip panel (hidden by default unless pre-expanded) ────────────────
+    const chipPanel = document.createElement('div');
+    chipPanel.style.cssText = [
+      `display:${isPreExpanded ? 'flex' : 'none'};flex-wrap:wrap;gap:6px;`,
+      `padding:8px 4px 4px;`,
+    ].join('');
 
     chips.forEach(chipText => {
       const btn = document.createElement('button');
       btn.className = 'loc-btn';
+      // Minimum 44px tap target per accessibility guidelines
+      btn.style.cssText = 'text-align:left;line-height:1.3;min-height:36px;padding:7px 12px;font-size:13px;';
       btn.textContent = chipText;
-      btn.style.cssText += ';text-align:left;line-height:1.3;';
-      btn.dataset.original = chipText;
+      btn.dataset.chip = chipText;
+      btn.setAttribute('aria-pressed', 'false');
+
+      // Restore selected state if this chip was already chosen
+      if(selected.has(chipText)){
+        btn.classList.add('selected');
+        btn.setAttribute('aria-pressed','true');
+      }
 
       btn.onclick = () => {
         if(selected.has(chipText)){
           selected.delete(chipText);
           btn.classList.remove('selected');
+          btn.setAttribute('aria-pressed','false');
         } else {
-          selected.set(chipText, { btn, edited: false });
+          selected.set(chipText, btn);
           btn.classList.add('selected');
+          btn.setAttribute('aria-pressed','true');
         }
+        updateSummary();
         updateSubmitState();
       };
-      chipRow.appendChild(btn);
+      chipPanel.appendChild(btn);
     });
-    wrap.appendChild(chipRow);
+
+    // Toggle behavior
+    header.onclick = () => {
+      const expanded = header.getAttribute('aria-expanded') === 'true';
+      if(expanded){
+        header.setAttribute('aria-expanded','false');
+        chipPanel.style.display = 'none';
+        chevron.textContent = '▼';
+      } else {
+        header.setAttribute('aria-expanded','true');
+        chipPanel.style.display = 'flex';
+        chevron.textContent = '▲';
+      }
+      scrollBottom();
+    };
+
+    wrap.appendChild(header);
+    wrap.appendChild(chipPanel);
   });
 
-  // Divider between chips and free-text
+  // Divider
   const divider = document.createElement('div');
   divider.style.cssText = 'height:1px;background:var(--border);margin:14px 0 10px;';
   wrap.appendChild(divider);
 
-  // Free-text area for custom or edited response
+  // Selected-summary area (above free text)
+  wrap.appendChild(summaryWrap);
+
+  // Free-text area
   const freeLabel = document.createElement('div');
   freeLabel.style.cssText = 'font-size:11px;color:var(--text-muted);margin-bottom:4px;';
-  freeLabel.textContent = 'Or type / edit your own response:';
+  freeLabel.textContent = 'Or type / add your own details:';
   wrap.appendChild(freeLabel);
 
   const freeText = document.createElement('textarea');
-  freeText.rows = 3;
+  freeText.rows = 2;
   freeText.placeholder = 'Add any additional context…';
-  freeText.style.cssText = 'width:100%;box-sizing:border-box;border:1.5px solid var(--border);border-radius:8px;padding:8px 10px;font-family:Inter,sans-serif;font-size:13px;color:var(--text-main);resize:vertical;';
+  freeText.style.cssText = 'width:100%;box-sizing:border-box;border:1.5px solid var(--border);border-radius:8px;padding:8px 10px;font-family:Inter,sans-serif;font-size:13px;color:var(--text-main);resize:vertical;min-height:44px;';
   freeText.spellcheck = true;
   freeText.oninput = updateSubmitState;
   wrap.appendChild(freeText);
 
   // Submit button
   const submitBtn = document.createElement('button');
-  submitBtn.style.cssText = 'margin-top:10px;width:100%;background:var(--safe-navy);color:#fff;border:none;border-radius:8px;padding:11px;font-family:Inter,sans-serif;font-size:14px;font-weight:700;cursor:pointer;opacity:0.4;pointer-events:none;transition:opacity .2s;';
+  submitBtn.style.cssText = 'margin-top:10px;width:100%;background:var(--safe-navy);color:#fff;border:none;border-radius:8px;padding:13px;font-family:Inter,sans-serif;font-size:14px;font-weight:700;cursor:pointer;opacity:0.4;pointer-events:none;transition:opacity .2s;min-height:48px;';
   submitBtn.textContent = '✓ Use this response';
   wrap.appendChild(submitBtn);
 
-  function updateSubmitState(){
-    const hasChips = selected.size > 0;
-    const hasText  = freeText.value.trim().length > 0;
-    const active   = hasChips || hasText;
-    submitBtn.style.opacity = active ? '1' : '0.4';
-    submitBtn.style.pointerEvents = active ? 'auto' : 'none';
-  }
-
   submitBtn.onclick = async () => {
     wrap.remove();
-
-    // Assemble: selected chips first, then free text if present
     const parts = Array.from(selected.keys());
     const typed = freeText.value.trim();
     if(typed) parts.push(typed);
     const combined = parts.join(' ');
-
     addBubble(escapeHtml(combined), 'user');
     await onComplete(combined);
   };
