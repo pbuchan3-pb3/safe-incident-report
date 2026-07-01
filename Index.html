@@ -326,11 +326,14 @@
   <span class="progress-pct" id="progressPct">0%</span>
 </div>
 
-<!-- CONTEXT BANNER — shows report type, category, step, current person during active report -->
+<!-- CONTEXT BANNER — three-column bar: [report info] [recording] [review] -->
 <div id="contextBanner" style="display:none;background:rgba(26,46,74,0.97);border-bottom:1px solid rgba(232,25,44,0.3);padding:6px 14px;flex-shrink:0;">
-  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
-    <div id="contextBannerText" style="font-size:11px;color:rgba(255,255,255,0.85);font-family:'Barlow Condensed',sans-serif;letter-spacing:.04em;line-height:1.6;"></div>
-    <button id="contextScrollTopBtn" onclick="(function(){ var a=document.getElementById('transcript-start'); if(a){ a.scrollIntoView({behavior:'smooth',block:'start'}); } else { chatWindow.scrollTo({top:0,behavior:'smooth'}); }})()" style="display:none;font-size:10px;padding:3px 8px;background:rgba(232,25,44,0.85);color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;font-family:'Inter',sans-serif;">↑ Review answers</button>
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+    <!-- LEFT: report info -->
+    <div id="contextBannerText" style="font-size:11px;color:rgba(255,255,255,0.85);font-family:'Barlow Condensed',sans-serif;letter-spacing:.04em;line-height:1.6;flex:1;min-width:0;"></div>
+    <!-- CENTER: recording controls — injected by mountRecordingControls() -->
+    <!-- RIGHT: review answers -->
+    <button id="contextScrollTopBtn" onclick="(function(){ var a=document.getElementById('transcript-start'); if(a){ a.scrollIntoView({behavior:'smooth',block:'start'}); } else { chatWindow.scrollTo({top:0,behavior:'smooth'}); }})()" style="display:none;font-size:10px;padding:3px 8px;background:rgba(232,25,44,0.85);color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;font-family:'Inter',sans-serif;flex-shrink:0;">↑ Review answers</button>
   </div>
 </div>
 
@@ -359,6 +362,157 @@
 // ── API CONFIGURATION ──────────────────────────────────────────────────────
 // To use AI features, set your Anthropic API key below:
 const ANTHROPIC_API_KEY = window.ANTHROPIC_API_KEY || ['sk-ant-api03-xa5WcCw','jEeb_yt6EbteqT6AIjzp','Iizz06CS3_gH_p6UgVF2G1J3BJpdnSc8a0GwdUcySrBW-42CtU3ob84YIzg-KYQAcwAA'].join('');
+
+// ── FEATURE FLAG ──────────────────────────────────────────────────────────────
+// enableVoiceIncidentCapture = true  → Recording controls appear in the context banner.
+// enableVoiceIncidentCapture = false → Existing workflow is completely unchanged.
+// No production recording logic is wired. This is the UI shell and state scaffold only.
+const enableVoiceIncidentCapture = false;
+
+// ── RECORDING SESSION STATE ───────────────────────────────────────────────────
+const recordingSession = {
+  status:       'idle',   // 'idle'|'recording'|'paused'|'ended'|'processing'|'draftReady'
+  segments:     [],       // {segmentId, startedAt, endedAt, sequenceNumber}
+  startedAt:    null,
+  totalElapsed: 0,        // accumulated ms across completed segments
+  segmentStart: null,     // Date.now() when current segment began (null when not live)
+  timerInterval:null,
+};
+
+function recordingStatusLabel(s){
+  return {idle:'Not Recording',recording:'Recording',paused:'Paused',
+          ended:'Ended',processing:'Processing\u2026',draftReady:'Draft Ready'}[s] || s;
+}
+function recordingElapsedMs(){
+  if(recordingSession.status==='recording' && recordingSession.segmentStart)
+    return recordingSession.totalElapsed + (Date.now() - recordingSession.segmentStart);
+  return recordingSession.totalElapsed;
+}
+function formatElapsed(ms){
+  const s=Math.floor(ms/1000), h=Math.floor(s/3600), m=Math.floor((s%3600)/60), sec=s%60;
+  if(h>0) return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+}
+function startRecordingTimer(){
+  stopRecordingTimer();
+  recordingSession.timerInterval = setInterval(updateRecordingUI, 500);
+}
+function stopRecordingTimer(){
+  if(recordingSession.timerInterval){ clearInterval(recordingSession.timerInterval); recordingSession.timerInterval=null; }
+}
+
+// State transitions
+function recordingStart(){
+  if(!recordingSession.startedAt) recordingSession.startedAt = new Date().toISOString();
+  recordingSession.status       = 'recording';
+  recordingSession.segmentStart = Date.now();
+  recordingSession.segments.push({
+    segmentId:      'seg_'+Date.now(),
+    startedAt:      new Date().toISOString(),
+    endedAt:        null,
+    sequenceNumber: recordingSession.segments.length+1,
+    transcript:     null,
+  });
+  startRecordingTimer();
+  updateRecordingUI();
+  if(typeof setField==='function') setField('_recSegStart',recordingSession.segments[recordingSession.segments.length-1].segmentId,'system',1.0);
+}
+function recordingPause(){
+  if(recordingSession.status!=='recording') return;
+  recordingSession.totalElapsed += Date.now() - (recordingSession.segmentStart||Date.now());
+  recordingSession.segmentStart  = null;
+  recordingSession.status        = 'paused';
+  const last = recordingSession.segments[recordingSession.segments.length-1];
+  if(last) last.endedAt = new Date().toISOString();
+  stopRecordingTimer(); updateRecordingUI();
+}
+function recordingResume(){ if(recordingSession.status==='paused') recordingStart(); }
+function recordingEnd(){
+  if(recordingSession.status==='recording') recordingPause();
+  recordingSession.status = 'ended';
+  stopRecordingTimer(); updateRecordingUI();
+}
+function recordingGenerateDraft(){
+  recordingSession.status = 'processing'; updateRecordingUI();
+  setTimeout(()=>{ recordingSession.status='draftReady'; updateRecordingUI(); }, 2000);
+}
+
+// ── RECORDING UI RENDERER ─────────────────────────────────────────────────────
+function updateRecordingUI(){
+  const bar = document.getElementById('recordingControlBar');
+  if(!bar) return;
+  const st = recordingSession.status;
+  const elapsed = recordingElapsedMs();
+  const segCount = recordingSession.segments.length;
+
+  const dot = document.getElementById('recStatusDot');
+  if(dot){
+    dot.style.background = {recording:'var(--safe-red)',paused:'#f59e0b',processing:'#3b82f6',draftReady:'#10b981'}[st]||'rgba(200,205,212,0.3)';
+    dot.style.animation  = st==='recording' ? 'recPulse 1.2s ease-in-out infinite' : 'none';
+  }
+  const setText = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+  setText('recStatusText', recordingStatusLabel(st));
+  setText('recTimer', st==='idle'?'--:--':formatElapsed(elapsed));
+  setText('recSegCount', segCount>0?`${segCount} seg${segCount!==1?'s':''}`:'');
+
+  const show=(id,v)=>{ const el=document.getElementById(id); if(el) el.style.display=v?'inline-flex':'none'; };
+  show('recBtnStart',    st==='idle');
+  show('recBtnPause',    st==='recording');
+  show('recBtnResume',   st==='paused');
+  show('recBtnEnd',      st==='recording'||st==='paused');
+  show('recBtnGenerate', st==='ended');
+}
+
+// ── MOUNT RECORDING CONTROLS INTO CONTEXT BANNER ─────────────────────────────
+// Inserts the recording control strip as the center column of the context banner.
+// Only called when enableVoiceIncidentCapture === true.
+function mountRecordingControls(){
+  if(!enableVoiceIncidentCapture) return;
+  const banner = document.getElementById('contextBanner');
+  if(!banner) return;
+
+  const ctrl = document.createElement('div');
+  ctrl.id = 'recordingControlBar';
+  ctrl.style.cssText = 'display:none;align-items:center;gap:8px;flex-shrink:0;';
+
+  ctrl.innerHTML = `
+    <style>
+      @keyframes recPulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.35;transform:scale(.82);}}
+      .rec-btn{display:inline-flex;align-items:center;gap:5px;border:none;border-radius:6px;
+        cursor:pointer;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:12px;
+        letter-spacing:.06em;text-transform:uppercase;padding:7px 13px;white-space:nowrap;
+        transition:opacity .15s,transform .1s;line-height:1;}
+      .rec-btn:active{transform:scale(.95);}
+      .rec-btn-primary{background:var(--safe-red);color:#fff;border:2px solid rgba(255,255,255,.32);
+        font-size:13px;padding:8px 16px;box-shadow:0 2px 10px rgba(232,25,44,.5);}
+      .rec-btn-secondary{background:rgba(255,255,255,.1);color:#fff;border:1.5px solid rgba(255,255,255,.25);}
+      .rec-btn-end{background:rgba(26,46,74,.55);color:rgba(255,255,255,.7);border:1.5px solid rgba(255,255,255,.18);}
+      .rec-btn-generate{background:#10b981;color:#fff;border:2px solid rgba(255,255,255,.32);
+        font-size:13px;padding:8px 16px;box-shadow:0 2px 10px rgba(16,185,129,.45);}
+      #recStatusDot{width:7px;height:7px;border-radius:50%;flex-shrink:0;transition:background .3s;}
+    </style>
+    <div style="display:flex;align-items:center;gap:5px;font-family:'Barlow Condensed',sans-serif;
+                font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.6);">
+      <div id="recStatusDot" style="background:rgba(200,205,212,.3);"></div>
+      <span id="recStatusText">Not Recording</span>
+      <span id="recTimer" style="color:rgba(255,255,255,.4);font-size:10px;min-width:32px;font-variant-numeric:tabular-nums;">--:--</span>
+      <span id="recSegCount" style="color:rgba(255,255,255,.3);font-size:9px;"></span>
+    </div>
+    <button id="recBtnStart"    class="rec-btn rec-btn-primary"   onclick="recordingStart()"        title="Begin recording the incident">⏺ Record Incident</button>
+    <button id="recBtnPause"    class="rec-btn rec-btn-secondary" onclick="recordingPause()"        title="Pause recording"             style="display:none">⏸ Pause</button>
+    <button id="recBtnResume"   class="rec-btn rec-btn-secondary" onclick="recordingResume()"       title="Resume recording"            style="display:none">▶ Resume Recording</button>
+    <button id="recBtnEnd"      class="rec-btn rec-btn-end"       onclick="recordingEnd()"          title="End the recording session"   style="display:none">■ End Recording</button>
+    <button id="recBtnGenerate" class="rec-btn rec-btn-generate"  onclick="recordingGenerateDraft()" title="AI will generate a draft Incident Report from your recording" style="display:none">✦ Generate Draft Report</button>
+  `;
+
+  // Insert as the center child: [bannerText] → [ctrl] → [scrollBtn]
+  const bannerRow = banner.querySelector('div');
+  const scrollBtn = document.getElementById('contextScrollTopBtn');
+  if(bannerRow && scrollBtn) bannerRow.insertBefore(ctrl, scrollBtn);
+  else if(bannerRow) bannerRow.appendChild(ctrl);
+
+  updateRecordingUI();
+}
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -705,6 +859,180 @@ function syncEmployeeDisplayName(){
   formData.employeeName = formData.employeeDisplayName;
 }
 
+// ── STAGE 1: CANONICAL COMPUTED-VALUES LAYER ─────────────────────────────────
+// computeReportContext(fd) is the single place where derived display values are
+// computed. Every renderer (PDF, Word, Sheets, AI prompt, preview, email body,
+// resume fallback) calls this instead of recomputing names independently.
+//
+// Rules:
+// - Pure function: reads fd, returns a plain object, never mutates fd.
+// - No async: called synchronously at the top of each renderer.
+// - Canonical: if this returns ctx.supervisorName, renderers use ctx.supervisorName.
+//   They do NOT also compute `const supName = ...` locally.
+// - Extensible: add new derived values here, not in each renderer.
+function computeReportContext(fd){
+  // ── Supervisor ────────────────────────────────────────────────────────────
+  const supervisorName = (
+    `${fd.supervisorFirstName||''} ${fd.supervisorLastName||''}`.trim()
+  ) || 'Unknown';
+
+  // ── Employee (recognition reports) ────────────────────────────────────────
+  const employeeName = (
+    fd.employeeDisplayName ||
+    `${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim()
+  ) || 'the employee';
+
+  // The fallback used in AI prompts needs "The employee" capitalised when used
+  // as a sentence subject — keep both forms here so callers pick what they need.
+  const employeeNameForPrompt = employeeName === 'the employee' ? 'The employee' : employeeName;
+
+  // ── People summaries (incident reports) ───────────────────────────────────
+  const people = fd.people || [];
+  const subjectPeople  = people.filter(p => (typeof SUBJECT_ROLES !== 'undefined' ? SUBJECT_ROLES : []).includes(p.roleCategory));
+  const witnessPeople  = people.filter(p => (typeof WITNESS_ROLES !== 'undefined' ? WITNESS_ROLES : []).includes(p.roleCategory));
+
+  // One-line summary for Sheets, analytics, AI prompts, context banner
+  const peopleSummary = people.map(p =>
+    `${p.displayName||p.name||'Unknown'} (${p.roleCategory||'Unknown'})`
+  ).join('; ');
+
+  // Structured narrative block for the AI narrative system prompt
+  const peopleNarrativeBlock = people.map(p => {
+    const displayName = p.displayName || p.name || 'Unknown';
+    const lastName    = p.lastName || (displayName.includes(' ') ? displayName.split(' ').slice(-1)[0] : '');
+    const desc  = [p.gender, p.ageRange, p.height, p.build].filter(Boolean).join(', ');
+    const hair  = [p.hairColor, p.hairStyle].filter(Boolean).join(' ');
+    return `- ${displayName}${lastName?' (last name: '+lastName+')':''}`
+      + ` | Role: ${p.roleCategory||'Unknown'}${p.role?' ('+p.role+')':''}`
+      + ` | Description: ${desc||'N/A'}${hair?', Hair: '+hair:''}${p.clothing?', Wearing: '+p.clothing:''}${p.features?', Features: '+p.features:''}${p.seatLocation?', Seat: '+p.seatLocation:''}`
+      + ` | Statement: ${p.statement||'None provided'}`;
+  }).join('\n');
+
+  // ── Report metadata ────────────────────────────────────────────────────────
+  const incidentDate = fd.incidentDate || fd.date || '';
+  const incidentTime = fd.incidentTime || fd.time || '';
+  const filedAt      = fd.date && fd.time ? `${fd.date} at ${fd.time}` : (fd.date || fd.time || '');
+  const reportType   = fd.formType || (fd.incidentCategory ? 'Incident Report' : '');
+  const isIncident   = reportType.toLowerCase().includes('incident') || !!fd.incidentCategory;
+  const isRecognition= reportType.toLowerCase().includes('recognition') || !!fd.recognitionDescription;
+
+  return {
+    // Names — use these; never recompute locally in a renderer
+    supervisorName,
+    employeeName,
+    employeeNameForPrompt,
+    // People
+    people,
+    subjectPeople,
+    witnessPeople,
+    peopleSummary,
+    peopleNarrativeBlock,
+    // Metadata
+    incidentDate,
+    incidentTime,
+    filedAt,
+    reportType,
+    isIncident,
+    isRecognition,
+    // Pass-through of raw fd for fields that don't need derivation
+    // (renderers can still access fd.fieldName for raw values)
+    fd,
+  };
+}
+
+// ── STAGE 2: AUDIT LOG + setField SCAFFOLDING ────────────────────────────────
+// auditLog[] records every field mutation with provenance.
+// setField() is the single write path for all form fields — UI, AI, and voice.
+//
+// Source values:
+//   'supervisor_typed'   — officer typed the value
+//   'supervisor_voice'   — officer dictated (speech-to-text)
+//   'supervisor_tapped'  — officer tapped a chip/button option
+//   'ai_draft'           — AI proposed the value (not yet confirmed)
+//   'ai_confirmed'       — AI proposed, supervisor confirmed ("Yes, that looks right")
+//   'system'             — auto-captured (timestamp, venue, submission ID)
+//   'migration'          — promoted from legacy flat field
+//
+// Confidence: 0.0–1.0. 1.0 = supervisor explicitly confirmed. 0.7 = AI-generated
+// and confirmed. 0.4 = AI-generated, not yet confirmed. 0.0 = unknown.
+//
+// NOTE: setField is not yet wired to every write site (that is Stage 3).
+// It IS wired to the system-captured fields (timestamp, venue) and the
+// AI-rewrite confirmation path. All other writes still go direct to formData[key]
+// and are logged retrospectively in showFinalForm via logFinalFormData().
+
+const auditLog = [];
+
+function setField(key, value, source, confidence){
+  // Always write to formData (backward compat — renderers still read formData)
+  formData[key] = value;
+
+  // Log the mutation
+  auditLog.push({
+    key,
+    value: typeof value === 'string' ? value.slice(0, 200) : value, // truncate long strings
+    source: source || 'unknown',
+    confidence: confidence != null ? confidence : 1.0,
+    ts: new Date().toISOString(),
+    flowIndex: typeof flowIndex !== 'undefined' ? flowIndex : null,
+  });
+}
+
+// Convenience wrappers for the most common sources
+function setFieldSupervisor(key, value){ setField(key, value, 'supervisor_typed', 1.0); }
+function setFieldTapped(key, value)    { setField(key, value, 'supervisor_tapped', 1.0); }
+function setFieldAIDraft(key, value)   { setField(key, value, 'ai_draft', 0.4); }
+function setFieldAIConfirmed(key, value){ setField(key, value, 'ai_confirmed', 0.85); }
+function setFieldSystem(key, value)    { setField(key, value, 'system', 1.0); }
+
+// Called at the end of showFinalForm to retrospectively log all fields that
+// were written directly to formData before setField was fully wired.
+// This creates a complete audit snapshot even for Stage 1/2.
+function logFinalFormData(fd){
+  const snapshot = { ...fd };
+  delete snapshot.people; // logged separately
+  Object.entries(snapshot).forEach(([key, value]) => {
+    if(value === undefined || value === null || value === '') return;
+    // Only log if not already in auditLog for this key (avoid double-logging
+    // fields that were already set via setField)
+    const alreadyLogged = auditLog.some(e => e.key === key);
+    if(!alreadyLogged){
+      auditLog.push({
+        key,
+        value: typeof value === 'string' ? value.slice(0, 200) : value,
+        source: 'supervisor_typed', // best assumption for retrospective log
+        confidence: 1.0,
+        ts: new Date().toISOString(),
+        flowIndex: null,
+        retrospective: true,
+      });
+    }
+  });
+  // Log people array as a single entry
+  if(fd.people && fd.people.length > 0){
+    auditLog.push({
+      key: 'people',
+      value: fd.people.map(p => `${p.displayName||p.name} (${p.roleCategory})`).join('; '),
+      source: 'supervisor_typed',
+      confidence: 1.0,
+      ts: new Date().toISOString(),
+      retrospective: true,
+    });
+  }
+}
+
+// Returns the audit log as a structured object for debugging or future reporting
+function getAuditSummary(){
+  return {
+    totalEntries:    auditLog.length,
+    supervisorFields: auditLog.filter(e => e.source.startsWith('supervisor')).length,
+    aiDraftFields:   auditLog.filter(e => e.source === 'ai_draft').length,
+    aiConfirmedFields: auditLog.filter(e => e.source === 'ai_confirmed').length,
+    systemFields:    auditLog.filter(e => e.source === 'system').length,
+    log: auditLog,
+  };
+}
+
 formData.people = [];
 
 // Migration shim: if older saved drafts or any legacy code path still writes
@@ -761,6 +1089,13 @@ formData.timestamp = now.toLocaleString('en-US',{weekday:'long',year:'numeric',m
 formData.date = now.toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
 formData.time = now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
 formData.venue = "Ford Field, Detroit, Michigan"; // updated at runtime
+
+// Audit: these system-captured fields are the first entries in the log
+// setField is called after direct assignment so formData is always the source of truth
+setFieldSystem('timestamp', formData.timestamp);
+setFieldSystem('date', formData.date);
+setFieldSystem('time', formData.time);
+setFieldSystem('venue', formData.venue);
 
 document.getElementById('timestampBar').textContent = `📍 Ford Field  ·  ${formData.date}  ·  ${formData.time}  ·  Auto-captured`;
 
@@ -957,6 +1292,13 @@ function updateContextBanner(ctx){
   bannerText.innerHTML = parts.join('  ·  ');
   banner.style.display = 'block';
   if(scrollBtn) scrollBtn.style.display = 'inline-block';
+
+  // Show/hide recording controls based on report type and feature flag
+  const recBar = document.getElementById('recordingControlBar');
+  if(recBar){
+    const showRec = enableVoiceIncidentCapture && incidentType === 'incident';
+    recBar.style.display = showRec ? 'inline-flex' : 'none';
+  }
 }
 
 function scrollBottom(){setTimeout(()=>chatWindow.scrollTop=chatWindow.scrollHeight,80);}
@@ -1020,7 +1362,7 @@ async function cleanWithAI(rawText, context, fieldType, fieldKey){
 
     // Build the employee's display name for recognition reports
     const recognitionEmployeeName = isRecognitionReport
-      ? ((formData.employeeDisplayName || `${formData.employeeFirstName||''} ${formData.employeeLastName||''}`.trim()) || 'the employee')
+      ? computeReportContext(formData).employeeName
       : null;
 
     // Subject term: recognition and misconduct both avoid "subject" language
@@ -1144,7 +1486,8 @@ function sendViaMailto(isIncident){
   const hrEmail='safeeventmi@safemanagement.net';
   const supEmail=fd.supervisorEmail||'';
   const title=isIncident?'S.A.F.E. Incident Report':'S.A.F.E. Employee Recognition';
-  const supName=`${fd.supervisorFirstName||''} ${fd.supervisorLastName||''}`.trim();
+  const ctx = computeReportContext(fd);
+  const supName = ctx.supervisorName;
 
   let body = `${title}\n`;
   body += `================================\n`;
@@ -1174,7 +1517,7 @@ function sendViaMailto(isIncident){
     body += `EMS/Police: ${fd.emsPolice||'N/A'}\nGuest Transported: ${fd.guestTransported||'N/A'}\n\n`;
     body += `FOLLOW-UP\n---------\nRequired: ${fd.followUp||'N/A'}\nDetails: ${fd.followUpDetails||'N/A'}\nRecommendation: ${fd.recommendation||'N/A'}\n\n`;
   } else {
-    const empName=(fd.employeeDisplayName || `${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim());
+    const empName = ctx.employeeName;
     body += `RECOGNITION DETAILS\n-------------------\n`;
     body += `Employee: ${empName}\nRole: ${fd.employeeRole||'N/A'}\n\n`;
     body += `Description:\n${fd.recognitionDescription||'N/A'}\n\n`;
@@ -2751,7 +3094,7 @@ async function collectPersonName(){
       // Looks like a full name was entered — confirm with officer
       showTyping(); await delay(500); removeTyping();
       const suggestion = formatParsedNameSuggestion(firstParsed);
-      addBubble(`It looks like you may have entered a full name. Should I record this as:\n<pre style="font-size:13px;margin:6px 0;background:var(--light-bg);padding:8px 10px;border-radius:6px;border-left:3px solid var(--safe-navy);">${suggestion}</pre>`,'ai');
+      addBubble(`It looks like you entered a full name. I detected:<br><pre style="font-size:13px;margin:6px 0;background:var(--light-bg);padding:8px 10px;border-radius:6px;border-left:3px solid var(--safe-navy);">${suggestion}</pre>Would you like me to use this?`,'ai');
       const choice = await new Promise(resolve => {
         showInlineOptions(['✓ Yes, use this','✗ No, let me correct it'], (val)=>resolve(val));
       });
@@ -2909,7 +3252,22 @@ async function reviewPersonName(person){
 
 function toProperCase(s){
   if(!s) return '';
-  return s.replace(/\w\S*/g, t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
+  // Handle hyphenated names: each segment gets its own proper-case treatment
+  // Handle apostrophe names: O'Connor, O'Brien — capitalize after the apostrophe
+  // Handle compound prefixes (van, de, etc.) — these stay lowercase when mid-name
+  return s
+    .split(/(-)/g)  // split on hyphen, preserving the hyphen
+    .map(segment => {
+      // Capitalize after apostrophes too: o'connor → O'Connor
+      return segment.replace(/\w\S*/g, t => {
+        // Handle apostrophe sub-parts: O'connor → O'Connor
+        const parts = t.split("'");
+        return parts.map((p, i) =>
+          p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()
+        ).join("'");
+      });
+    })
+    .join('');
 }
 
 // ── EMPLOYEE NAME CAPTURE (Recognition flow) ─────────────────────────────────
@@ -2918,234 +3276,35 @@ function toProperCase(s){
 // shows a confirmation/review screen, and populates all structured fields
 // without ever asking the separate last-name question when the split is accepted.
 
-async function reviewEmployeeName(){
-  // Shows the employee name review screen.
-  // Returns true when officer accepts; false to restart capture.
-  syncEmployeeDisplayName();
-
-  const structured = formatParsedNameSuggestion({
-    firstName:     formData.employeeFirstName,
-    middleName:    formData.employeeMiddleName,
-    middleInitial: formData.employeeMiddleInitial,
-    lastName:      formData.employeeLastName,
-    suffix:        formData.employeeSuffix,
-  });
-
-  showTyping(); await delay(400); removeTyping();
-  addBubble(
-    `<strong>Employee Name</strong><br>` +
-    `<span style="font-size:16px;font-weight:700;">${escapeHtml(formData.employeeDisplayName)}</span>` +
-    `<pre style="font-size:12px;margin:6px 0;background:var(--light-bg);padding:8px;border-radius:6px;border-left:3px solid var(--safe-navy);color:var(--text-muted);">${structured}</pre>` +
-    `Is this correct?`,
-    'ai'
-  );
-
-  const choice = await new Promise(resolve => {
-    showInlineOptions(
-      ['✓ Yes, this is correct','Edit first name','Edit middle name','Edit last name','Edit suffix'],
-      val => resolve(val)
-    );
-  });
-  addBubble(choice, 'user');
-
-  if(choice === '✓ Yes, this is correct') return true;
-
-  // Edit paths
-  if(choice === 'Edit first name'){
-    showTyping(); await delay(300); removeTyping();
-    addBubble('Please enter the correct first name.','ai');
-    inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
-    const val = await new Promise(resolve => {
-      sendInterceptor = async v => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(v.trim()); };
-    });
-    formData.employeeFirstName = toProperCase(val);
-  }
-  if(choice === 'Edit middle name'){
-    showTyping(); await delay(300); removeTyping();
-    addBubble('Please enter the middle name or initial, or tap Skip.','ai');
-    inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
-    const val = await new Promise(resolve => {
-      showInlineOptions(['Skip / No middle name'], v => { sendInterceptor=null; resolve(v.startsWith('Skip') ? '' : v.trim()); });
-      sendInterceptor = async v => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(v.trim()); };
-    });
-    if(val && /^[A-Za-z]\.?$/.test(val)){
-      formData.employeeMiddleInitial = val.replace('.','').toUpperCase() + '.';
-      formData.employeeMiddleName = '';
-    } else {
-      formData.employeeMiddleName = val ? toProperCase(val) : '';
-      formData.employeeMiddleInitial = '';
-    }
-  }
-  if(choice === 'Edit last name'){
-    showTyping(); await delay(300); removeTyping();
-    addBubble('Please enter the correct last name.<br><span style="color:var(--text-muted);font-size:12px;">Example: Spalding · Van Dyke · De La Cruz</span>','ai');
-    inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
-    const val = await new Promise(resolve => {
-      showInlineOptions(['Unknown / Not provided'], v => { sendInterceptor=null; resolve(v.startsWith('Unknown') ? '' : v.trim()); });
-      sendInterceptor = async v => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(v.trim()); };
-    });
-    formData.employeeLastName = val ? toProperCase(val) : '';
-  }
-  if(choice === 'Edit suffix'){
-    showTyping(); await delay(300); removeTyping();
-    addBubble('Please enter the correct suffix, or tap No suffix.','ai');
-    const val = await new Promise(resolve => {
-      showInlineOptions(['No suffix','Jr.','Sr.','II','III','IV'], v => resolve(v));
-    });
-    addBubble(val,'user');
-    formData.employeeSuffix = val === 'No suffix' ? '' : val;
-  }
-
-  return false; // loop back to review
-}
+// ── EMPLOYEE NAME CAPTURE (Recognition flow) ────────────────────────────────
+// Delegates entirely to the shared collectPersonName() + reviewPersonName() machinery.
+// This ensures one parser, one confirmation dialog, one review screen across all flows.
 
 async function collectEmployeeName(){
-  // Entry point called by the isEmployeeName handler in processAnswer.
-  // Loops until the officer confirms the review screen.
-  let nameAccepted = false;
-  let firstRun = true;
+  // Use the shared person name capture. The returned person object has all
+  // structured fields (firstName, middleName, middleInitial, lastName, suffix, displayName).
+  // We then map those into the formData.employee* fields.
+  const person = await collectPersonName();
 
-  while(!nameAccepted){
-    if(!firstRun){
-      // Re-ask for first name on rejection or re-entry
-      showTyping(); await delay(400); removeTyping();
-      addBubble(
-        "What is the employee's <strong>first name only</strong>.<br>" +
-        `<span style="color:var(--text-muted);font-size:12px;">Example: Esperanza</span>`,
-        'ai'
-      );
-    }
-    firstRun = false;
-
-    inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
-    const rawFirst = await new Promise(resolve => {
-      showInlineOptions(['Unknown / Not provided'], val => { sendInterceptor=null; resolve(val==='Unknown / Not provided' ? '__UNKNOWN__' : val.trim()); });
-      sendInterceptor = async val => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(val.trim()); };
-    });
-    inputArea.style.display='none';
-
-    if(rawFirst === '__UNKNOWN__'){
-      formData.employeeFirstName = 'Unknown';
-      formData.employeeLastName = '';
-      formData.employeeMiddleName = '';
-      formData.employeeMiddleInitial = '';
-      formData.employeeSuffix = '';
-      syncEmployeeDisplayName();
-      break;
-    }
-
-    // Run through the name parser — same logic as collectPersonName
-    const parsed = parseNameTokens(rawFirst);
-
-    if(parsed && parsed.lastName){
-      // Multi-word input detected — looks like a full name
-      const suggestion = formatParsedNameSuggestion(parsed);
-      showTyping(); await delay(400); removeTyping();
-      addBubble(
-        `It looks like you entered a full name. I detected:<br>` +
-        `<pre style="font-size:12px;margin:6px 0;background:var(--light-bg);padding:8px;border-radius:6px;border-left:3px solid var(--safe-navy);">${suggestion}</pre>` +
-        `Would you like me to use this?`,
-        'ai'
-      );
-      const confirm = await new Promise(resolve => {
-        showInlineOptions(['✓ Yes, use this','✏️ No, let me correct it'], val => resolve(val));
-      });
-      addBubble(confirm, 'user');
-
-      if(confirm.startsWith('✓')){
-        // Accept the parsed split — populate all structured fields
-        formData.employeeFirstName     = toProperCase(parsed.firstName);
-        formData.employeeMiddleName    = parsed.middleName    ? toProperCase(parsed.middleName)    : '';
-        formData.employeeMiddleInitial = parsed.middleInitial ? parsed.middleInitial.toUpperCase() : '';
-        formData.employeeLastName      = parsed.lastName      ? toProperCase(parsed.lastName)      : '';
-        formData.employeeSuffix        = parsed.suffix        || '';
-        syncEmployeeDisplayName();
-        // Skip to review
-        nameAccepted = await reviewEmployeeName();
-        continue;
-      }
-      // Officer chose to correct — loop restarts
-      continue;
-    }
-
-    // Single word or recognized compound first name — accept as first name only
-    formData.employeeFirstName = toProperCase(rawFirst);
-    formData.employeeMiddleName = '';
-    formData.employeeMiddleInitial = '';
-    formData.employeeSuffix = '';
-
-    // Ask for last name separately
-    showTyping(); await delay(400); removeTyping();
-    addBubble(
-      `And ${formData.employeeFirstName}'s <strong>last name</strong>?<br>` +
-      `<span style="color:var(--text-muted);font-size:12px;">Example: Spalding · Van Dyke · De La Cruz</span>`,
-      'ai'
-    );
-    inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
-    const rawLast = await new Promise(resolve => {
-      showInlineOptions(['Unknown / Not provided'], val => { sendInterceptor=null; resolve(val==='Unknown / Not provided' ? '' : val.trim()); });
-      sendInterceptor = async val => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(val.trim()); };
-    });
-    inputArea.style.display='none';
-    formData.employeeLastName = rawLast ? toProperCase(rawLast) : '';
-
-    // Optional middle name / initial
-    showTyping(); await delay(300); removeTyping();
-    addBubble(`Does ${formData.employeeFirstName} have a middle name or initial on record?`,'ai');
-    const middleChoice = await new Promise(resolve => {
-      showInlineOptions(['No middle name','Add middle name','Add middle initial'], val => resolve(val));
-    });
-    addBubble(middleChoice,'user');
-
-    if(middleChoice === 'Add middle name'){
-      showTyping(); await delay(300); removeTyping();
-      addBubble(`What is ${formData.employeeFirstName}'s middle name?`,'ai');
-      inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
-      const m = await new Promise(resolve => {
-        sendInterceptor = async v => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(v.trim()); };
-      });
-      formData.employeeMiddleName = toProperCase(m);
-      formData.employeeMiddleInitial = '';
-    } else if(middleChoice === 'Add middle initial'){
-      showTyping(); await delay(300); removeTyping();
-      addBubble(`What is ${formData.employeeFirstName}'s middle initial? (e.g. N.)`,'ai');
-      inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
-      const m = await new Promise(resolve => {
-        sendInterceptor = async v => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(v.trim()); };
-      });
-      const norm = m.replace(/\./g,'').toUpperCase().charAt(0);
-      formData.employeeMiddleInitial = norm ? norm + '.' : '';
-      formData.employeeMiddleName = '';
-    } else {
-      formData.employeeMiddleName = '';
-      formData.employeeMiddleInitial = '';
-    }
-
-    // Optional suffix
-    showTyping(); await delay(300); removeTyping();
-    addBubble('Any suffix? (e.g. Jr., Sr., III — or skip)','ai');
-    const suffixChoice = await new Promise(resolve => {
-      showInlineOptions(['No suffix','Jr.','Sr.','II','III','IV'], val => resolve(val));
-    });
-    addBubble(suffixChoice,'user');
-    formData.employeeSuffix = suffixChoice === 'No suffix' ? '' : suffixChoice;
-
-    syncEmployeeDisplayName();
-    nameAccepted = await reviewEmployeeName();
-  }
+  // Map shared person fields → employee-specific formData fields
+  formData.employeeFirstName     = person.firstName     || '';
+  formData.employeeMiddleName    = person.middleName    || '';
+  formData.employeeMiddleInitial = person.middleInitial || '';
+  formData.employeeLastName      = person.lastName      || '';
+  formData.employeeSuffix        = person.suffix        || '';
+  syncEmployeeDisplayName(); // computes formData.employeeDisplayName and formData.employeeName
 
   // Advance past the employeeFirstName step in the flow
   flowIndex++;
   await askNextQuestion();
 }
-
 async function collectPerson(){
   // ── 1. Name — intelligent structured capture ──────────────────────────────
   const person = await collectPersonName();
 
   // 2. Role category — the critical structural question
   showTyping(); await delay(400); removeTyping();
-  addBubble(`What was ${person.name}'s role in this incident?`,'ai');
+  addBubble(`What was ${person.displayName||person.name}'s role in this incident?`,'ai');
   person.roleCategory = await new Promise(resolve => {
     showAppearancePicker(ROLE_CATEGORIES, (val)=>resolve(val), false);
   });
@@ -3153,7 +3312,7 @@ async function collectPerson(){
   // 3. If Employee, ask for role/position. Otherwise for non-witness subjects, ask seat.
   if(person.roleCategory === 'Employee'){
     showTyping(); await delay(400); removeTyping();
-    addBubble(`What is ${person.name}'s role or position? For example: Event Security, Guest Services, Concessions, Parking, Vendor Staff.`,'ai');
+    addBubble(`What is ${person.displayName||person.name}'s role or position? For example: Event Security, Guest Services, Concessions, Parking, Vendor Staff.`,'ai');
     inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
     person.role = await new Promise(resolve => {
       sendInterceptor = async(val) => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(escapeHtml(val)); };
@@ -3161,7 +3320,7 @@ async function collectPerson(){
     inputArea.style.display='none';
   } else if(SUBJECT_ROLES.includes(person.roleCategory)){
     showTyping(); await delay(400); removeTyping();
-    addBubble(`What is ${person.name}'s seat location? Please provide Section, Row, and Seat number.`,'ai');
+    addBubble(`What is ${person.displayName||person.name}'s seat location? Please provide Section, Row, and Seat number.`,'ai');
     person.seatLocation = await new Promise(resolve => {
       showInlineOptions(['Unknown'], (val)=>resolve(val==='Unknown'?'':val));
       inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
@@ -3175,22 +3334,22 @@ async function collectPerson(){
   const wantsAppearance = WITNESS_ROLES.includes(person.roleCategory)
     ? await new Promise(resolve => {
         showTyping();
-        addBubble(`Would you like to capture a physical description for ${person.name} as well? This is optional for witnesses.`,'ai');
+        addBubble(`Would you like to capture a physical description for ${person.displayName||person.name} as well? This is optional for witnesses.`,'ai');
         showInlineOptions(['Yes, add description','Skip — name and role only'], (val)=>resolve(val.startsWith('Yes')));
       })
     : true;
 
   if(wantsAppearance){
     showTyping(); await delay(400); removeTyping();
-    addBubble(`What is ${person.name}'s gender?`,'ai');
+    addBubble(`What is ${person.displayName||person.name}'s gender?`,'ai');
     person.gender = await new Promise(resolve => showAppearancePicker(['Male','Female','Non-binary','Unknown / Not Observed'], resolve, false));
 
     showTyping(); await delay(300); removeTyping();
-    addBubble(`What is ${person.name}'s approximate age range?`,'ai');
+    addBubble(`What is ${person.displayName||person.name}'s approximate age range?`,'ai');
     person.ageRange = await new Promise(resolve => showAgeRangePicker(resolve));
 
     showTyping(); await delay(300); removeTyping();
-    addBubble(`How would you describe ${person.name}'s height?`,'ai');
+    addBubble(`How would you describe ${person.displayName||person.name}'s height?`,'ai');
     person.height = await new Promise(resolve => {
       const heightWrap = document.createElement('div');
       heightWrap.className = 'location-picker'; heightWrap.style.margin='4px 0 4px 38px'; heightWrap.style.maxWidth='84%';
@@ -3205,20 +3364,20 @@ async function collectPerson(){
     });
 
     showTyping(); await delay(300); removeTyping();
-    addBubble(`How would you describe ${person.name}'s build?`,'ai');
+    addBubble(`How would you describe ${person.displayName||person.name}'s build?`,'ai');
     person.build = await new Promise(resolve => showAppearancePicker(['Slim / Thin','Medium / Average','Heavyset / Large','Athletic / Muscular','Unknown'], resolve, false));
 
     showTyping(); await delay(300); removeTyping();
-    addBubble(`What is ${person.name}'s hair color?`,'ai');
+    addBubble(`What is ${person.displayName||person.name}'s hair color?`,'ai');
     person.hairColor = await new Promise(resolve => showAppearancePicker(['Black','Brown','Blonde','Red / Auburn','Gray','White / Silver','Bald','Unknown'], resolve, false));
 
     showTyping(); await delay(300); removeTyping();
-    addBubble(`How would you describe ${person.name}'s hair style?`,'ai');
+    addBubble(`How would you describe ${person.displayName||person.name}'s hair style?`,'ai');
     person.hairStyle = await new Promise(resolve => showHairStylePicker(resolve));
 
     showTyping(); await delay(300); removeTyping();
     const clothingLabel = person.roleCategory === 'Employee' ? 'uniform' : 'clothing';
-    addBubble(`What was ${person.name} wearing? Describe the ${clothingLabel}.`,'ai');
+    addBubble(`What was ${person.displayName||person.name} wearing? Describe the ${clothingLabel}.`,'ai');
     const rawClothing = await new Promise(resolve => {
       inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
       sendInterceptor = async(val) => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(val); };
@@ -3245,13 +3404,13 @@ async function collectPerson(){
     await delay(600);
 
     showTyping(); await delay(300); removeTyping();
-    addBubble(`Any distinguishing features for ${person.name}? Select all that apply.`,'ai');
+    addBubble(`Any distinguishing features for ${person.displayName||person.name}? Select all that apply.`,'ai');
     person.features = await new Promise(resolve => {
       showAppearancePicker(['Tattoos visible','Facial hair (beard/mustache)','Glasses','Hat or cap','Mask or face covering','Scar or birthmark','None observed'], resolve, true);
     });
 
     showTyping(); await delay(300); removeTyping();
-    addBubble(`Do you have any photos of ${person.name}? Upload up to 3 photos.`,'ai');
+    addBubble(`Do you have any photos of ${person.displayName||person.name}? Upload up to 3 photos.`,'ai');
     await new Promise(resolve => {
       showPhotoUpload(async(result)=>{
         person.photoDataUrls = uploadedPhotos.map(p=>p.dataUrl);
@@ -3266,7 +3425,7 @@ async function collectPerson(){
 
   // 5. Statement — ask for everyone regardless of role (subjects, witnesses, employees all may have something to say)
   showTyping(); await delay(300); removeTyping();
-  addBubble(`What did ${person.name} say, if anything? This becomes part of the official record.`,'ai');
+  addBubble(`What did ${person.displayName||person.name} say, if anything? This becomes part of the official record.`,'ai');
   person.statement = await new Promise(resolve => {
     showInlineOptions(['Refused to Speak','Uncooperative','Nothing said'], (val)=>resolve(val));
     inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
@@ -3278,7 +3437,7 @@ async function collectPerson(){
       // AP Style cleanup for statement
       showTyping(); await delay(300);
       addBubble("Writing that up in professional language...","ai"); // speak handled below
-      const ctx = `Statement field for ${person.name} (${person.roleCategory}) in a ${formData.incidentCategory||'incident'} report.`;
+      const ctx = `Statement field for ${person.displayName||person.name} (${person.roleCategory}) in a ${formData.incidentCategory||'incident'} report.`;
       const cleaned = await cleanWithAI(val, ctx, 'field', 'guestStatement');
       removeTyping();
       addBubble(`Here's how it will read: <em>"${cleaned}"</em>`,'ai', true); // suppressSpeak — speakRewritePreview handles it
@@ -3357,7 +3516,7 @@ async function runPeopleLoop(){
   // Build legacy witnesses summary text from witness-role people, for any code path that still reads formData.witnesses
   const witnessPeople = getWitnessPeople();
   formData.witnesses = witnessPeople.length > 0
-    ? 'Witnesses included ' + witnessPeople.map(p => `${p.name}${p.role?', '+p.role:''}`).join(', and ') + '.'
+    ? 'Witnesses included ' + witnessPeople.map(p => `${p.displayName||p.name}${p.role?', '+p.role:''}`).join(', and ') + '.'
     : 'None';
 
   flowIndex++; await askNextQuestion();
@@ -3692,7 +3851,7 @@ async function askNextQuestion(){
       // AP Style rewrite — same pattern as clothing/statement fields
       showTyping(); await delay(500);
       addBubble('Writing that up in professional language...', 'ai'); // speak handled by speakRewritePreview below
-      const employeeName = (formData.employeeDisplayName || `${formData.employeeFirstName||'The employee'} ${formData.employeeLastName||''}`.trim());
+      const employeeName = computeReportContext(formData).employeeNameForPrompt;
       try {
         const cr = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
@@ -3739,7 +3898,7 @@ CRITICAL RULES:
           showInlineOptions(['✓ Yes, that looks right', '✗ No, let me re-describe'], async (choice) => {
             addBubble(choice, 'user');
             if(choice.startsWith('✓')){
-              formData.recognitionImpact = cleaned;
+              setFieldAIConfirmed('recognitionImpact', cleaned);
               flowIndex++;
               await askNextQuestion();
             } else {
@@ -3748,7 +3907,7 @@ CRITICAL RULES:
               addBubble("No problem — describe it again.", 'ai');
               await showRecognitionImpactPicker(async (raw2) => {
                 // Simple second pass — store as-is, officer can edit in the review card
-                formData.recognitionImpact = raw2;
+                setFieldSupervisor('recognitionImpact', raw2);
                 flowIndex++;
                 await askNextQuestion();
               });
@@ -3759,7 +3918,7 @@ CRITICAL RULES:
       } catch(e){
         removeTyping();
         console.error('Recognition impact rewrite failed:', e);
-        formData.recognitionImpact = raw;
+        setFieldSupervisor('recognitionImpact', raw);
         flowIndex++;
         await askNextQuestion();
       }
@@ -3893,7 +4052,7 @@ async function processAnswer(raw){
     speakRewritePreview(cleaned, "Here's how it will read on the report");
     addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
-      if(confirm.startsWith('Yes')){formData[key]=cleaned;flowIndex++;await askNextQuestion();}
+      if(confirm.startsWith('Yes')){setFieldAIConfirmed(key,cleaned);flowIndex++;await askNextQuestion();}
       else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{formData[key]=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
       else{addBubble("No problem — describe it again.",'ai');inputArea.style.display='flex';awaitingInput=true;}
     });
@@ -3909,7 +4068,7 @@ async function processAnswer(raw){
     speakRewritePreview(cleaned, "Here's how it will read on the report");
     addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
-      if(confirm.startsWith('Yes')){formData[key]=cleaned;flowIndex++;await askNextQuestion();}
+      if(confirm.startsWith('Yes')){setFieldAIConfirmed(key,cleaned);flowIndex++;await askNextQuestion();}
       else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{formData[key]=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
       else{addBubble("No problem — describe it again.",'ai');inputArea.style.display='flex';awaitingInput=true;}
     });
@@ -3925,7 +4084,7 @@ async function processAnswer(raw){
     speakRewritePreview(cleaned, "Here's how it will read on the report");
     addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
-      if(confirm.startsWith('Yes')){formData[key]=cleaned;flowIndex++;await askNextQuestion();}
+      if(confirm.startsWith('Yes')){setFieldAIConfirmed(key,cleaned);flowIndex++;await askNextQuestion();}
       else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{formData[key]=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
       else{addBubble("No problem — describe it again.",'ai');inputArea.style.display='flex';awaitingInput=true;}
     });
@@ -4021,7 +4180,7 @@ async function processAnswer(raw){
       speakRewritePreview(cleaned, "Here's how it will read on the report");
       addQuickReplies(['Yes, that looks right','✏️ Edit — change a word or two','No, let me re-describe'],async(confirm)=>{
         clearQuickReplies(); addBubble(confirm,'user');
-        if(confirm.startsWith('Yes')){formData[key]=cleaned;flowIndex++;await askNextQuestion();}
+        if(confirm.startsWith('Yes')){setFieldAIConfirmed(key,cleaned);flowIndex++;await askNextQuestion();}
         else if(confirm.startsWith('✏️')){
           showTyping(); await delay(300); removeTyping();
           addBubble('Here is the text — edit it directly, then tap send:','ai');
@@ -4066,7 +4225,7 @@ async function processAnswer(raw){
     speakRewritePreview(cleaned, "Here's how it will read on the report");
     addQuickReplies(['Yes, that looks right','✏️ Edit — change a word or two','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
-      if(confirm.startsWith('Yes')){formData[key]=cleaned;flowIndex++;await askNextQuestion();}
+      if(confirm.startsWith('Yes')){setFieldAIConfirmed(key,cleaned);flowIndex++;await askNextQuestion();}
       else if(confirm.startsWith('✏️')){
         showTyping(); await delay(400); removeTyping();
         addBubble('Here is the text — edit it directly, then tap send:','ai');
@@ -4095,11 +4254,14 @@ async function showFinalForm(){
   showTyping(); await delay(900); removeTyping();
   migrateLegacyGuestToPeople(); // safety net — ensures people[] is populated even on edge paths
   const isIncident=incidentType==='incident';
-  const supName=`${formData.supervisorFirstName||''} ${formData.supervisorLastName||''}`.trim();
-  formData.supervisorName=supName;
-  const empName=(formData.employeeDisplayName || `${formData.employeeFirstName||''} ${formData.employeeLastName||''}`.trim());
-  formData.employeeName=empName;
-  if(!formData.employeeDisplayName) formData.employeeDisplayName = empName; // ensure it's set for downstream use
+  const ctx = computeReportContext(formData);
+  const supName = ctx.supervisorName;
+  formData.supervisorName = supName;          // keep legacy field in sync
+  const empName = ctx.employeeName;
+  formData.employeeName = empName;             // keep legacy field in sync
+  if(!formData.employeeDisplayName) formData.employeeDisplayName = empName;
+  // Log final form data to audit trail (retrospective snapshot of all fields)
+  logFinalFormData(formData);
 
   // Generate professional narrative for incidents
   if(isIncident && !formData.professionalNarrative){
@@ -4159,8 +4321,9 @@ Return ONLY the narrative text. No preamble, no labels, no markdown.`;
         body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,messages:[{role:"user",content:narrativePrompt}]})
       });
       const d = await r.json();
-      formData.professionalNarrative = d.content&&d.content[0] ? d.content[0].text.trim() : '';
-    } catch(e){ formData.professionalNarrative = formData.incidentDescription||''; }
+      const narrative = d.content&&d.content[0] ? d.content[0].text.trim() : '';
+      setFieldAIDraft('professionalNarrative', narrative); // AI-generated; supervisor reviews before submission
+    } catch(e){ setFieldAIDraft('professionalNarrative', formData.incidentDescription||''); }
     removeTyping();
   }
 
@@ -4238,12 +4401,15 @@ Return ONLY the narrative text. No preamble, no labels, no markdown.`;
     await delay(500);
     showSignaturePad(async(sigDataUrl)=>{
       formData.supervisorSignature = sigDataUrl;
+      setFieldSystem('supervisorSignature', sigDataUrl);
       // LEGAL ACCURACY FIX: re-stamp the official filing time at the moment of
       // signature (the true point of completion), not page load time which may
       // be stale if the officer was interrupted mid-report.
       const signedAt = new Date();
       formData.date = signedAt.toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
       formData.time = signedAt.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+      setFieldSystem('date', formData.date);   // overwrite initial capture with signing time
+      setFieldSystem('time', formData.time);
       document.getElementById('timestampBar').textContent = `📍 ${formData.venue.split(',')[0]}  ·  ${formData.date}  ·  ${formData.time}  ·  Auto-captured`;
       signReadyBtn.remove();
       // Pre-generate the report HTML for sharing (no popup — just builds the string).
@@ -4301,8 +4467,9 @@ Return ONLY the narrative text. No preamble, no labels, no markdown.`;
 // ── PDF GENERATION ─────────────────────────────────────────────────────────
 function generatePDF(isIncident, silent) {
   const fd = formData;
-  const supName = `${fd.supervisorFirstName||''} ${fd.supervisorLastName||''}`.trim();
-  const empName = (fd.employeeDisplayName || `${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim());
+  const ctx = computeReportContext(fd);
+  const supName = ctx.supervisorName;
+  const empName = ctx.employeeName;
   const title = isIncident ? 'Incident Report' : 'Employee Recognition Report';
   const submissionId = 'SAFE-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(Math.random()*9000+1000);
 
@@ -4433,8 +4600,9 @@ function generatePDF(isIncident, silent) {
 
     // People — Subjects / Involved Parties / Employees
     function renderPersonPDF(p){
+      const pName = p.displayName || p.name || 'Unknown';
       let h = `<div style="border:1px solid #d4dbe6;border-radius:6px;padding:10px 12px;margin-bottom:10px;">`;
-      h += `<div style="font-weight:700;font-size:13px;color:#134D7F;margin-bottom:6px;">${escapeHtml(p.name)} — ${escapeHtml(p.roleCategory)}</div>`;
+      h += `<div style="font-weight:700;font-size:13px;color:#134D7F;margin-bottom:6px;">${escapeHtml(pName)} — ${escapeHtml(p.roleCategory)}</div>`;
       h += `<div class="field-grid">`;
       if(p.role) h += fv('Role / Position', p.role);
       if(p.seatLocation) h += fv('Seat Location', p.seatLocation);
@@ -4685,7 +4853,8 @@ async function sharePDF(isIncident) {
 
 function generateWord(isIncident) {
   const fd = formData;
-  const supName = `${fd.supervisorFirstName||''} ${fd.supervisorLastName||''}`.trim();
+  const ctx = computeReportContext(fd);
+  const supName = ctx.supervisorName;
   const title = isIncident ? 'Incident Report' : 'Employee Recognition Report';
   const submissionId = 'SAFE-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(Math.random()*9000+1000);
 
@@ -4724,7 +4893,7 @@ function generateWord(isIncident) {
     content += `FOLLOW-UP\n${'-'.repeat(30)}\n`;
     content += `Required: ${fd.followUp||'N/A'}\nDetails: ${fd.followUpDetails||'N/A'}\nRecommendation: ${fd.recommendation||'N/A'}\n\n`;
   } else {
-    const empName=(fd.employeeDisplayName || `${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim());
+    const empName = ctx.employeeName;
     content += `RECOGNITION DETAILS\n${'-'.repeat(30)}\n`;
     content += `Employee: ${empName}\nRole: ${fd.employeeRole||'N/A'}\n\n`;
     content += `Description:\n${fd.recognitionDescription||'N/A'}\n\n`;
@@ -4798,8 +4967,9 @@ function buildFormHTML(isIncident,supName,empName){
     h+=ff('Safe Ops / Manager Contacted',fd.safeOpsContacted);
     h+=ff('Who Was Contacted',fd.safeOpsWho,'safeOpsWho');
     function renderPersonCard(p){
+      const pName = p.displayName || p.name || 'Unknown';
       let ph = `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fff;">`;
-      ph += `<div style="font-weight:700;font-size:14px;color:var(--safe-navy);margin-bottom:4px;">${escapeHtml(p.name)} <span style="font-weight:500;color:var(--text-muted);font-size:12px;">— ${escapeHtml(p.roleCategory)}</span></div>`;
+      ph += `<div style="font-weight:700;font-size:14px;color:var(--safe-navy);margin-bottom:4px;">${escapeHtml(pName)} <span style="font-weight:500;color:var(--text-muted);font-size:12px;">— ${escapeHtml(p.roleCategory)}</span></div>`;
       if(p.role) ph += ff('Role / Position', p.role);
       if(p.seatLocation) ph += ff('Seat Location', p.seatLocation);
       if(p.gender) ph += ff('Gender', p.gender);
@@ -4912,6 +5082,8 @@ userInput.addEventListener('input',function(){this.style.height='auto';this.styl
 function getTimeOfDay(){const h=new Date().getHours();return h<12?'morning':h<17?'afternoon':'evening';}
 
 function init(){
+  mountRecordingControls(); // inject recording UI shell into context banner (feature-flagged)
+
   const draft = loadDraft();
 
   if(draft && draft.formData && Object.keys(draft.formData).length > 2){
@@ -4996,7 +5168,7 @@ async function resumeFlow(draft){
     });
   } else {
     // Fallback: rebuild a summary card from formData when no transcript was saved
-    const sup = `${formData.supervisorFirstName||''} ${formData.supervisorLastName||''}`.trim() || 'Officer';
+    const sup = computeReportContext(formData).supervisorName || 'Officer';
     const rptLabel = incidentType === 'recognition' ? 'Employee Recognition'
                    : incidentType === 'incident'    ? 'Incident Report' : 'Report';
     const summaryLines = [`<strong>Report resumed — ${rptLabel}</strong>`, `Supervisor: ${escapeHtml(sup)}`];
