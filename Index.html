@@ -547,6 +547,66 @@ function speak(text) {
   synth.speak(utt);
 }
 
+// ── SPEAK REWRITE PREVIEW ─────────────────────────────────────────────────────
+// Reads the full AP Style rewrite aloud after it is displayed.
+// Solves two bugs:
+//   1. speak() cancels any in-flight utterance, so manually calling speak("Writing
+//      that up...") before addBubble() caused the "Writing that up..." utterance
+//      to be cancelled by the very next addBubble() ai speak call.
+//   2. The Web Speech API on iOS/Safari/some Android silently truncates utterances
+//      longer than ~200 chars. This function chunks the text at sentence boundaries
+//      so each utterance stays under the safe limit, then queues them sequentially.
+//
+// Usage: call this AFTER addBubble() has displayed the cleaned text.
+// The displayed text and spoken text are derived from the same `cleanedText` source.
+function speakRewritePreview(cleanedText, contextLabel) {
+  if (!voiceEnabled || !synth) return;
+
+  // Build the full spoken phrase — same wording as what is displayed on screen
+  const label = contextLabel || "Here's how it will read on the report";
+  const fullText = `${label}: ${cleanedText}`;
+
+  // Strip any residual HTML (shouldn't be any, but be safe)
+  const plain = fullText.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
+
+  synth.cancel(); // clear any pending utterance before queuing the preview
+
+  // Chunk at sentence boundaries to avoid iOS/Android truncation.
+  // Each chunk is spoken as a separate utterance queued immediately after the prior one.
+  // Safe threshold: 200 chars per utterance (well under the ~200-300 char limit).
+  const CHUNK_LIMIT = 200;
+  const chunks = [];
+
+  if (plain.length <= CHUNK_LIMIT) {
+    chunks.push(plain);
+  } else {
+    // Split at sentence boundaries (. ! ?) then re-join short adjacent sentences
+    const sentences = plain.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [plain];
+    let current = '';
+    for (const s of sentences) {
+      if ((current + s).length > CHUNK_LIMIT && current.length > 0) {
+        chunks.push(current.trim());
+        current = s;
+      } else {
+        current += s;
+      }
+    }
+    if (current.trim()) chunks.push(current.trim());
+  }
+
+  // Queue each chunk — the browser serializes them automatically
+  chunks.forEach(chunk => {
+    const utt = new SpeechSynthesisUtterance(chunk);
+    utt.rate = 0.92;
+    utt.pitch = 1.05;
+    utt.volume = 1;
+    if (selectedVoice) utt.voice = selectedVoice;
+    synth.speak(utt);
+  });
+
+  console.log(`🔊 speakRewritePreview: ${chunks.length} chunk(s), ${plain.length} chars total`);
+}
+
 // ── STATE ──────────────────────────────────────────────────────────────────
 const formData = {};
 
@@ -812,7 +872,7 @@ const recognitionFlow = [
   {key:'employeeLastName', ask:"And their last name?"},
   {key:'employeeRole', ask:"What is their role or position?"},
   {key:'recognitionDescription', ask:"Tell me what this employee did. Describe the situation and their actions — don't worry about wording, I'll write it up professionally."},
-  {key:'recognitionImpact', ask:"How did their actions reflect S.A.F.E. values or benefit Ford Field operations, guests, or fellow staff?"},
+  {key:'recognitionImpact', ask:"How did this employee's actions reflect S.A.F.E. values or benefit Ford Field operations, guests, or fellow staff?", isRecognitionImpact:true},
   {key:'additionalComments', ask:"Anything else you'd like added to this recognition? If not, say 'none.'"},
 ];
 
@@ -893,7 +953,7 @@ function escapeHtml(str){
   return div.innerHTML;
 }
 
-function addBubble(text, role){
+function addBubble(text, role, suppressSpeak){
   const row=document.createElement('div'); row.className=`bubble-row ${role}`;
   const av=document.createElement('div'); av.className=`avatar ${role}`;
   av.textContent=role==='ai'?'AI':'YOU';
@@ -906,7 +966,9 @@ function addBubble(text, role){
   if(role==='user'){row.appendChild(bub);row.appendChild(av);}
   else{row.appendChild(av);row.appendChild(bub);}
   chatWindow.appendChild(row); scrollBottom();
-  if(role==='ai') speak(text);
+  // suppressSpeak=true lets the caller use speakRewritePreview() instead,
+  // avoiding double-speak and iOS/Android truncation on long rewritten texts.
+  if(role==='ai' && !suppressSpeak) speak(text);
   return bub;
 }
 
@@ -1929,7 +1991,192 @@ function showHairStylePicker(onSelect) {
   ], onSelect, false);
 }
 
-// ── PHOTO UPLOAD ───────────────────────────────────────────────────────────
+function showHairStylePicker(onSelect) {
+  showAppearancePicker([
+    'Short / Cropped','Fade / Taper','Buzz Cut','Afro','Locs / Dreadlocks',
+    'Braids / Cornrows','Ponytail / Bun','Mohawk','Long / Flowing',
+    'Wavy / Curly','Straight','Other','Unknown'
+  ], onSelect, false);
+}
+
+// ── RECOGNITION IMPACT PICKER ─────────────────────────────────────────────────
+// AI-assisted coaching step for the Employee Recognition "Impact" question.
+// Shows categorized suggestion chips ordered by the employee's role, supports
+// multi-select, inline editing, typed response, then AP Style rewrite.
+
+const RECOGNITION_IMPACT_CATEGORIES = {
+  'Guest Experience': [
+    'Improved the guest experience.',
+    'Helped a guest without being asked.',
+    'Provided exceptional customer service.',
+    'Resolved a guest concern professionally.',
+    'Made guests feel welcome.',
+    'Created a positive first impression.',
+    'Assisted guests in finding their seats.',
+    'Assisted guests with accessibility needs.',
+  ],
+  'Teamwork': [
+    'Helped fellow staff members.',
+    'Volunteered to assist another post.',
+    'Demonstrated excellent teamwork.',
+    'Supported supervisors during a busy period.',
+    'Took initiative without being directed.',
+    'Helped maintain smooth event operations.',
+  ],
+  'Safety & Security': [
+    'Helped maintain a safe environment.',
+    'Prevented a situation from escalating.',
+    'Followed security procedures correctly.',
+    'Demonstrated excellent situational awareness.',
+    'Assisted with crowd management.',
+    'Quickly reported a safety concern.',
+    'Helped enforce stadium policies professionally.',
+  ],
+  'Professionalism': [
+    'Maintained a calm and professional attitude.',
+    'Demonstrated outstanding communication.',
+    'Showed integrity and accountability.',
+    'Displayed leadership under pressure.',
+    'Went above and beyond expectations.',
+    'Maintained a positive attitude throughout the event.',
+  ],
+  'Operations': [
+    'Helped keep event operations running smoothly.',
+    'Reduced delays for guests.',
+    'Assisted with efficient entry operations.',
+    'Helped maintain orderly crowd movement.',
+    'Improved communication between departments.',
+  ],
+  'Recognition': [
+    'Consistently volunteered to help.',
+    'Demonstrated exceptional work ethic.',
+    'Showed outstanding reliability.',
+    'Represented S.A.F.E. professionally.',
+    'Exceeded normal job expectations.',
+  ],
+};
+
+// Returns category order tuned to the employee's role, so the most relevant
+// suggestions appear first. Falls back to default order when role is unknown.
+function getRoleAwareCategoryOrder(employeeRole){
+  const r = (employeeRole||'').toLowerCase();
+  if(r.includes('usher')||r.includes('guest services')||r.includes('accessibility')){
+    return ['Guest Experience','Professionalism','Teamwork','Safety & Security','Operations','Recognition'];
+  }
+  if(r.includes('security')||r.includes('crowd')||r.includes('gate')){
+    return ['Safety & Security','Professionalism','Teamwork','Guest Experience','Operations','Recognition'];
+  }
+  if(r.includes('supervisor')||r.includes('manager')||r.includes('lead')){
+    return ['Professionalism','Teamwork','Operations','Safety & Security','Guest Experience','Recognition'];
+  }
+  if(r.includes('concession')||r.includes('vendor')||r.includes('parking')){
+    return ['Professionalism','Guest Experience','Teamwork','Operations','Safety & Security','Recognition'];
+  }
+  return ['Guest Experience','Teamwork','Safety & Security','Professionalism','Operations','Recognition'];
+}
+
+async function showRecognitionImpactPicker(onComplete){
+  const employeeRole = formData.employeeRole || '';
+  const employeeName = `${formData.employeeFirstName||'this employee'}`.trim();
+  const categoryOrder = getRoleAwareCategoryOrder(employeeRole);
+
+  const wrap = document.createElement('div');
+  wrap.id = 'recognitionImpactPicker';
+  wrap.style.cssText = 'background:#fff;border:2px solid var(--safe-navy);border-radius:16px;padding:14px 16px;margin:4px 0 4px 38px;max-width:84%;';
+
+  // Coaching prompt
+  const prompt = document.createElement('p');
+  prompt.style.cssText = 'font-size:13px;color:var(--text-muted);margin:0 0 10px;line-height:1.5;';
+  prompt.innerHTML = `Need ideas? Tap one or more examples below${employeeRole ? ` for <strong>${employeeRole}</strong>` : ''}, or type your own response.`;
+  wrap.appendChild(prompt);
+
+  // Track selected chip text
+  const selected = new Map(); // chipText → { btn, edited: bool }
+
+  // Build categorized chip sections in role-aware order
+  categoryOrder.forEach(catName => {
+    const chips = RECOGNITION_IMPACT_CATEGORIES[catName];
+    if(!chips) return;
+
+    const catLabel = document.createElement('div');
+    catLabel.style.cssText = 'font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--safe-navy);margin:10px 0 5px;font-family:"Barlow Condensed",sans-serif;';
+    catLabel.textContent = catName;
+    wrap.appendChild(catLabel);
+
+    const chipRow = document.createElement('div');
+    chipRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;';
+
+    chips.forEach(chipText => {
+      const btn = document.createElement('button');
+      btn.className = 'loc-btn';
+      btn.textContent = chipText;
+      btn.style.cssText += ';text-align:left;line-height:1.3;';
+      btn.dataset.original = chipText;
+
+      btn.onclick = () => {
+        if(selected.has(chipText)){
+          selected.delete(chipText);
+          btn.classList.remove('selected');
+        } else {
+          selected.set(chipText, { btn, edited: false });
+          btn.classList.add('selected');
+        }
+        updateSubmitState();
+      };
+      chipRow.appendChild(btn);
+    });
+    wrap.appendChild(chipRow);
+  });
+
+  // Divider between chips and free-text
+  const divider = document.createElement('div');
+  divider.style.cssText = 'height:1px;background:var(--border);margin:14px 0 10px;';
+  wrap.appendChild(divider);
+
+  // Free-text area for custom or edited response
+  const freeLabel = document.createElement('div');
+  freeLabel.style.cssText = 'font-size:11px;color:var(--text-muted);margin-bottom:4px;';
+  freeLabel.textContent = 'Or type / edit your own response:';
+  wrap.appendChild(freeLabel);
+
+  const freeText = document.createElement('textarea');
+  freeText.rows = 3;
+  freeText.placeholder = 'Add any additional context…';
+  freeText.style.cssText = 'width:100%;box-sizing:border-box;border:1.5px solid var(--border);border-radius:8px;padding:8px 10px;font-family:Inter,sans-serif;font-size:13px;color:var(--text-main);resize:vertical;';
+  freeText.spellcheck = true;
+  freeText.oninput = updateSubmitState;
+  wrap.appendChild(freeText);
+
+  // Submit button
+  const submitBtn = document.createElement('button');
+  submitBtn.style.cssText = 'margin-top:10px;width:100%;background:var(--safe-navy);color:#fff;border:none;border-radius:8px;padding:11px;font-family:Inter,sans-serif;font-size:14px;font-weight:700;cursor:pointer;opacity:0.4;pointer-events:none;transition:opacity .2s;';
+  submitBtn.textContent = '✓ Use this response';
+  wrap.appendChild(submitBtn);
+
+  function updateSubmitState(){
+    const hasChips = selected.size > 0;
+    const hasText  = freeText.value.trim().length > 0;
+    const active   = hasChips || hasText;
+    submitBtn.style.opacity = active ? '1' : '0.4';
+    submitBtn.style.pointerEvents = active ? 'auto' : 'none';
+  }
+
+  submitBtn.onclick = async () => {
+    wrap.remove();
+
+    // Assemble: selected chips first, then free text if present
+    const parts = Array.from(selected.keys());
+    const typed = freeText.value.trim();
+    if(typed) parts.push(typed);
+    const combined = parts.join(' ');
+
+    addBubble(escapeHtml(combined), 'user');
+    await onComplete(combined);
+  };
+
+  chatWindow.appendChild(wrap);
+  scrollBottom();
+}
 let uploadedPhotos = []; // array of {name, dataUrl}
 
 function showPhotoUpload(onComplete) {
@@ -2548,7 +2795,7 @@ async function collectPerson(){
     });
     // AP Style cleanup for clothing, same dedicated handler logic as before
     showTyping(); await delay(300);
-    speak("Writing that up in professional language"); addBubble("Writing that up in professional language...","ai");
+    addBubble("Writing that up in professional language...","ai"); // speak handled below
     const genderRef = person.gender && person.gender.toLowerCase().includes('female') ? `The female ${person.roleCategory==='Employee'?'employee':'subject'}` : person.gender && person.gender.toLowerCase().includes('male') ? `The male ${person.roleCategory==='Employee'?'employee':'subject'}` : `The ${person.roleCategory==='Employee'?'employee':'subject'}`;
     try {
       const cr = await fetch("https://api.anthropic.com/v1/messages",{
@@ -2563,7 +2810,8 @@ async function collectPerson(){
       person.clothing = cd.content&&cd.content[0] ? cd.content[0].text.trim() : `${genderRef} was wearing ${escapeHtml(rawClothing)}.`;
     } catch(e){ person.clothing = `${genderRef} was wearing ${escapeHtml(rawClothing)}.`; }
     removeTyping();
-    addBubble(`Here's how it will read: <em>"${person.clothing}"</em>`,'ai');
+    addBubble(`Here's how it will read: <em>"${person.clothing}"</em>`,'ai', true); // suppressSpeak — speakRewritePreview handles it
+    speakRewritePreview(person.clothing, "Here's how it will read");
     await delay(600);
 
     showTyping(); await delay(300); removeTyping();
@@ -2599,11 +2847,12 @@ async function collectPerson(){
       val = correctKnownNames(val);
       // AP Style cleanup for statement
       showTyping(); await delay(300);
-      speak("Writing that up in professional language"); addBubble("Writing that up in professional language...","ai");
+      addBubble("Writing that up in professional language...","ai"); // speak handled below
       const ctx = `Statement field for ${person.name} (${person.roleCategory}) in a ${formData.incidentCategory||'incident'} report.`;
       const cleaned = await cleanWithAI(val, ctx, 'field', 'guestStatement');
       removeTyping();
-      addBubble(`Here's how it will read: <em>"${cleaned}"</em>`,'ai');
+      addBubble(`Here's how it will read: <em>"${cleaned}"</em>`,'ai', true); // suppressSpeak — speakRewritePreview handles it
+      speakRewritePreview(cleaned, "Here's how it will read");
       await delay(500);
       resolve(cleaned);
     };
@@ -2991,6 +3240,78 @@ async function askNextQuestion(){
     return;
   }
 
+  if(step.isRecognitionImpact){
+    // Display the question as an AI bubble first, then show the coaching picker.
+    // The picker handles its own submit → AP Style rewrite → confirmation loop.
+    inputArea.style.display = 'none';
+    await showRecognitionImpactPicker(async (raw) => {
+      // AP Style rewrite — same pattern as clothing/statement fields
+      showTyping(); await delay(500);
+      addBubble('Writing that up in professional language...', 'ai'); // speak handled by speakRewritePreview below
+      const employeeName = `${formData.employeeFirstName||'The employee'} ${formData.employeeLastName||''}`.trim();
+      try {
+        const cr = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-6',
+            max_tokens: 300,
+            system: `You rewrite employee recognition impact statements for S.A.F.E. Management security reports at Ford Field, Detroit. 
+Write one concise AP Style paragraph in past tense, third person. 
+Reference the employee by name (${employeeName}) naturally.
+Do NOT invent any accomplishments not present in the input.
+Do NOT use bullet points.
+Return ONLY the rewritten paragraph, no preamble.`,
+            messages: [{ role: 'user', content: `Rewrite this recognition impact statement professionally: ${raw}` }]
+          })
+        });
+        const cd = await cr.json();
+        removeTyping();
+        const cleaned = cd.content && cd.content[0] ? cd.content[0].text.trim() : raw;
+
+        // Confirmation step — same pattern as clothing and statement fields
+        addBubble(`Here's how it will read on the report: <em>"${escapeHtml(cleaned)}"</em>`, 'ai', true); // suppressSpeak — speakRewritePreview handles it
+        speakRewritePreview(cleaned, "Here's how it will read on the report");
+        await delay(400);
+        addBubble('Does this accurately capture the impact of their actions?', 'ai');
+
+        await new Promise(resolve => {
+          showInlineOptions(['✓ Yes, that looks right', '✗ No, let me re-describe'], async (choice) => {
+            addBubble(choice, 'user');
+            if(choice.startsWith('✓')){
+              formData.recognitionImpact = cleaned;
+              flowIndex++;
+              await askNextQuestion();
+            } else {
+              // Re-show the picker for another attempt
+              showTyping(); await delay(400); removeTyping();
+              addBubble("No problem — describe it again.", 'ai');
+              await showRecognitionImpactPicker(async (raw2) => {
+                // Simple second pass — store as-is, officer can edit in the review card
+                formData.recognitionImpact = raw2;
+                flowIndex++;
+                await askNextQuestion();
+              });
+            }
+            resolve();
+          });
+        });
+      } catch(e){
+        removeTyping();
+        console.error('Recognition impact rewrite failed:', e);
+        formData.recognitionImpact = raw;
+        flowIndex++;
+        await askNextQuestion();
+      }
+    });
+    return;
+  }
+
   if(step.isRecommendation){
     showInlineOptions(['No recommendation'], async(val)=>{
       addBubble(val,'user'); formData.recommendation='No recommendation'; flowIndex++; await askNextQuestion();
@@ -3077,7 +3398,8 @@ async function processAnswer(raw){
       inputArea.style.display='none'; awaitingInput=false;
       const ctx=`Incident report action taken field for ${formData.venue}.`;
       const cleaned=await cleanWithAI(val,ctx,'field');
-      addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this look right?`,'ai');
+      addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this look right?`,'ai', true); // suppressSpeak
+      speakRewritePreview(cleaned, "Here's how it will read on the report");
       addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
         clearQuickReplies(); addBubble(confirm,'user');
         if(confirm.startsWith('Yes')){formData.actionTaken=cleaned;flowIndex++;await askNextQuestion();}
@@ -3102,7 +3424,7 @@ async function processAnswer(raw){
       'Format: "Witnesses included [name], [role], and [name], [role]." ' +
       'One sentence maximum. No date references. No preamble. Return only the rewritten text.\n\nInput: ' + raw;
     showTyping(); await delay(300);
-    speak("Writing that up in professional language"); addBubble("Writing that up in professional language...","ai");
+    addBubble("Writing that up in professional language...","ai"); // speak handled by speakRewritePreview below
     const r2=await fetch("https://api.anthropic.com/v1/messages",{
       method:"POST",
       headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
@@ -3112,7 +3434,8 @@ async function processAnswer(raw){
     });
     const d2=await r2.json();
     const cleaned=d2.content&&d2.content[0]?d2.content[0].text.trim():raw;
-    addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this look right?`,'ai');
+    addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this look right?`,'ai', true); // suppressSpeak
+    speakRewritePreview(cleaned, "Here's how it will read on the report");
     addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
       if(confirm.startsWith('Yes')){formData[key]=cleaned;flowIndex++;await askNextQuestion();}
@@ -3127,7 +3450,8 @@ async function processAnswer(raw){
     if(isSkip||raw.toLowerCase().includes('not applicable')){formData[key]='Not applicable';flowIndex++;await askNextQuestion();return;}
     const ctx=`Incident report EMS/police involvement field for ${formData.venue}.`;
     const cleaned=await cleanWithAI(raw,ctx,'field');
-    addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this look right?`,'ai');
+    addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this look right?`,'ai', true); // suppressSpeak
+    speakRewritePreview(cleaned, "Here's how it will read on the report");
     addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
       if(confirm.startsWith('Yes')){formData[key]=cleaned;flowIndex++;await askNextQuestion();}
@@ -3142,7 +3466,8 @@ async function processAnswer(raw){
     if(isSkip){ formData[key]='None'; flowIndex++; await askNextQuestion(); return; }
     const ctx=`Incident report additional comments field for ${formData.venue}.`;
     const cleaned=await cleanWithAI(raw,ctx,'field');
-    addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this look right?`,'ai');
+    addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this look right?`,'ai', true); // suppressSpeak
+    speakRewritePreview(cleaned, "Here's how it will read on the report");
     addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
       if(confirm.startsWith('Yes')){formData[key]=cleaned;flowIndex++;await askNextQuestion();}
@@ -3220,7 +3545,7 @@ async function processAnswer(raw){
   // Clothing field — handle separately with rule-based + targeted AI prompt
   if(key === 'guestClothing'){
     showTyping(); await delay(300);
-    speak("Writing that up in professional language"); addBubble("Writing that up in professional language...","ai");
+    addBubble("Writing that up in professional language...","ai"); // speak handled by speakRewritePreview below
     // Determine gender from formData for proper subject reference
     const genderRef = formData.guestGender && formData.guestGender.toLowerCase().includes('female')
       ? 'The female subject' : formData.guestGender && formData.guestGender.toLowerCase().includes('male')
@@ -3237,7 +3562,8 @@ async function processAnswer(raw){
       const cd = await cr.json();
       const cleaned = cd.content&&cd.content[0] ? cd.content[0].text.trim() : `${genderRef} was wearing ${raw}.`;
       removeTyping(); showTyping(); await delay(300); removeTyping();
-      addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this accurately capture what happened?`,'ai');
+      addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this accurately capture what happened?`,'ai', true); // suppressSpeak
+      speakRewritePreview(cleaned, "Here's how it will read on the report");
       addQuickReplies(['Yes, that looks right','✏️ Edit — change a word or two','No, let me re-describe'],async(confirm)=>{
         clearQuickReplies(); addBubble(confirm,'user');
         if(confirm.startsWith('Yes')){formData[key]=cleaned;flowIndex++;await askNextQuestion();}
@@ -3275,13 +3601,14 @@ async function processAnswer(raw){
   if(wordCount>3 && !isSkip && !isPreDefinedTapValue && key!=='guestClothing' && key!=='witnesses'){
     console.log('🔄 cleanWithAI triggered for key:', key, 'word count:', wordCount);
     showTyping(); await delay(300);
-    speak("Writing that up in professional language"); addBubble("Writing that up in professional language...","ai");
+    addBubble("Writing that up in professional language...","ai"); // speak handled by speakRewritePreview below
     const ctx=`This is a ${incidentType==='incident'?formData.incidentCategory+' incident':'employee recognition'} report for ${formData.venue}.`;
     const descriptionFields = ['incidentDescription','guestStatement','guestStatementDetail','recognitionDescription','recognitionImpact'];
     const fieldType = descriptionFields.includes(key) ? 'description' : 'field';
     const cleaned=await cleanWithAI(raw,ctx,fieldType,key);
     removeTyping(); showTyping(); await delay(500); removeTyping();
-    addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this accurately capture what happened?`,'ai');
+    addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this accurately capture what happened?`,'ai', true); // suppressSpeak
+    speakRewritePreview(cleaned, "Here's how it will read on the report");
     addQuickReplies(['Yes, that looks right','✏️ Edit — change a word or two','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
       if(confirm.startsWith('Yes')){formData[key]=cleaned;flowIndex++;await askNextQuestion();}
