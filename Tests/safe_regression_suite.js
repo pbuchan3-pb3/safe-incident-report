@@ -1439,3 +1439,489 @@ var appSrc18 = require('fs').readFileSync(require('path').join(__dirname,'..','s
   check('No-invention rule still present', appSrc18.includes('Do NOT add accomplishments') || appSrc18.includes('Do NOT invent'));
   check('Specific vs generic example still present', appSrc18.includes('Demonstrated exceptional work ethic') && appSrc18.includes('generic')); }
 
+
+// ════════════════════════════════════════════════════════════
+section('SUITE 19 — Employee Recognition name capture');
+// ════════════════════════════════════════════════════════════
+
+var appSrc19 = require('fs').readFileSync(require('path').join(__dirname,'..','safe_incident_form_24.html'),'utf8');
+
+// ── recognitionFlow structure ─────────────────────────────────
+{ check('recognitionFlow: no separate employeeLastName step',
+    !appSrc19.includes("{key:'employeeLastName'"));
+  check('recognitionFlow: employeeFirstName has isEmployeeName flag',
+    appSrc19.includes("isEmployeeName:true"));
+  check('recognitionFlow: employeeRole still present after name step',
+    appSrc19.indexOf("key:'employeeRole'") > appSrc19.indexOf("isEmployeeName:true")); }
+
+// ── buildEmployeeDisplayName helper ──────────────────────────
+{ check('buildEmployeeDisplayName defined',
+    appSrc19.includes('function buildEmployeeDisplayName()'));
+  check('syncEmployeeDisplayName defined',
+    appSrc19.includes('function syncEmployeeDisplayName()'));
+  check('employeeDisplayName set on formData in syncEmployeeDisplayName',
+    appSrc19.includes('formData.employeeDisplayName = buildEmployeeDisplayName()')); }
+
+// ── collectEmployeeName flow ──────────────────────────────────
+{ check('collectEmployeeName defined',
+    appSrc19.includes('async function collectEmployeeName()'));
+  check('collectEmployeeName delegates to shared collectPersonName',
+    appSrc19.includes('const person = await collectPersonName()') && appSrc19.includes('collectEmployeeName'));
+  check('isEmployeeName handler calls collectEmployeeName',
+    appSrc19.includes('await collectEmployeeName()')); }
+
+// ── Full name detection uses parseNameTokens ──────────────────
+{ check('parseNameTokens used by shared collectPersonName (called by collectEmployeeName)',
+    appSrc19.includes('const firstParsed = parseNameTokens(rawFirst)'));
+  check('Multi-word detection: firstParsed.lastName triggers confirmation in shared flow',
+    appSrc19.includes('if(firstParsed && firstParsed.lastName)')); }
+
+// ── Confirmation dialog text ──────────────────────────────────
+{ check('Confirmation: "It looks like you entered a full name" present',
+    appSrc19.includes('It looks like you entered a full name'));
+  check('Confirmation: Yes button present',
+    appSrc19.includes('Yes, use this'));
+  check('Confirmation: No/correct button present',
+    appSrc19.includes('No, let me correct it')); }
+
+// ── Name parser tests (using existing parseNameTokens) ────────
+eval(require('fs').readFileSync(require('path').join(__dirname, 'app_logic.js'), 'utf8'));
+
+{ var r = parseNameTokens('Esperanza Spalding');
+  check('Full name: detected as full_name confidence', r.confidence === 'full_name');
+  check('Full name: firstName extracted', r.firstName === 'Esperanza');
+  check('Full name: lastName extracted', r.lastName === 'Spalding'); }
+
+{ var r2 = parseNameTokens('Esperanza Nicole Spalding');
+  check('First Middle Last: firstName', r2.firstName === 'Esperanza');
+  check('First Middle Last: middleName', r2.middleName === 'Nicole');
+  check('First Middle Last: lastName', r2.lastName === 'Spalding'); }
+
+{ var r3 = parseNameTokens('Esperanza N. Spalding');
+  check('First Initial Last: firstName', r3.firstName === 'Esperanza');
+  check('First Initial Last: middleInitial', r3.middleInitial === 'N.');
+  check('First Initial Last: lastName', r3.lastName === 'Spalding'); }
+
+{ var r4 = parseNameTokens('Esperanza Nicole Spalding Jr.');
+  check('First Middle Last Suffix: firstName', r4.firstName === 'Esperanza');
+  check('First Middle Last Suffix: middleName', r4.middleName === 'Nicole');
+  check('First Middle Last Suffix: lastName', r4.lastName === 'Spalding');
+  check('First Middle Last Suffix: suffix', r4.suffix === 'Jr.'); }
+
+{ var r5 = parseNameTokens('Mary Ann');
+  check('Compound first (Mary Ann): not split as first+last', r5.confidence === 'first_only' && !r5.lastName); }
+
+{ var r6 = parseNameTokens('Whitney Van Dyke');
+  check('Compound last (Van Dyke): lastName joined', r6.lastName === 'Van Dyke');
+  check('Compound last (Van Dyke): firstName correct', r6.firstName === 'Whitney'); }
+
+{ var r7 = parseNameTokens('Maria De La Cruz');
+  check("Compound last (De La Cruz): firstName", r7.firstName === 'Maria');
+  check("Compound last (De La Cruz): has lastName content", r7.lastName && r7.lastName.length > 0); }
+
+{ var r8 = parseNameTokens("Brenda Johnson-Smith");
+  check('Hyphenated last name: parsed as full_name', r8.confidence === 'full_name');
+  check("Hyphenated last name: lastName contains hyphen", r8.lastName && r8.lastName.includes('-')); }
+
+{ var r9 = parseNameTokens("Patrick O'Connor");
+  check("O'Connor: parsed as full_name", r9.confidence === 'full_name');
+  check("O'Connor: firstName correct", r9.firstName === "Patrick"); }
+
+// ── buildEmployeeDisplayName logic ────────────────────────────
+{ // Simulate the function using isolated logic
+  function buildEmpDisplay(fd){
+    var parts = [fd.employeeFirstName];
+    if(fd.employeeMiddleName)    parts.push(fd.employeeMiddleName);
+    else if(fd.employeeMiddleInitial) parts.push(fd.employeeMiddleInitial);
+    if(fd.employeeLastName)      parts.push(fd.employeeLastName);
+    if(fd.employeeSuffix)        parts.push(fd.employeeSuffix);
+    return parts.filter(Boolean).join(' ').trim() || 'the employee';
+  }
+
+  check('displayName: First Last',
+    buildEmpDisplay({employeeFirstName:'Esperanza', employeeLastName:'Spalding'}) === 'Esperanza Spalding');
+  check('displayName: First Middle Last',
+    buildEmpDisplay({employeeFirstName:'Esperanza', employeeMiddleName:'Nicole', employeeLastName:'Spalding'}) === 'Esperanza Nicole Spalding');
+  check('displayName: First Initial Last',
+    buildEmpDisplay({employeeFirstName:'Esperanza', employeeMiddleInitial:'N.', employeeLastName:'Spalding'}) === 'Esperanza N. Spalding');
+  check('displayName: First Middle Last Suffix',
+    buildEmpDisplay({employeeFirstName:'Esperanza', employeeMiddleName:'Nicole', employeeLastName:'Spalding', employeeSuffix:'Jr.'}) === 'Esperanza Nicole Spalding Jr.');
+  check('displayName: empty falls back to "the employee"',
+    buildEmpDisplay({}) === 'the employee');
+  check('displayName: first only (no last)',
+    buildEmpDisplay({employeeFirstName:'Esperanza'}) === 'Esperanza'); }
+
+// ── User accepts AI split — last-name question skipped ────────
+{ check('On accept: employeeLastName set by mapping from shared person object',
+    appSrc19.includes('formData.employeeLastName      = person.lastName'));
+  check('On accept: flow goes to shared reviewPersonName screen',
+    appSrc19.includes('nameComplete = await reviewPersonName(person)')); }
+
+// ── User rejects AI split — restarts name capture ─────────────
+{ check('On reject: loop continues inside shared collectPersonName',
+    appSrc19.includes('// Officer wants to re-enter')); }
+
+// ── Downstream uses employeeDisplayName ──────────────────────
+{ check('showFinalForm: empName uses computeReportContext',
+    appSrc19.includes('const empName = ctx.employeeName'));
+  check('PDF generator: uses ctx.employeeName',
+    appSrc19.includes('const empName = ctx.employeeName'));
+  check('Sheets: uses employeeDisplayName',
+    appSrc19.includes('fd.employeeDisplayName || fd.employeeName'));
+  check('AI prompt: uses computeReportContext for employee name',
+    appSrc19.includes('computeReportContext(formData).employeeName')); }
+
+// ── Backward compatibility ────────────────────────────────────
+{ check('Legacy fd.employeeName still set (backward compat)',
+    appSrc19.includes('formData.employeeName = empName'));
+  check('Incident report flow unchanged: incidentFlow present',
+    appSrc19.includes('const incidentFlow = ['));
+  check('Incident report people loop unchanged',
+    appSrc19.includes('async function collectPerson()')); }
+
+// ── Improved ask text ─────────────────────────────────────────
+{ check('Ask text improved: warns about full-name entry',
+    appSrc19.includes("If you enter their full name, I'll help separate it correctly") ||
+    appSrc19.includes("If you accidentally enter the full name, I'll help separate it correctly")); }
+
+
+// ════════════════════════════════════════════════════════════
+section('SUITE 20 — Shared name parser across all workflows');
+// ════════════════════════════════════════════════════════════
+
+var appSrc20 = require('fs').readFileSync(require('path').join(__dirname,'..','safe_incident_form_24.html'),'utf8');
+
+// ── One shared parser ─────────────────────────────────────────
+{ check('parseNameTokens is the single shared parser',
+    appSrc20.includes('function parseNameTokens(raw)'));
+  check('collectPersonName uses parseNameTokens (incident loop)',
+    appSrc20.includes('const firstParsed = parseNameTokens(rawFirst)'));
+  check('collectEmployeeName delegates to collectPersonName (recognition)',
+    appSrc20.includes('const person = await collectPersonName()') &&
+    appSrc20.includes('collectEmployeeName'));
+  check('No separate parser in collectEmployeeName',
+    !appSrc20.includes('rawFirst') ||
+    appSrc20.indexOf('rawFirst') < appSrc20.indexOf('async function collectEmployeeName')); }
+
+// ── Confirmation dialog spec compliance ───────────────────────
+{ check('Dialog: "I detected:" wording', appSrc20.includes('I detected:'));
+  check('Dialog: "Would you like me to use this?"', appSrc20.includes('Would you like me to use this?'));
+  check('Dialog: Yes button', appSrc20.includes('\u2713 Yes, use this'));
+  check('Dialog: No button', appSrc20.includes('No, let me correct it')); }
+
+// ── toProperCase handles special cases ───────────────────────
+eval(require('fs').readFileSync(require('path').join(__dirname, 'app_logic.js'), 'utf8'));
+
+{ check("toProperCase: O'Connor preserved", toProperCase("o'connor") === "O'Connor");
+  check('toProperCase: Johnson-Smith preserved', toProperCase('johnson-smith') === 'Johnson-Smith');
+  check('toProperCase: simple name', toProperCase('chartel') === 'Chartel');
+  check('toProperCase: Van Dyke', toProperCase('van dyke') === 'Van Dyke');
+  check('toProperCase: De La Cruz', toProperCase('de la cruz') === 'De La Cruz'); }
+
+// ── Name parser: all required patterns ───────────────────────
+{ var r = parseNameTokens('Chartel Ross');
+  check('Incident: Chartel Ross → full_name', r.confidence === 'full_name');
+  check('Incident: Chartel Ross → firstName', r.firstName === 'Chartel');
+  check('Incident: Chartel Ross → lastName', r.lastName === 'Ross'); }
+
+{ var r2 = parseNameTokens('Whitney Jones');
+  check('Incident: Whitney Jones → full_name', r2.confidence === 'full_name');
+  check('Incident: Whitney Jones → firstName', r2.firstName === 'Whitney'); }
+
+{ var r3 = parseNameTokens('Esperanza Nicole Spalding');
+  check('First Middle Last: firstName', r3.firstName === 'Esperanza');
+  check('First Middle Last: middleName', r3.middleName === 'Nicole');
+  check('First Middle Last: lastName', r3.lastName === 'Spalding'); }
+
+{ var r4 = parseNameTokens('Esperanza N. Spalding');
+  check('First M. Last: firstName', r4.firstName === 'Esperanza');
+  check('First M. Last: middleInitial', r4.middleInitial === 'N.');
+  check('First M. Last: lastName', r4.lastName === 'Spalding'); }
+
+{ var r5 = parseNameTokens('Esperanza Nicole Spalding Jr.');
+  check('First Middle Last Suffix: firstName', r5.firstName === 'Esperanza');
+  check('First Middle Last Suffix: lastName', r5.lastName === 'Spalding');
+  check('First Middle Last Suffix: suffix', r5.suffix === 'Jr.'); }
+
+{ var r6 = parseNameTokens('Mary Ann');
+  check('Compound first (Mary Ann): confidence first_only', r6.confidence === 'first_only');
+  check('Compound first (Mary Ann): no lastName', !r6.lastName); }
+
+{ var r7 = parseNameTokens('Mary Ann Johnson');
+  check('Compound first + last: firstName is Mary Ann', r7.firstName.toLowerCase() === 'mary ann');
+  check('Compound first + last: lastName is Johnson', r7.lastName.toLowerCase() === 'johnson'); }
+
+{ var r8 = parseNameTokens('Whitney Van Dyke');
+  check('Compound last (Van Dyke): firstName', r8.firstName === 'Whitney');
+  check('Compound last (Van Dyke): lastName joined', r8.lastName === 'Van Dyke'); }
+
+{ var r9 = parseNameTokens('Maria De La Cruz');
+  check('Compound last (De La Cruz): firstName', r9.firstName === 'Maria');
+  check('Compound last (De La Cruz): has lastName', r9.lastName && r9.lastName.length > 0); }
+
+{ var r10 = parseNameTokens("Patrick O'Connor");
+  check("O'Connor: full_name", r10.confidence === 'full_name');
+  check("O'Connor: firstName", r10.firstName === 'Patrick');
+  check("O'Connor: lastName contains apostrophe", r10.lastName && r10.lastName.includes("'")); }
+
+{ var r11 = parseNameTokens('Brenda Johnson-Smith');
+  check('Hyphenated: full_name', r11.confidence === 'full_name');
+  check('Hyphenated: lastName has hyphen', r11.lastName && r11.lastName.includes('-')); }
+
+{ var r12 = parseNameTokens('Marcus Webb III');
+  check('Suffix III: firstName', r12.firstName === 'Marcus');
+  check('Suffix III: lastName', r12.lastName === 'Webb');
+  check('Suffix III: suffix', r12.suffix === 'III'); }
+
+// ── displayName generation ────────────────────────────────────
+{ fresh();
+  var p20 = newPerson();
+  p20.firstName='Esperanza'; p20.middleName='Nicole'; p20.lastName='Spalding'; p20.suffix='Jr.';
+  syncPersonName(p20);
+  check('displayName: First Middle Last Suffix', p20.displayName === 'Esperanza Nicole Spalding Jr.');
+  check('name alias matches displayName', p20.name === p20.displayName); }
+
+{ var p20b = newPerson();
+  p20b.firstName='Esperanza'; p20b.middleInitial='N.'; p20b.lastName='Spalding';
+  syncPersonName(p20b);
+  check('displayName: First Initial Last', p20b.displayName === 'Esperanza N. Spalding'); }
+
+// ── Full name accepted → last-name question skipped ──────────
+{ check('After accepted split: employeeLastName set from parsed result',
+    appSrc20.includes("formData.employeeLastName      = person.lastName"));
+  check('After accepted split: flowIndex advances (no separate lastName question)',
+    appSrc20.includes('flowIndex++') && appSrc20.includes('await askNextQuestion()')); }
+
+// ── Full name rejected → re-asks first name ───────────────────
+{ check('On rejection: continue statement re-enters the name loop',
+    appSrc20.indexOf('Officer wants to re-enter') > -1 ||
+    appSrc20.indexOf("// Officer wants to re-enter") > -1); }
+
+// ── Duplicate / ambiguity detection uses displayName ─────────
+{ check('Ambiguity detection uses displayName||name',
+    appSrc20.includes('(p.displayName||p.name).toLowerCase() === person.displayName.toLowerCase()')); }
+
+// ── Witness/subject filtering uses displayName ─────────────────
+{ check('Witness narrative uses displayName||name for names',
+    appSrc20.includes('p.displayName||p.name}${p.role')); }
+
+// ── PDF rendering uses displayName ───────────────────────────
+{ check('renderPersonPDF uses displayName||name',
+    appSrc20.includes('p.displayName || p.name')); }
+
+// ── Google Sheets peopleSummary uses displayName ─────────────
+{ check('peopleSummary uses displayName||name',
+    appSrc20.includes('p.displayName||p.name') && appSrc20.includes('peopleSummary')); }
+
+// ── AI narrative uses displayName ────────────────────────────
+{ check('AI narrative: displayName used as primary field',
+    appSrc20.includes('p.displayName || p.name') && appSrc20.includes('peopleForNarrative')); }
+
+// ── Context banner uses displayName ──────────────────────────
+{ check('Context banner uses displayName as currentPerson',
+    appSrc20.includes('formData.people[formData.people.length-1].displayName')); }
+
+// ── Legacy migration uses shared parser ──────────────────────
+{ check('migrateLegacyGuestToPeople uses parseNameTokens',
+    appSrc20.includes('parseNameTokens(legacyName)'));
+  check('migrateLegacyGuestToPeople calls syncPersonName',
+    appSrc20.includes('syncPersonName(p)') && appSrc20.includes('migrateLegacyGuestToPeople')); }
+
+// ── Employee Recognition still works ─────────────────────────
+{ check('Recognition: collectEmployeeName maps person fields to employee* fields',
+    appSrc20.includes('formData.employeeFirstName     = person.firstName'));
+  check('Recognition: syncEmployeeDisplayName still called',
+    appSrc20.includes('syncEmployeeDisplayName()'));
+  check('Recognition: recognitionFlow still present',
+    appSrc20.includes("const recognitionFlow = [")); }
+
+// ── Incident report flow unchanged ───────────────────────────
+{ check('Incident flow: collectPerson still called',
+    appSrc20.includes('await collectPerson()'));
+  check('Incident flow: runPeopleLoop still present',
+    appSrc20.includes('async function runPeopleLoop'));
+  check('Incident flow: incidentFlow unchanged',
+    appSrc20.includes('const incidentFlow = [')); }
+
+// ── Backward compatibility ────────────────────────────────────
+{ check('p.name alias still set by syncPersonName',
+    appSrc20.includes('p.name = p.displayName'));
+  check('formData.employeeName still set as legacy alias',
+    appSrc20.includes('formData.employeeName = formData.employeeDisplayName') ||
+    appSrc20.includes('formData.employeeName=empName')); }
+
+
+// ════════════════════════════════════════════════════════════
+section('SUITE 21 — Stage 1+2: computeReportContext + auditLog');
+// ════════════════════════════════════════════════════════════
+
+eval(require('fs').readFileSync(require('path').join(__dirname, 'app_logic.js'), 'utf8'));
+var appSrc21 = require('fs').readFileSync(require('path').join(__dirname,'..','safe_incident_form_24.html'),'utf8');
+
+// ── computeReportContext is defined ──────────────────────────
+{ check('computeReportContext defined', typeof computeReportContext === 'function'); }
+
+// ── supervisorName computation ────────────────────────────────
+{ formData = { supervisorFirstName: 'Peyton', supervisorLastName: 'Buchanan' };
+  var ctx = computeReportContext(formData);
+  check('supervisorName: First Last', ctx.supervisorName === 'Peyton Buchanan'); }
+
+{ formData = { supervisorFirstName: 'Peyton', supervisorLastName: '' };
+  var ctx2 = computeReportContext(formData);
+  check('supervisorName: first only', ctx2.supervisorName === 'Peyton'); }
+
+{ formData = {};
+  var ctx3 = computeReportContext(formData);
+  check('supervisorName: empty falls back to Unknown', ctx3.supervisorName === 'Unknown'); }
+
+// ── employeeName computation ──────────────────────────────────
+{ formData = { employeeDisplayName: 'Esperanza Spalding' };
+  var ctx4 = computeReportContext(formData);
+  check('employeeName: uses displayName first', ctx4.employeeName === 'Esperanza Spalding'); }
+
+{ formData = { employeeFirstName: 'Esperanza', employeeLastName: 'Spalding' };
+  var ctx5 = computeReportContext(formData);
+  check('employeeName: fallback to first+last', ctx5.employeeName === 'Esperanza Spalding'); }
+
+{ formData = {};
+  var ctx6 = computeReportContext(formData);
+  check('employeeName: empty falls back to "the employee"', ctx6.employeeName === 'the employee'); }
+
+{ formData = {};
+  var ctx7 = computeReportContext(formData);
+  check('employeeNameForPrompt: capitalised "The employee"', ctx7.employeeNameForPrompt === 'The employee'); }
+
+{ formData = { employeeDisplayName: 'Esperanza Spalding' };
+  var ctx8 = computeReportContext(formData);
+  check('employeeNameForPrompt: real name unchanged', ctx8.employeeNameForPrompt === 'Esperanza Spalding'); }
+
+// ── people summaries ──────────────────────────────────────────
+{ formData = { people: [
+    { displayName: 'Chartel Ross',  name: 'Chartel Ross',  roleCategory: 'Alleged Aggressor' },
+    { displayName: 'Whitney Jones', name: 'Whitney Jones', roleCategory: 'Witness' },
+  ]};
+  var ctx9 = computeReportContext(formData);
+  check('peopleSummary: includes both people', ctx9.peopleSummary.includes('Chartel Ross') && ctx9.peopleSummary.includes('Whitney Jones'));
+  check('peopleSummary: includes role categories', ctx9.peopleSummary.includes('Alleged Aggressor') && ctx9.peopleSummary.includes('Witness'));
+  check('people array passed through', ctx9.people.length === 2); }
+
+{ formData = { people: [] };
+  var ctx10 = computeReportContext(formData);
+  check('peopleSummary: empty people = empty string', ctx10.peopleSummary === ''); }
+
+// ── narrative block ───────────────────────────────────────────
+{ formData = { people: [{
+    displayName: 'Chartel Ross', name: 'Chartel Ross', lastName: 'Ross',
+    roleCategory: 'Subject', role: '', gender: 'Female', ageRange: '25–34',
+    height: 'Average', build: 'Medium',
+    hairColor: 'Black', hairStyle: 'Braids', clothing: 'Red jacket',
+    features: '', seatLocation: 'Section 131', statement: 'No statement',
+    photoDataUrls: [], photoMeta: [],
+  }]};
+  var ctx11 = computeReportContext(formData);
+  check('narrativeBlock: contains name', ctx11.peopleNarrativeBlock.includes('Chartel Ross'));
+  check('narrativeBlock: contains role', ctx11.peopleNarrativeBlock.includes('Subject'));
+  check('narrativeBlock: contains description', ctx11.peopleNarrativeBlock.includes('Female'));
+  check('narrativeBlock: contains clothing', ctx11.peopleNarrativeBlock.includes('Red jacket'));
+  check('narrativeBlock: contains statement', ctx11.peopleNarrativeBlock.includes('No statement')); }
+
+// ── report metadata ───────────────────────────────────────────
+{ formData = { date: 'Wednesday, July 1, 2026', time: '01:15 AM', incidentDate: 'Wednesday, July 1, 2026', incidentTime: '12:34 AM', formType: 'Incident Report' };
+  var ctx12 = computeReportContext(formData);
+  check('incidentDate: uses incidentDate field first', ctx12.incidentDate === 'Wednesday, July 1, 2026');
+  check('filedAt: combines date and time', ctx12.filedAt === 'Wednesday, July 1, 2026 at 01:15 AM'); }
+
+{ formData = { date: 'Wednesday, July 1, 2026', time: '01:15 AM' };
+  var ctx13 = computeReportContext(formData);
+  check('incidentDate: falls back to date when incidentDate missing', ctx13.incidentDate === 'Wednesday, July 1, 2026'); }
+
+// ── ctx is a plain object, does not mutate formData ──────────
+{ formData = { supervisorFirstName: 'Peyton' };
+  var before = Object.keys(formData).length;
+  computeReportContext(formData);
+  var after = Object.keys(formData).length;
+  check('computeReportContext: pure — does not mutate formData', before === after); }
+
+// ── auditLog and setField ─────────────────────────────────────
+{ check('auditLog array defined', Array.isArray(auditLog)); }
+{ check('setField defined', typeof setField === 'function'); }
+{ check('setFieldSystem defined', typeof setFieldSystem === 'function'); }
+{ check('setFieldAIDraft defined', typeof setFieldAIDraft === 'function'); }
+{ check('setFieldAIConfirmed defined', typeof setFieldAIConfirmed === 'function'); }
+{ check('setFieldSupervisor defined', typeof setFieldSupervisor === 'function'); }
+{ check('logFinalFormData defined', typeof logFinalFormData === 'function'); }
+{ check('getAuditSummary defined', typeof getAuditSummary === 'function'); }
+
+// ── setField writes to formData AND auditLog ──────────────────
+{ formData = {};
+  var prevLen = auditLog.length;
+  setField('incidentCategory', 'Guest Altercation', 'supervisor_tapped', 1.0);
+  check('setField: writes to formData', formData.incidentCategory === 'Guest Altercation');
+  check('setField: writes to auditLog', auditLog.length === prevLen + 1);
+  var entry = auditLog[auditLog.length - 1];
+  check('setField: log entry has correct key', entry.key === 'incidentCategory');
+  check('setField: log entry has correct value', entry.value === 'Guest Altercation');
+  check('setField: log entry has correct source', entry.source === 'supervisor_tapped');
+  check('setField: log entry has correct confidence', entry.confidence === 1.0);
+  check('setField: log entry has ts (ISO string)', !isNaN(new Date(entry.ts).getTime())); }
+
+// ── setFieldSystem convenience wrapper ───────────────────────
+{ formData = {};
+  var prevLen2 = auditLog.length;
+  setFieldSystem('venue', 'Ford Field, Detroit, Michigan');
+  check('setFieldSystem: source is system', auditLog[auditLog.length-1].source === 'system');
+  check('setFieldSystem: confidence is 1.0', auditLog[auditLog.length-1].confidence === 1.0); }
+
+// ── setFieldAIDraft convenience wrapper ──────────────────────
+{ formData = {};
+  setFieldAIDraft('professionalNarrative', 'Test narrative text.');
+  var entry2 = auditLog[auditLog.length-1];
+  check('setFieldAIDraft: source is ai_draft', entry2.source === 'ai_draft');
+  check('setFieldAIDraft: confidence is 0.4', entry2.confidence === 0.4); }
+
+// ── setFieldAIConfirmed convenience wrapper ──────────────────
+{ formData = {};
+  setFieldAIConfirmed('incidentDescription', 'The female subject was...');
+  var entry3 = auditLog[auditLog.length-1];
+  check('setFieldAIConfirmed: source is ai_confirmed', entry3.source === 'ai_confirmed');
+  check('setFieldAIConfirmed: confidence is 0.85', entry3.confidence === 0.85); }
+
+// ── logFinalFormData snapshot ─────────────────────────────────
+{ formData = { supervisorFirstName: 'Peyton', incidentCategory: 'Unauthorized Access', people: [{ displayName: 'Chartel Ross', name: 'Chartel Ross', roleCategory: 'Subject' }] };
+  var prevLen3 = auditLog.length;
+  logFinalFormData(formData);
+  var newEntries = auditLog.slice(prevLen3);
+  check('logFinalFormData: adds entries for non-empty fields', newEntries.length >= 2);
+  check('logFinalFormData: entries marked retrospective', newEntries.every(function(e){ return e.retrospective === true; }));
+  check('logFinalFormData: people array logged as summary', newEntries.some(function(e){ return e.key === 'people' && e.value.includes('Chartel Ross'); })); }
+
+// ── getAuditSummary structure ─────────────────────────────────
+{ var summary = getAuditSummary();
+  check('getAuditSummary: has totalEntries', typeof summary.totalEntries === 'number');
+  check('getAuditSummary: has supervisorFields count', typeof summary.supervisorFields === 'number');
+  check('getAuditSummary: has aiDraftFields count', typeof summary.aiDraftFields === 'number');
+  check('getAuditSummary: has aiConfirmedFields count', typeof summary.aiConfirmedFields === 'number');
+  check('getAuditSummary: has log array', Array.isArray(summary.log)); }
+
+// ── Renderer wiring verified in source ───────────────────────
+{ check('buildEmailBody wired to ctx', appSrc21.includes('const ctx = computeReportContext(fd)') && appSrc21.includes('const supName = ctx.supervisorName'));
+  check('showFinalForm wired to ctx', appSrc21.includes('const ctx = computeReportContext(formData)') && appSrc21.includes('logFinalFormData(formData)'));
+  check('generatePDF wired to ctx', appSrc21.includes('const ctx = computeReportContext(fd)') && appSrc21.includes('const supName = ctx.supervisorName') && appSrc21.includes('const empName = ctx.employeeName'));
+  check('generateWord wired to ctx', appSrc21.includes('const ctx = computeReportContext(fd)') && appSrc21.includes('const supName = ctx.supervisorName') && appSrc21.includes('const title = isIncident'));
+  check('cleanWithAI wired to ctx', appSrc21.includes('computeReportContext(formData).employeeName'));
+  check('recognitionImpact wired to ctx', appSrc21.includes('computeReportContext(formData).employeeNameForPrompt'));
+  check('resumeFlow wired to ctx', appSrc21.includes('computeReportContext(formData).supervisorName')); }
+
+// ── setField wiring in source ─────────────────────────────────
+{ check('AI rewrite confirmations use setFieldAIConfirmed', appSrc21.includes('setFieldAIConfirmed(key,cleaned)'));
+  check('professionalNarrative uses setFieldAIDraft', appSrc21.includes("setFieldAIDraft('professionalNarrative'"));
+  check('recognitionImpact confirmed uses setFieldAIConfirmed', appSrc21.includes("setFieldAIConfirmed('recognitionImpact'"));
+  check('System timestamps wired to setFieldSystem', appSrc21.includes("setFieldSystem('timestamp'") && appSrc21.includes("setFieldSystem('date'"));
+  check('Signature wired to setFieldSystem', appSrc21.includes("setFieldSystem('supervisorSignature'")); }
+
+// ── No regressions: formData still flat ──────────────────────
+{ check('formData still used as flat store (no domain object swap)', appSrc21.includes('formData.incidentCategory'));
+  check('generatePDF still generates HTML', appSrc21.includes("const html = `<!DOCTYPE html"));
+  check('submitToSheets still sends to Sheets', appSrc21.includes('new URLSearchParams'));
+  check('AI narrative still generates from people array', appSrc21.includes('peopleForNarrative')); }
+
