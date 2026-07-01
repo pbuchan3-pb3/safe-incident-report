@@ -330,7 +330,7 @@
 <div id="contextBanner" style="display:none;background:rgba(26,46,74,0.97);border-bottom:1px solid rgba(232,25,44,0.3);padding:6px 14px;flex-shrink:0;">
   <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
     <div id="contextBannerText" style="font-size:11px;color:rgba(255,255,255,0.85);font-family:'Barlow Condensed',sans-serif;letter-spacing:.04em;line-height:1.6;"></div>
-    <button id="contextScrollTopBtn" onclick="chatWindow.scrollTo({top:0,behavior:'smooth'})" style="display:none;font-size:10px;padding:3px 8px;background:rgba(232,25,44,0.85);color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;font-family:'Inter',sans-serif;">↑ Review answers</button>
+    <button id="contextScrollTopBtn" onclick="(function(){ var a=document.getElementById('transcript-start'); if(a){ a.scrollIntoView({behavior:'smooth',block:'start'}); } else { chatWindow.scrollTo({top:0,behavior:'smooth'}); }})()" style="display:none;font-size:10px;padding:3px 8px;background:rgba(232,25,44,0.85);color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;font-family:'Inter',sans-serif;">↑ Review answers</button>
   </div>
 </div>
 
@@ -4226,26 +4226,93 @@ async function resumeFlow(draft){
   // 3. Context banner
   updateContextBanner(draft.context || null);
 
-  // 4. Navigation buttons (review / jump) — only when there's a real transcript
+  // 4. Navigation buttons — only when there's a real transcript to scroll through.
+  //
+  // ROOT CAUSE FIX for "Review previous answers" dead click:
+  //
+  // Bug 1: The button was positioned AFTER the restored bubbles, so the chat
+  //   was already near the top when the button appeared. Worse, if the full
+  //   transcript fits on one screen, scrollTo({top:0}) is a no-op because the
+  //   container isn't overflowing. Fix: give the first restored bubble a stable
+  //   DOM anchor ID and scroll to that element — and disable the button if
+  //   there's genuinely nothing above to scroll to.
+  //
+  // Bug 2: The Jump button target was the bottom of the chat at button-creation
+  //   time. The current question hasn't been rendered yet (askNextQuestion runs
+  //   later), so there was nothing reliable to jump to. Fix: give the current-
+  //   question position a stable anchor ID that askNextQuestion stamps on the
+  //   next bubble it creates, then scroll to that element.
+  //
+  // Bug 3: Button disabled when transcript is too short to overflow.
+
+  let firstRestoredBubble = null; // will be set to the first bubble DOM node
+  let currentQuestionAnchor = null; // will be set after askNextQuestion runs
+
   if(transcript.length > 0){
+    // Tag the first restored bubble so Review can scroll to it reliably
+    firstRestoredBubble = chatWindow.querySelector('.bubble-row');
+    if(firstRestoredBubble && !firstRestoredBubble.id){
+      firstRestoredBubble.id = 'transcript-start';
+    }
+
     const navRow = document.createElement('div');
+    navRow.id = 'resumeNavRow';
     navRow.style.cssText = 'display:flex;gap:8px;justify-content:center;padding:6px 0;flex-wrap:wrap;';
+
     const reviewBtn = document.createElement('button');
-    reviewBtn.style.cssText = 'font-size:11px;padding:5px 12px;background:var(--light-bg);border:1px solid var(--border);color:var(--safe-navy);border-radius:6px;cursor:pointer;font-family:Inter,sans-serif;';
+    reviewBtn.id = 'reviewPrevBtn';
+    reviewBtn.style.cssText = 'font-size:11px;padding:5px 12px;background:var(--light-bg);border:1px solid var(--border);color:var(--safe-navy);border-radius:6px;cursor:pointer;font-family:Inter,sans-serif;transition:opacity .2s;';
     reviewBtn.textContent = '↑ Review previous answers';
-    reviewBtn.onclick = () => chatWindow.scrollTo({ top: 0, behavior: 'smooth' });
+
+    // Review button: scroll to the first restored bubble.
+    // Disable it if the transcript fits on one screen (nothing to scroll up to).
+    reviewBtn.onclick = () => {
+      const anchor = document.getElementById('transcript-start');
+      if(anchor){
+        anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        chatWindow.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
+
     const jumpBtn = document.createElement('button');
     jumpBtn.id = 'jumpToCurrentBtn';
     jumpBtn.style.cssText = 'font-size:11px;padding:5px 12px;background:var(--safe-navy);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:Inter,sans-serif;';
     jumpBtn.textContent = '↓ Jump to current question';
-    jumpBtn.onclick = () => chatWindow.scrollTo({ top: chatWindow.scrollHeight, behavior: 'smooth' });
+
+    // Jump button: scroll to the current question anchor, which is stamped
+    // onto the next AI bubble by askNextQuestion() after resume.
+    jumpBtn.onclick = () => {
+      const qAnchor = document.getElementById('current-question-anchor');
+      if(qAnchor){
+        qAnchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        chatWindow.scrollTo({ top: chatWindow.scrollHeight, behavior: 'smooth' });
+      }
+    };
+
     navRow.appendChild(reviewBtn);
     navRow.appendChild(jumpBtn);
     chatWindow.appendChild(navRow);
+
+    // Disable Review button if transcript is short enough that it fits on screen.
+    // Check after a short paint frame so the DOM has rendered heights.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const canScroll = chatWindow.scrollHeight > chatWindow.clientHeight + 20;
+        if(!canScroll){
+          reviewBtn.disabled = true;
+          reviewBtn.style.opacity = '0.4';
+          reviewBtn.style.cursor = 'not-allowed';
+          reviewBtn.title = 'No content above to scroll to';
+        }
+      });
+    });
   }
 
-  // 5. Session divider
+  // 5. Session divider — also serves as the anchor for "Jump to current question"
   const divider = document.createElement('div');
+  divider.id = 'current-question-anchor'; // Jump button targets this
   divider.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0;';
   divider.innerHTML = `<div style="flex:1;height:1px;background:var(--border);"></div><span style="font-size:10px;color:var(--text-muted);white-space:nowrap;font-family:'Barlow Condensed',sans-serif;letter-spacing:.06em;text-transform:uppercase;">Resumed</span><div style="flex:1;height:1px;background:var(--border);"></div>`;
   chatWindow.appendChild(divider);
