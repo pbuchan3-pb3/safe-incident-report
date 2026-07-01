@@ -568,9 +568,18 @@ const WITNESS_ROLES = ['Witness'];
 function newPerson(){
   return {
     id: 'person_' + Date.now() + '_' + Math.floor(Math.random()*10000),
-    name: '',
-    role: '',           // free-text role/position (e.g. "Event Security", job title)
-    roleCategory: '',   // one of ROLE_CATEGORIES — drives report section placement
+    // ── Structured name fields (source of truth) ──────────────────────────
+    firstName:     '',
+    middleName:    '',   // e.g. "Nicole"
+    middleInitial: '',   // e.g. "N." (set if only an initial was given)
+    lastName:      '',
+    suffix:        '',   // e.g. "Jr.", "III", "Sr."
+    displayName:   '',   // computed: rendered name for PDF, narrative, UI
+    name:          '',   // alias kept for backward compat with all rendering sites
+    // ── Role / categorization ─────────────────────────────────────────────
+    role: '',            // free-text role/position (e.g. "Event Security")
+    roleCategory: '',    // one of ROLE_CATEGORIES — drives report section placement
+    // ── Physical description ──────────────────────────────────────────────
     gender: '',
     ageRange: '',
     height: '',
@@ -580,12 +589,34 @@ function newPerson(){
     clothing: '',
     features: '',
     seatLocation: '',
+    // ── Statement & evidence ─────────────────────────────────────────────
     statement: '',
     photoDataUrls: [],
     photoMeta: [],
+    // ── Additional ────────────────────────────────────────────────────────
     contactInfo: '',
     notes: '',
   };
+}
+
+// Builds the canonical display name from structured fields.
+// Used everywhere a full name needs to be rendered: PDF, live card, AI narrative, Sheets.
+function buildDisplayName(p){
+  const parts = [p.firstName];
+  if(p.middleName)    parts.push(p.middleName);
+  else if(p.middleInitial) parts.push(p.middleInitial);
+  if(p.lastName)      parts.push(p.lastName);
+  if(p.suffix)        parts.push(p.suffix);
+  const full = parts.filter(Boolean).join(' ').trim();
+  return full || 'Unknown';
+}
+
+// Applies displayName → name alias so all existing rendering sites
+// that reference p.name still work without modification.
+function syncPersonName(p){
+  p.displayName = buildDisplayName(p);
+  p.name = p.displayName; // backward-compat alias
+  return p;
 }
 
 formData.people = [];
@@ -599,7 +630,20 @@ function migrateLegacyGuestToPeople(){
   if(!formData.guestName && !formData.guestGender) return; // nothing to migrate
 
   const p = newPerson();
-  p.name = formData.guestName || 'Unknown';
+  // Parse legacy flat name into structured fields where possible
+  const legacyName = formData.guestName || 'Unknown';
+  const legacyParsed = parseNameTokens(legacyName);
+  if(legacyParsed && legacyParsed.confidence !== 'first_only' && legacyParsed.lastName){
+    p.firstName     = toProperCase(legacyParsed.firstName);
+    p.middleName    = legacyParsed.middleName    ? toProperCase(legacyParsed.middleName)    : '';
+    p.middleInitial = legacyParsed.middleInitial || '';
+    p.lastName      = legacyParsed.lastName      ? toProperCase(legacyParsed.lastName)      : '';
+    p.suffix        = legacyParsed.suffix        || '';
+  } else {
+    // Only one name word, or unparseable — store it all in firstName
+    p.firstName = legacyName !== 'Unknown' ? legacyName : '';
+  }
+  syncPersonName(p);
   p.role = formData.guestRole || '';
   p.roleCategory = formData.incidentCategory === 'Employee Misconduct' ? 'Employee' : 'Subject';
   p.gender = formData.guestGender || '';
@@ -989,7 +1033,7 @@ async function submitToSheets(isIncident) {
         recognitionImpact: fd.recognitionImpact || '',
         additionalComments: fd.additionalComments || '',
         professionalNarrative: fd.professionalNarrative || '',
-        peopleSummary: (fd.people||[]).map(p=>`${p.name} (${p.roleCategory})`).join('; ')
+        peopleSummary: (fd.people||[]).map(p=>`${p.displayName||p.name} (${p.roleCategory})`).join('; ')
       });
 
       // Local backup — persists even if the network call to Sheets fails entirely.
@@ -1988,7 +2032,8 @@ function showInlineOptions(options, onSelect) {
 // or voice-transcribed text, before that text goes through AP Style rewriting.
 // Checks against every person in formData.people, not just a single legacy guest.
 function correctKnownNames(raw){
-  const allKnownNames = (formData.people||[]).map(p=>p.name).filter(n=>n && n!=='Unknown');
+  // Use displayName (computed from structured fields) as the authoritative name for correction
+  const allKnownNames = (formData.people||[]).map(p=>p.displayName||p.name).filter(n=>n && n!=='Unknown');
   if(formData.guestName && formData.guestName!=='Unknown') allKnownNames.push(formData.guestName);
   allKnownNames.forEach(fullName => {
     const nameParts = fullName.trim().split(' ').filter(p=>p.length>2);
@@ -2006,44 +2051,331 @@ function correctKnownNames(raw){
   return raw;
 }
 
-async function collectPerson(){
+// ── INTELLIGENT NAME PARSER ───────────────────────────────────────────────────
+// Attempts to parse a raw string into structured name components.
+// Returns: { firstName, middleName, middleInitial, lastName, suffix, confidence }
+// confidence: 'full_name' | 'first_middle_last' | 'first_initial_last' |
+//             'first_only' | 'unknown'
+
+const NAME_SUFFIXES = ['jr','jr.','sr','sr.','ii','iii','iv','v','esq','esq.','phd','md'];
+
+// Known compound surname prefixes — never split these from what follows
+const COMPOUND_PREFIXES = ['van','de','del','della','di','da','la','le','les','los',
+  'mac','mc','st','st.','von','zu','al','el','bin','binte','den','der','des',
+  'du','im','in','op','te','ten','ter','ver'];
+
+// Known two-part first names — if someone enters one of these as "firstName",
+// we should NOT suggest splitting them
+const COMPOUND_FIRST_NAMES = [
+  'mary ann','mary jane','mary beth','mary jo','mary lou','mary sue',
+  'billy bob','billy joe','bobby joe','betty sue','betty jo',
+  'jean luc','jean claude','jean pierre','jean paul',
+  'anna marie','anne marie','anna lee','anna belle',
+  'joe bob','jim bob','james lee','james paul','james ray',
+  'sarah jane','sarah beth','sarah ann','sarah jo',
+  'lily ann','lily rose','lily grace',
+];
+
+function parseNameTokens(raw){
+  if(!raw || !raw.trim()) return null;
+  const trimmed = raw.trim();
+  const tokens = trimmed.split(/\s+/);
+
+  // Single token — just a first name (or unknown)
+  if(tokens.length === 1){
+    return { firstName: tokens[0], middleName:'', middleInitial:'', lastName:'', suffix:'', confidence:'first_only' };
+  }
+
+  // Check for a suffix at the end
+  let suffix = '';
+  let remaining = [...tokens];
+  const lastToken = remaining[remaining.length - 1].toLowerCase().replace(/\./g,'');
+  if(NAME_SUFFIXES.includes(lastToken) || NAME_SUFFIXES.includes(remaining[remaining.length-1].toLowerCase())){
+    suffix = remaining.pop();
+  }
+
+  // Now work with the remaining tokens
+  if(remaining.length === 1){
+    return { firstName: remaining[0], middleName:'', middleInitial:'', lastName:'', suffix, confidence:'first_only' };
+  }
+
+  // Check if the input starts with a known compound first name
+  const lowerInput = trimmed.toLowerCase();
+  const compoundFirst = COMPOUND_FIRST_NAMES.find(cf => lowerInput.startsWith(cf + ' ') || lowerInput === cf);
+  if(compoundFirst){
+    const cfTokens = compoundFirst.split(' ');
+    const cfPart = cfTokens.map((t,i) => remaining[i] || '').join(' ');
+    const rest = remaining.slice(cfTokens.length);
+    if(rest.length === 0){
+      // It's just a compound first name
+      return { firstName: cfPart, middleName:'', middleInitial:'', lastName:'', suffix, confidence:'first_only' };
+    }
+    // Compound first + something after
+    const lastName = buildCompoundLastName(rest);
+    return { firstName: cfPart, middleName:'', middleInitial:'', lastName, suffix, confidence:'full_name' };
+  }
+
+  // Check for compound last name prefix in positions >= 1
+  // e.g. "Whitney Van Dyke" → firstName=Whitney, lastName=Van Dyke
+  const firstName = remaining[0];
+  const afterFirst = remaining.slice(1);
+
+  if(afterFirst.length === 1){
+    // "First Last" — two tokens, clearly first + last
+    const isInitial = /^[A-Za-z]\.$/.test(afterFirst[0]);
+    if(isInitial){
+      return { firstName, middleName:'', middleInitial: afterFirst[0], lastName:'', suffix, confidence:'first_only' };
+    }
+    return { firstName, middleName:'', middleInitial:'', lastName: afterFirst[0], suffix, confidence:'full_name' };
+  }
+
+  if(afterFirst.length === 2){
+    // Could be: First Middle Last, First M. Last, First CompoundLast
+    const second = afterFirst[0];
+    const third = afterFirst[1];
+    const secondIsInitial = /^[A-Za-z]\.$/.test(second);
+    const thirdIsCompoundStart = COMPOUND_PREFIXES.includes(second.toLowerCase());
+
+    if(secondIsInitial){
+      // First M. Last
+      return { firstName, middleName:'', middleInitial: second, lastName: third, suffix, confidence:'first_initial_last' };
+    }
+    if(thirdIsCompoundStart){
+      // First (CompoundPrefix) Next — last name is "CompoundPrefix Next"
+      return { firstName, middleName:'', middleInitial:'', lastName: buildCompoundLastName(afterFirst), suffix, confidence:'full_name' };
+    }
+    // First Middle Last
+    return { firstName, middleName: second, middleInitial:'', lastName: third, suffix, confidence:'first_middle_last' };
+  }
+
+  if(afterFirst.length >= 3){
+    // First Middle Last Compound, or First M. Last Compound, etc.
+    const second = afterFirst[0];
+    const secondIsInitial = /^[A-Za-z]\.$/.test(second);
+    if(secondIsInitial){
+      // First M. RestIsLastName
+      return { firstName, middleName:'', middleInitial: second, lastName: buildCompoundLastName(afterFirst.slice(1)), suffix, confidence:'first_initial_last' };
+    }
+    // First Middle RestIsLastName
+    return { firstName, middleName: second, middleInitial:'', lastName: buildCompoundLastName(afterFirst.slice(1)), suffix, confidence:'first_middle_last' };
+  }
+
+  return { firstName: trimmed, middleName:'', middleInitial:'', lastName:'', suffix, confidence:'first_only' };
+}
+
+function buildCompoundLastName(tokens){
+  // Rejoin compound last names: ["Van","Dyke"] → "Van Dyke"
+  return tokens.join(' ');
+}
+
+function formatParsedNameSuggestion(parsed){
+  // Returns a human-readable summary of the parsed name for the AI to display
+  const lines = [];
+  if(parsed.firstName)     lines.push(`First Name: ${parsed.firstName}`);
+  if(parsed.middleName)    lines.push(`Middle Name: ${parsed.middleName}`);
+  if(parsed.middleInitial) lines.push(`Middle Initial: ${parsed.middleInitial}`);
+  if(parsed.lastName)      lines.push(`Last Name: ${parsed.lastName}`);
+  if(parsed.suffix)        lines.push(`Suffix: ${parsed.suffix}`);
+  return lines.join('\n');
+}
+
+async function collectPersonName(){
+  // Returns a completed person object with all structured name fields set.
+  // This function handles the full intelligent name-capture conversation.
   const person = newPerson();
+  let nameComplete = false;
 
-  // 1. Name
-  addBubble("What is this person's first name? If you only have their last name, that's fine too.",'ai');
-  inputArea.style.display='flex'; awaitingInput=true;
-  document.getElementById('inputHint').style.display='block';
-  userInput.focus();
-
-  const firstName = await new Promise(resolve => {
-    showInlineOptions(['Unknown / Refused'], (val)=>{ sendInterceptor=null; resolve(val==='Unknown / Refused' ? '' : val); });
-    sendInterceptor = async(val) => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(val); };
-  });
-  inputArea.style.display='none';
-
-  let lastName = '';
-  if(firstName){
+  while(!nameComplete){
+    // Step 1: Ask for first name with examples
     showTyping(); await delay(400); removeTyping();
-    addBubble(`And their last name?`,'ai');
-    inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
-    lastName = await new Promise(resolve => {
-      showInlineOptions(['Unknown / Refused'], (val)=>{ sendInterceptor=null; resolve(val==='Unknown / Refused' ? '' : val); });
-      sendInterceptor = async(val) => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(val); };
+    addBubble('Please enter the person\'s <strong>first name only</strong>.<br><span style="color:var(--text-muted);font-size:12px;">Example: Esperanza</span>','ai');
+    inputArea.style.display='flex'; awaitingInput=true;
+    document.getElementById('inputHint').style.display='block';
+    userInput.focus();
+
+    let rawFirst = await new Promise(resolve => {
+      showInlineOptions(['Unknown / Refused'], (val)=>{ sendInterceptor=null; resolve(val==='Unknown / Refused' ? '__UNKNOWN__' : val.trim()); });
+      sendInterceptor = async(val) => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(val.trim()); };
     });
     inputArea.style.display='none';
+
+    if(rawFirst === '__UNKNOWN__'){
+      person.firstName='Unknown'; person.lastName=''; person.displayName='Unknown'; person.name='Unknown';
+      return person;
+    }
+
+    // Check if first-name field looks like a full name
+    const firstParsed = parseNameTokens(rawFirst);
+    let confirmedFirst = rawFirst;
+
+    if(firstParsed && firstParsed.lastName){
+      // Looks like a full name was entered — confirm with officer
+      showTyping(); await delay(500); removeTyping();
+      const suggestion = formatParsedNameSuggestion(firstParsed);
+      addBubble(`It looks like you may have entered a full name. Should I record this as:\n<pre style="font-size:13px;margin:6px 0;background:var(--light-bg);padding:8px 10px;border-radius:6px;border-left:3px solid var(--safe-navy);">${suggestion}</pre>`,'ai');
+      const choice = await new Promise(resolve => {
+        showInlineOptions(['✓ Yes, use this','✗ No, let me correct it'], (val)=>resolve(val));
+      });
+      addBubble(choice, 'user');
+
+      if(choice.startsWith('✓')){
+        // Officer confirmed — populate all structured fields from parse
+        person.firstName     = toProperCase(firstParsed.firstName);
+        person.middleName    = firstParsed.middleName    ? toProperCase(firstParsed.middleName)    : '';
+        person.middleInitial = firstParsed.middleInitial ? firstParsed.middleInitial.toUpperCase() : '';
+        person.lastName      = firstParsed.lastName      ? toProperCase(buildCompoundLastName(firstParsed.lastName.split(' '))) : '';
+        person.suffix        = firstParsed.suffix        ? firstParsed.suffix                      : '';
+        syncPersonName(person);
+        // Skip to name review
+        nameComplete = await reviewPersonName(person);
+        continue;
+      } else {
+        // Officer wants to re-enter — loop back to first name
+        continue;
+      }
+    } else {
+      // Single word or compound first name — accept as-is
+      confirmedFirst = toProperCase(rawFirst);
+    }
+
+    person.firstName = confirmedFirst;
+
+    // Step 2: Ask for last name with example
+    showTyping(); await delay(400); removeTyping();
+    addBubble(`Please enter ${person.firstName}'s <strong>last name only</strong>.<br><span style="color:var(--text-muted);font-size:12px;">Example: Spalding &nbsp;·&nbsp; Van Dyke &nbsp;·&nbsp; Garcia Marquez</span>`,'ai');
+    inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
+    const rawLast = await new Promise(resolve => {
+      showInlineOptions(['Unknown / Refused'], (val)=>{ sendInterceptor=null; resolve(val==='Unknown / Refused' ? '' : val.trim()); });
+      sendInterceptor = async(val) => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(val.trim()); };
+    });
+    inputArea.style.display='none';
+    person.lastName = rawLast ? toProperCase(rawLast) : '';
+
+    // Step 3: Optional middle name / initial
+    showTyping(); await delay(400); removeTyping();
+    addBubble(`Does ${person.firstName} have a middle name or initial on record?`,'ai');
+    const middleChoice = await new Promise(resolve => {
+      showInlineOptions(['No middle name','Add middle name','Add middle initial'], (val)=>resolve(val));
+    });
+    addBubble(middleChoice,'user');
+
+    if(middleChoice === 'Add middle name'){
+      showTyping(); await delay(300); removeTyping();
+      addBubble(`What is ${person.firstName}'s middle name?`,'ai');
+      inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
+      const rawMiddle = await new Promise(resolve => {
+        sendInterceptor = async(val) => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(val.trim()); };
+      });
+      person.middleName = toProperCase(rawMiddle);
+    } else if(middleChoice === 'Add middle initial'){
+      showTyping(); await delay(300); removeTyping();
+      addBubble(`What is ${person.firstName}'s middle initial? (e.g. N.)`,'ai');
+      inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
+      const rawInitial = await new Promise(resolve => {
+        sendInterceptor = async(val) => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(val.trim()); };
+      });
+      // Normalize initial: "N" → "N.", "n." → "N."
+      const normalizedInitial = rawInitial.replace(/\./g,'').toUpperCase().charAt(0);
+      person.middleInitial = normalizedInitial ? normalizedInitial + '.' : '';
+    }
+
+    // Step 4: Optional suffix
+    showTyping(); await delay(300); removeTyping();
+    addBubble(`Any suffix? (e.g. Jr., Sr., III — or skip)`,'ai');
+    const suffixChoice = await new Promise(resolve => {
+      showInlineOptions(['No suffix','Jr.','Sr.','II','III','IV'], (val)=>resolve(val));
+    });
+    addBubble(suffixChoice,'user');
+    person.suffix = suffixChoice === 'No suffix' ? '' : suffixChoice;
+
+    // Compute display name
+    syncPersonName(person);
+
+    // Step 5: Name review screen
+    nameComplete = await reviewPersonName(person);
   }
-  // Smart duplicate detection: if the officer already typed the full name in the
-  // "first name" field (e.g. "Whitney Jones") and then repeats the last word again
-  // in the last name step (e.g. "Jones"), don't concatenate it twice.
-  function toProperCase(s){
-    return s.replace(/\w\S*/g, t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
+
+  return person;
+}
+
+async function reviewPersonName(person){
+  // Shows the review screen. Returns true if officer accepts, false to loop back.
+  syncPersonName(person);
+  showTyping(); await delay(400); removeTyping();
+  const structured = formatParsedNameSuggestion({
+    firstName: person.firstName,
+    middleName: person.middleName,
+    middleInitial: person.middleInitial,
+    lastName: person.lastName,
+    suffix: person.suffix,
+  });
+  addBubble(`<strong>Name</strong><br><span style="font-size:16px;font-weight:700;">${escapeHtml(person.displayName)}</span><pre style="font-size:12px;margin:6px 0;background:var(--light-bg);padding:8px;border-radius:6px;border-left:3px solid var(--safe-navy);color:var(--text-muted);">${structured}</pre>Is this correct?`,'ai');
+
+  const reviewChoice = await new Promise(resolve => {
+    showInlineOptions(['✓ Yes','Edit First Name','Edit Middle Name','Edit Last Name','Edit Suffix'], (val)=>resolve(val));
+  });
+  addBubble(reviewChoice,'user');
+
+  if(reviewChoice === '✓ Yes') return true;
+
+  if(reviewChoice === 'Edit First Name'){
+    showTyping(); await delay(300); removeTyping();
+    addBubble('Please enter the correct first name.<br><span style="color:var(--text-muted);font-size:12px;">Example: Esperanza</span>','ai');
+    inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
+    const val = await new Promise(resolve => {
+      sendInterceptor = async(v) => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(v.trim()); };
+    });
+    person.firstName = toProperCase(val);
   }
-  let assembledName = toProperCase(firstName.trim());
-  const lastNameTrimmed = toProperCase(lastName.trim());
-  if(lastNameTrimmed && !assembledName.toLowerCase().endsWith(lastNameTrimmed.toLowerCase())){
-    assembledName = (assembledName + ' ' + lastNameTrimmed).trim();
+  if(reviewChoice === 'Edit Middle Name'){
+    showTyping(); await delay(300); removeTyping();
+    addBubble('Please enter the middle name or initial, or tap Skip.','ai');
+    inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
+    const val = await new Promise(resolve => {
+      showInlineOptions(['Skip / No middle name'], (v)=>{ sendInterceptor=null; resolve(v.startsWith('Skip') ? '' : v.trim()); });
+      sendInterceptor = async(v) => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(v.trim()); };
+    });
+    // Detect if it's an initial (1 letter, optionally with period)
+    if(val && /^[A-Za-z]\.?$/.test(val)){
+      person.middleInitial = val.replace('.','').toUpperCase() + '.';
+      person.middleName = '';
+    } else {
+      person.middleName = val ? toProperCase(val) : '';
+      person.middleInitial = '';
+    }
   }
-  person.name = escapeHtml(assembledName || 'Unknown');
+  if(reviewChoice === 'Edit Last Name'){
+    showTyping(); await delay(300); removeTyping();
+    addBubble('Please enter the correct last name.<br><span style="color:var(--text-muted);font-size:12px;">Example: Spalding &nbsp;·&nbsp; Van Dyke</span>','ai');
+    inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
+    const val = await new Promise(resolve => {
+      showInlineOptions(['Unknown / Refused'], (v)=>{ sendInterceptor=null; resolve(v.startsWith('Unknown') ? '' : v.trim()); });
+      sendInterceptor = async(v) => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(v.trim()); };
+    });
+    person.lastName = val ? toProperCase(val) : '';
+  }
+  if(reviewChoice === 'Edit Suffix'){
+    showTyping(); await delay(300); removeTyping();
+    addBubble('Please enter the correct suffix, or tap No suffix.','ai');
+    const val = await new Promise(resolve => {
+      showInlineOptions(['No suffix','Jr.','Sr.','II','III','IV'], (v)=>resolve(v));
+    });
+    addBubble(val,'user');
+    person.suffix = val === 'No suffix' ? '' : val;
+  }
+
+  // After any edit, loop back to review
+  return false;
+}
+
+function toProperCase(s){
+  if(!s) return '';
+  return s.replace(/\w\S*/g, t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
+}
+
+async function collectPerson(){
+  // ── 1. Name — intelligent structured capture ──────────────────────────────
+  const person = await collectPersonName();
 
   // 2. Role category — the critical structural question
   showTyping(); await delay(400); removeTyping();
@@ -2211,10 +2543,10 @@ async function runPeopleLoop(){
     // Ambiguity check: if this person's name matches an existing person who
     // already has a different role, or if the officer's narrative elsewhere
     // suggests dual involvement, don't guess — ask directly.
-    const existing = formData.people.find(p => p.name.toLowerCase() === person.name.toLowerCase() && p.name.toLowerCase() !== 'unknown');
+    const existing = formData.people.find(p => (p.displayName||p.name).toLowerCase() === person.displayName.toLowerCase() && person.displayName.toLowerCase() !== 'unknown');
     if(existing && existing.roleCategory !== person.roleCategory){
       showTyping(); await delay(400); removeTyping();
-      addBubble(`I see ${person.name} was already listed as <strong>${existing.roleCategory}</strong>. Was ${person.name} ${existing.roleCategory.toLowerCase()}, ${person.roleCategory.toLowerCase()}, or both?`,'ai');
+      addBubble(`I see ${person.displayName} was already listed as <strong>${existing.roleCategory}</strong>. Was ${person.displayName} ${existing.roleCategory.toLowerCase()}, ${person.roleCategory.toLowerCase()}, or both?`,'ai');
       const resolution = await new Promise(resolve => {
         showInlineOptions([existing.roleCategory + ' only', person.roleCategory + ' only', 'Both roles apply'], (val)=>resolve(val));
       });
@@ -2911,7 +3243,9 @@ async function showFinalForm(){
       peopleSummary = peopleForNarrative.map(p => {
         const desc = [p.gender, p.ageRange, p.height, p.build].filter(Boolean).join(', ');
         const hair = [p.hairColor, p.hairStyle].filter(Boolean).join(' ');
-        return `- ${p.name} | Role: ${p.roleCategory}${p.role?' ('+p.role+')':''} | Description: ${desc}${hair?', Hair: '+hair:''}${p.clothing?', Wearing: '+p.clothing:''}${p.features?', Features: '+p.features:''}${p.seatLocation?', Seat: '+p.seatLocation:''} | Statement: ${p.statement||'None provided'}`;
+        const displayName = p.displayName || p.name;
+        const lastName = p.lastName || (displayName.includes(' ') ? displayName.split(' ').slice(-1)[0] : '');
+        return `- ${displayName}${lastName ? ' (last name: '+lastName+')' : ''} | Role: ${p.roleCategory}${p.role?' ('+p.role+')':''} | Description: ${desc}${hair?', Hair: '+hair:''}${p.clothing?', Wearing: '+p.clothing:''}${p.features?', Features: '+p.features:''}${p.seatLocation?', Seat: '+p.seatLocation:''} | Statement: ${p.statement||'None provided'}`;
       }).join('\n');
     } else {
       peopleSummary = `${isEmployeeCase ? 'Employee' : 'Guest'} Name: ${formData.guestName||'Unknown'} | Statement: ${formData.guestStatement||'N/A'}`;
