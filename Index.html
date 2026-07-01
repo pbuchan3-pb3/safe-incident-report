@@ -997,16 +997,24 @@ function clearQuickReplies(){const qr=document.getElementById('quickReplies');if
 // ── AI CLEANUP ─────────────────────────────────────────────────────────────
 async function cleanWithAI(rawText, context, fieldType, fieldKey){
   try{
-    // Determine subject term based on incident category
+    // Determine context: recognition report, employee misconduct, or standard incident
+    const isRecognitionReport = incidentType === 'recognition';
     const isEmployeeCase = formData.incidentCategory === 'Employee Misconduct';
-    const subjectTerm = isEmployeeCase ? 'employee' : 'subject';
-    const subjectTermCapped = isEmployeeCase ? 'The employee' : 'The subject';
+
+    // Build the employee's display name for recognition reports
+    const recognitionEmployeeName = isRecognitionReport
+      ? (`${formData.employeeFirstName||''} ${formData.employeeLastName||''}`.trim() || 'the employee')
+      : null;
+
+    // Subject term: recognition and misconduct both avoid "subject" language
+    const subjectTerm = (isRecognitionReport || isEmployeeCase) ? 'employee' : 'subject';
+    const subjectTermCapped = (isRecognitionReport || isEmployeeCase) ? 'The employee' : 'The subject';
 
     // Build field-specific instruction
     let fieldInstruction = '';
     if(fieldKey === 'guestClothing'){
-      fieldInstruction = isEmployeeCase
-        ? `This is a UNIFORM description for an employee misconduct report. Describe the uniform professionally in AP Style. Refer to the person as "the employee", never "subject" or "witnesses". Never say "Witnesses included".`
+      fieldInstruction = (isEmployeeCase || isRecognitionReport)
+        ? `This is a UNIFORM description. Describe the uniform professionally in AP Style. Refer to the person as "the employee", never "subject". Never say "Witnesses included".`
         : 'This is a CLOTHING description. Start with "The subject was wearing" and describe the clothing in AP Style. Hyphenate compound color modifiers (black-and-white). Never say "Witnesses included".';
     } else if(fieldKey === 'guestFeatures'){
       fieldInstruction = `This is a PHYSICAL FEATURES description. List features professionally (e.g. "${subjectTermCapped} had visible tattoos and wore glasses"). Refer to the person as "the ${subjectTerm}". Never say "Witnesses included".`;
@@ -1018,9 +1026,57 @@ async function cleanWithAI(rawText, context, fieldType, fieldKey){
       fieldInstruction = 'This is an ENVIRONMENTAL CONDITIONS field. Describe conditions at the scene professionally.';
     } else if(fieldKey === 'guestStatement' || fieldKey === 'guestStatementDetail'){
       fieldInstruction = `This is a STATEMENT field. Rewrite in AP Style. Refer to the person as "the ${subjectTerm}", never use pronouns.`;
+    } else if(fieldKey === 'recognitionDescription'){
+      fieldInstruction = `This is an EMPLOYEE RECOGNITION description for ${recognitionEmployeeName}.
+
+RULES:
+1. Rewrite in AP Style, past tense, third person.
+2. NEVER use "subject", "female subject", "male subject", or "individual".
+3. Use the employee's name ("${recognitionEmployeeName}") or "the employee".
+4. PRESERVE every specific observation the supervisor described — the exact behaviors, situations, and details they mentioned.
+5. You may improve the sentence structure and vocabulary, but do NOT replace specific observations with generic praise.
+6. Do NOT add accomplishments, leadership qualities, awards, or initiative that the supervisor did not describe.
+7. If the supervisor described a specific action (e.g. "always volunteered to move sections"), keep that specific action — do not replace it with a general phrase like "demonstrated exceptional work ethic."
+
+BAD (replaces observation with generic praise): "She demonstrated exceptional leadership and work ethic."
+GOOD (expands the supervisor's actual observation): "${recognitionEmployeeName} consistently volunteered to relocate between sections as needed, doing so without complaint and with a positive attitude."`;
+    } else if(fieldKey === 'recognitionImpact'){
+      fieldInstruction = `This is an EMPLOYEE RECOGNITION impact statement for ${recognitionEmployeeName}.
+
+RULES:
+1. Rewrite in AP Style, past tense, third person.
+2. NEVER use "subject", "female subject", "male subject", or "individual".
+3. Use the employee's name ("${recognitionEmployeeName}") or "the employee" or "the recognized employee".
+4. PRESERVE every specific observation — the supervisor's exact descriptions of what the employee did and how it helped.
+5. Do NOT replace specific behaviors with generic conclusions like "exceeded expectations" or "demonstrated exceptional work ethic" unless the supervisor used those phrases.
+6. Do NOT invent leadership, initiative, awards, or accomplishments not described by the supervisor.
+7. Connect the supervisor's observations to S.A.F.E. values or Ford Field operations only when those connections are clearly implied by what the supervisor wrote.`;
     } else {
       fieldInstruction = `Rewrite in AP Style past tense. Third person only. If referring to the person involved, use "the ${subjectTerm}".`;
     }
+
+    // System prompt — recognition reports get their own distinct branch
+    let systemPrompt;
+    if(isRecognitionReport){
+      systemPrompt = `You are a professional HR documentation specialist for S.A.F.E. Management at Ford Field, Detroit. Your job is to rewrite employee recognition entries in AP Style, third person past tense — improving grammar, structure, and vocabulary without changing what the supervisor actually described.
+
+CRITICAL RULES:
+1. NEVER use "subject", "female subject", "male subject", or "individual subject" — these terms belong to incident reports only. Always use the employee's name ("${recognitionEmployeeName}") or "the employee."
+2. PRESERVE the supervisor's specific observations. If they described a behavior, keep that behavior in the rewrite.
+3. Do NOT replace specific observations with generic praise. "Always volunteered to move sections without complaint" is a specific observation. "Demonstrated exceptional work ethic" is generic praise. Keep the specific observation; do not substitute the generic.
+4. Do NOT add accomplishments, leadership qualities, initiative, or awards that the supervisor did not describe.
+5. You may expand the language professionally — better word choice, cleaner sentence structure — but the facts must come entirely from the supervisor's input.
+6. Return ONLY the rewritten text. No preamble.`;
+    } else if(isEmployeeCase){
+      systemPrompt = fieldType === 'description'
+        ? `You are a professional security report writer for S.A.F.E. Management. Rewrite incident descriptions in AP Style, third person past tense. Never use I, we, she, he, they. This is an EMPLOYEE MISCONDUCT report — refer to the person involved as "the employee", never "subject". Return ONLY the rewritten text.`
+        : `You are a professional security report writer for S.A.F.E. Management. Rewrite field entries in AP Style. This is an EMPLOYEE MISCONDUCT report — refer to the person as "the employee", never "subject" or "witnesses". For names/witnesses: format as 'Witnesses included [name] ([role])'. Return ONLY the rewritten text.`;
+    } else {
+      systemPrompt = fieldType === 'description'
+        ? `You are a professional security report writer for S.A.F.E. Management. Rewrite incident descriptions in AP Style, third person past tense. Never use I, we, she, he, they. Use female subject, male subject, or subject. Return ONLY the rewritten text.`
+        : `You are a professional security report writer for S.A.F.E. Management. Rewrite field entries in AP Style. For clothing: start with 'The subject was wearing...'. For names/witnesses: format as 'Witnesses included [name] ([role])'. Never start with 'Witnesses included' for clothing fields. Return ONLY the rewritten text.`;
+    }
+
     const r=await fetch("https://api.anthropic.com/v1/messages",{
       method:"POST",
       headers:{
@@ -1032,13 +1088,13 @@ async function cleanWithAI(rawText, context, fieldType, fieldKey){
       body:JSON.stringify({
         model:"claude-sonnet-4-6",
         max_tokens:300,
-        system: fieldType === 'description'
-          ? `You are a professional security report writer for S.A.F.E. Management. Rewrite incident descriptions in AP Style, third person past tense. Never use I, we, she, he, they. ${isEmployeeCase ? 'This is an EMPLOYEE MISCONDUCT report — refer to the person involved as "the employee", never "subject".' : 'Use female subject, male subject, or subject.'} Return ONLY the rewritten text.`
-          : `You are a professional security report writer for S.A.F.E. Management. Rewrite field entries in AP Style. ${isEmployeeCase ? 'This is an EMPLOYEE MISCONDUCT report — refer to the person as "the employee", never "subject" or "witnesses".' : "For clothing: start with 'The subject was wearing...'."} For names/witnesses: format as 'Witnesses included [name] ([role])'. Never start with 'Witnesses included' for clothing or uniform fields. Return ONLY the rewritten text.`,
+        system: systemPrompt,
         messages:[{role:"user",content:
-          fieldType === 'description'
-            ? `Rewrite in professional AP Style past tense third person. Replace: girl=female subject, guy=male subject, slap=strike, fight=physical altercation, went their own ways=departed the area separately. ${isEmployeeCase ? 'Refer to the person involved as "the employee".' : ''} Keep all facts. Return only rewritten text.\n\nInput: ` + rawText
-            : fieldInstruction + ' Keep all facts exactly as stated. Return ONLY the rewritten text. No preamble, no labels, no quotation marks.\n\nInput: ' + rawText
+          isRecognitionReport
+            ? fieldInstruction + '\n\nInput: ' + rawText
+            : fieldType === 'description'
+              ? `Rewrite in professional AP Style past tense third person. Replace: girl=female subject, guy=male subject, slap=strike, fight=physical altercation, went their own ways=departed the area separately. ${isEmployeeCase ? 'Refer to the person involved as "the employee".' : ''} Keep all facts. Return only rewritten text.\n\nInput: ` + rawText
+              : fieldInstruction + ' Keep all facts exactly as stated. Return ONLY the rewritten text. No preamble, no labels, no quotation marks.\n\nInput: ' + rawText
         }]
       })
     });
@@ -3378,12 +3434,16 @@ async function askNextQuestion(){
           body: JSON.stringify({
             model: 'claude-sonnet-4-6',
             max_tokens: 300,
-            system: `You rewrite employee recognition impact statements for S.A.F.E. Management security reports at Ford Field, Detroit. 
-Write one concise AP Style paragraph in past tense, third person. 
-Reference the employee by name (${employeeName}) naturally.
-Do NOT invent any accomplishments not present in the input.
-Do NOT use bullet points.
-Return ONLY the rewritten paragraph, no preamble.`,
+            system: `You are a professional HR documentation specialist for S.A.F.E. Management at Ford Field, Detroit. Your job is to rewrite employee recognition impact statements in AP Style, past tense, third person — improving language without altering or replacing what the supervisor described.
+
+CRITICAL RULES:
+1. Reference the employee by name (${employeeName}) naturally.
+2. NEVER use "subject", "female subject", "male subject", or "individual subject" — those terms belong to incident reports only.
+3. PRESERVE the supervisor's specific observations. Do NOT replace specific behaviors with generic conclusions.
+4. BAD: "demonstrated exceptional work ethic and exceeded expectations" (generic, invented).
+5. GOOD: Expand the supervisor's actual words into professional AP Style while keeping their specific observations intact.
+6. Do NOT invent accomplishments, awards, leadership qualities, or initiative the supervisor did not describe.
+7. Write one concise AP Style paragraph. No bullet points. Return ONLY the paragraph, no preamble.`,
             messages: [{ role: 'user', content: `Rewrite this recognition impact statement professionally: ${raw}` }]
           })
         });
@@ -4263,7 +4323,6 @@ function generatePDF(isIncident, silent) {
   <button onclick="window.print()" style="background:#D82E44;color:#fff;border:none;padding:10px 24px;border-radius:6px;font-family:Arial,sans-serif;font-size:14px;font-weight:700;cursor:pointer;">🖨️ Print / Save as PDF</button>
 </div>
 <style>@media print{.print-fallback-bar{display:none !important;}}</style>
-<scr"+"ipt>window.onload=()=>{window.print();}</scr"+"ipt>
 </body>
 </html>`;
 
@@ -4277,6 +4336,13 @@ function generatePDF(isIncident, silent) {
   if (win) {
     win.document.write(html);
     win.document.close();
+    // Trigger print from the opener window after a short paint frame.
+    // This is more reliable than injecting a script tag into the popup HTML
+    // because it fires after the browser has fully laid out the document,
+    // and it never renders as visible text in any browser or PDF renderer.
+    setTimeout(() => {
+      try { win.focus(); win.print(); } catch(e) { /* popup may have been closed */ }
+    }, 350);
   } else {
     alert('Please allow pop-ups for this site to download the PDF.');
   }
