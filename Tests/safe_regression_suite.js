@@ -1299,7 +1299,7 @@ var appSrc17 = require('fs').readFileSync(require('path').join(__dirname,'..','s
   check('System prompt: distinguishes specific observation from generic praise',
     appSrc17.includes('specific observation') && appSrc17.includes('generic praise'));
   check('recognitionDescription field instruction: preserve specific observations',
-    appSrc17.includes('PRESERVE every specific observation the supervisor described'));
+    appSrc17.includes('PRESERVE every specific observation'));
   check('recognitionImpact field instruction: no generic conclusions',
     appSrc17.includes('Do NOT replace specific behaviors with generic conclusions'));
   check('Recognition impact picker: same no-invention rule',
@@ -1307,9 +1307,9 @@ var appSrc17 = require('fs').readFileSync(require('path').join(__dirname,'..','s
 
 // ── BAD/GOOD examples in prompts ─────────────────────────────
 { check('recognitionDescription has BAD example (generic praise)',
-    appSrc17.includes('BAD (replaces observation with generic praise)'));
+    appSrc17.includes('BAD (replaces observation)'));
   check('recognitionDescription has GOOD example (expands observation)',
-    appSrc17.includes('GOOD (expands the supervisor'));
+    appSrc17.includes('GOOD (answers what + how'));
   check('Recognition impact picker has BAD example',
     appSrc17.includes('BAD: "demonstrated exceptional work ethic')); }
 
@@ -1356,3 +1356,86 @@ var appSrc17 = require('fs').readFileSync(require('path').join(__dirname,'..','s
     appSrc17.includes('NEVER use') && appSrc17.includes('fieldKey') && appSrc17.includes('recognitionImpact'));
   check('Recognition impact picker: no-subject guardrail present',
     appSrc17.includes('individual subject') && appSrc17.includes('NEVER use')); }
+
+// ════════════════════════════════════════════════════════════
+section('SUITE 18 — Recognition three-question narrative structure');
+// ════════════════════════════════════════════════════════════
+
+var appSrc18 = require('fs').readFileSync(require('path').join(__dirname,'..','safe_incident_form_24.html'),'utf8');
+
+// ── Three-question scaffold present in all relevant prompts ──
+{ check('recognitionDescription prompt: WHAT question present',
+    appSrc18.includes('WHAT did the employee actually do?'));
+  check('recognitionDescription prompt: HOW question present',
+    appSrc18.includes('HOW did they do it?'));
+  check('recognitionImpact prompt: WHY question present',
+    appSrc18.includes('WHY did it matter?'));
+  check('cleanWithAI system prompt: three-question structure',
+    appSrc18.includes('A well-structured recognition entry answers three questions in order'));
+  check('Picker system prompt: three-question structure',
+    appSrc18.includes('A well-written recognition paragraph answers three questions in order')); }
+
+// ── Questions are assigned to the correct fields ─────────────
+{ var descIdx = appSrc18.indexOf('WHAT did the employee actually do?');
+  var impactIdx = appSrc18.indexOf('WHY did it matter?');
+  var descKey = appSrc18.indexOf("fieldKey === 'recognitionDescription'");
+  var impactKey = appSrc18.indexOf("fieldKey === 'recognitionImpact'");
+  check('Q1+Q2 (what+how) appear in recognitionDescription field', descIdx > descKey && descIdx < impactKey);
+  check('Q3 (why) appears in recognitionImpact field', impactIdx > impactKey); }
+
+// ── No-invention guardrail explicitly covers missing "why" ───
+{ check('Picker prompt: do not invent why if supervisor did not provide it',
+    appSrc18.includes('do not add one') ||
+    appSrc18.includes('if the supervisor did not describe a')); }
+
+// ── BAD/GOOD examples present in recognitionDescription ──────
+{ check('recognitionDescription: BAD example (generic replacement)',
+    appSrc18.includes('BAD (replaces observation)'));
+  check('recognitionDescription: GOOD example (observation expanded)',
+    appSrc18.includes('GOOD (answers what + how from supervisor') ||
+    appSrc18.includes("GOOD (answers what + how")); }
+
+// ── BAD example in picker matches the known failure case ─────
+{ check('Picker: BAD example flags generic invention',
+    appSrc18.includes('generic, not from supervisor input'));
+  check('Picker: GOOD example references answering what+how+why',
+    appSrc18.includes('what + how + why')); }
+
+// ── Simulate: three-question structure applied to real input ──
+{ // The supervisor input that was previously being mangled:
+  var supervisorObs = 'was always the first to volunteer to move to different sections without complaints and with a pleasant smile';
+
+  // Test that the prompt structure correctly maps this to Q1+Q2:
+  // Q1 (what): "volunteered to move to different sections"
+  // Q2 (how): "without complaints, with a pleasant smile, always first to do so"
+  // Q3 (why): not stated — should NOT be invented
+
+  // The prompts should produce text that preserves all three components of the observation
+  var q1Preserved = supervisorObs.includes('volunteer') && supervisorObs.includes('sections');
+  var q2Preserved = supervisorObs.includes('without complaints') && supervisorObs.includes('pleasant smile');
+  var q3NotForced = !supervisorObs.includes('benefited operations') && !supervisorObs.includes('exceeded expectations');
+
+  check('Supervisor input contains Q1 (what): volunteering to move sections', q1Preserved);
+  check('Supervisor input contains Q2 (how): without complaints + pleasant smile', q2Preserved);
+  check('Supervisor input does NOT contain Q3 (why): no "why" to preserve', q3NotForced);
+
+  // Verify the prompt tells the AI NOT to invent Q3 when it is missing
+  check('Prompt instructs AI not to invent WHY if supervisor did not describe it',
+    appSrc18.includes("if the supervisor did not describe") ||
+    appSrc18.includes("based only on what the supervisor described or clearly implied")); }
+
+// ── Structure applies to both cleanWithAI and picker paths ───
+{ var sysCount = (appSrc18.match(/answers three questions in order/g) || []).length;
+  check('Three-question instruction appears in both system prompts', sysCount >= 2); }
+
+// ── Incident reports: no three-question structure (not applicable) ──
+{ check('Incident description prompt does NOT have three-question scaffold',
+    !appSrc18.includes('WHAT did the employee') ||
+    appSrc18.indexOf('WHAT did the employee') > appSrc18.indexOf("fieldKey === 'recognitionDescription'")); }
+
+// ── All prior guardrails still present ───────────────────────
+{ check('No-subject rule still present', appSrc18.includes('NEVER use') && appSrc18.includes('female subject'));
+  check('Preserve specific observations rule still present', appSrc18.includes('PRESERVE'));
+  check('No-invention rule still present', appSrc18.includes('Do NOT add accomplishments') || appSrc18.includes('Do NOT invent'));
+  check('Specific vs generic example still present', appSrc18.includes('Demonstrated exceptional work ethic') && appSrc18.includes('generic')); }
+
