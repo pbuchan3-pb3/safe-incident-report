@@ -55,7 +55,21 @@ if s != -1 and e != -1:
 else:
     print('WARNING: roleModel block not found')
 
-# 3. correctKnownNames — name spelling auto-correction
+# 2b. toProperCase — needed by migration and name parser
+s = content.find('function toProperCase(s){')
+e = content.find('\n}', s) + 2
+if s != -1 and e != -1:
+    blocks['toProperCase'] = content[s:e].strip()
+else:
+    print('WARNING: toProperCase block not found')
+
+# 3. Name parser
+s = content.find('// ── INTELLIGENT NAME PARSER')
+e = content.find('\nasync function collectPersonName', s)
+if s != -1 and e != -1:
+    blocks['nameParser'] = content[s:e].strip()
+else:
+    print('WARNING: nameParser block not found')
 s = content.find('function correctKnownNames(raw){')
 e = content.find('\nasync function collectPerson', s)
 if s != -1 and e != -1:
