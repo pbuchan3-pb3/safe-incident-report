@@ -99,69 +99,119 @@
   .input-area{background:#fff;border-top:1px solid var(--border);padding:10px 14px;display:flex;gap:8px;align-items:flex-end;flex-shrink:0;}
   .input-area textarea{flex:1;border:2px solid var(--border);border-radius:12px;padding:10px 13px;font-family:'Inter',sans-serif;font-size:15px;resize:none;min-height:44px;max-height:110px;outline:none;transition:border-color .2s;line-height:1.5;}
 
-  /* ── INCIDENT RECORDING PANEL ── */
+  /* ── INCIDENT RECORDING DOCK — floating left panel ── */
+  /* Anchored to the left of the centered .main column.             */
+  /* Does not reduce, overlap, or shift the report workspace.       */
   #incidentRecordingPanel{
-    background:#fff;border-top:3px solid var(--safe-red);border-bottom:1px solid var(--border);
-    padding:14px 16px;flex-shrink:0;display:none;
+    position:fixed;
+    /* Horizontally: just left of the centered 680px .main column.  */
+    /* We use right:calc(50% + 340px + 12px) which places the       */
+    /* right edge of the dock 12px to the left of .main's left edge.*/
+    right:calc(50% + 340px + 12px);
+    top:50%;transform:translateY(-50%);
+    width:52px;          /* collapsed width — just the icon/dot     */
+    max-width:220px;
+    z-index:200;
+    background:var(--safe-navy);
+    border-radius:12px;
+    box-shadow:0 4px 24px rgba(0,0,0,.28);
+    overflow:hidden;
+    transition:width .25s cubic-bezier(.4,0,.2,1), box-shadow .2s;
+    display:none;        /* shown by mountRecordingControls          */
+    flex-direction:column;
+    align-items:stretch;
+    /* On narrow viewports where there's no room left of .main,     */
+    /* the dock hides itself via the media query below.             */
   }
-  .irp-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
-  .irp-title{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:800;
-    letter-spacing:.12em;text-transform:uppercase;color:var(--safe-navy);}
-  .irp-status-row{display:flex;align-items:center;gap:8px;margin-bottom:12px;min-height:22px;}
-  .irp-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;transition:background .3s;}
-  .irp-status{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;
-    letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);}
-  .irp-timer{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;
-    color:var(--text-main);min-width:44px;font-family:'Inter',sans-serif;}
-  .irp-segs{font-size:11px;color:var(--text-muted);}
-  .irp-subtext{font-size:12px;color:var(--text-muted);line-height:1.5;margin-bottom:12px;}
-  .irp-buttons{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  #incidentRecordingPanel.irp-expanded{
+    width:210px;
+  }
+  /* When viewport is too narrow to fit the dock beside .main, hide it. */
+  /* The fallback is the banner status strip.                           */
+  @media(max-width:1060px){
+    #incidentRecordingPanel{ display:none !important; }
+  }
 
-  /* Record button — large, red, clearly clickable */
+  /* Collapsed state: just a coloured pill the supervisor can tap */
+  .irp-collapsed-btn{
+    display:flex;align-items:center;justify-content:center;gap:6px;
+    padding:14px 0;cursor:pointer;width:100%;border:none;
+    background:transparent;color:#fff;
+    font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:800;
+    letter-spacing:.1em;text-transform:uppercase;
+    transition:background .15s;
+  }
+  .irp-collapsed-btn:hover{ background:rgba(255,255,255,.08); }
+
+  /* Expanded inner content */
+  .irp-inner{
+    padding:12px;display:flex;flex-direction:column;gap:8px;
+  }
+  .irp-header{display:flex;align-items:center;justify-content:space-between;}
+  .irp-title{font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:800;
+    letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.6);}
+  .irp-close-btn{background:none;border:none;color:rgba(255,255,255,.4);cursor:pointer;
+    font-size:16px;line-height:1;padding:0;transition:color .15s;}
+  .irp-close-btn:hover{color:#fff;}
+
+  .irp-status-row{display:flex;align-items:center;gap:6px;}
+  .irp-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;transition:background .3s;
+    background:rgba(200,205,212,.3);}
+  .irp-status{font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;
+    letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.65);}
+
+  .irp-timer{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;
+    color:#fff;font-family:'Inter',sans-serif;letter-spacing:-.5px;line-height:1;}
+  .irp-segs{font-size:10px;color:rgba(255,255,255,.4);margin-top:1px;}
+  .irp-subtext{font-size:10px;color:rgba(255,255,255,.45);line-height:1.45;margin-top:2px;}
+
+  .irp-buttons{display:flex;flex-direction:column;gap:6px;}
+
+  /* Primary: large red Record button */
   .irp-btn-record{
     background:var(--safe-red);color:#fff;
-    border:2px solid rgba(255,255,255,.25);
-    border-radius:8px;cursor:pointer;
-    font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:16px;
-    letter-spacing:.08em;text-transform:uppercase;
-    padding:14px 28px;min-height:52px;
-    box-shadow:0 3px 12px rgba(232,25,44,.45);
-    transition:background .15s,transform .1s,box-shadow .15s;
-    display:inline-flex;align-items:center;gap:8px;
+    border:1.5px solid rgba(255,255,255,.25);
+    border-radius:7px;cursor:pointer;
+    font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:13px;
+    letter-spacing:.07em;text-transform:uppercase;
+    padding:11px 10px;
+    box-shadow:0 2px 10px rgba(232,25,44,.5);
+    transition:background .15s,transform .1s;
+    display:flex;align-items:center;justify-content:center;gap:6px;width:100%;
   }
-  .irp-btn-record:hover{background:#c41323;box-shadow:0 4px 18px rgba(232,25,44,.6);}
-  .irp-btn-record:active{transform:scale(.97);box-shadow:0 2px 8px rgba(232,25,44,.35);}
+  .irp-btn-record:hover{background:#c41323;}
+  .irp-btn-record:active{transform:scale(.96);}
 
   /* Secondary action buttons */
   .irp-btn{
-    background:#f4f7fb;color:var(--safe-navy);
-    border:1.5px solid var(--border);border-radius:8px;cursor:pointer;
-    font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:14px;
+    background:rgba(255,255,255,.1);color:#fff;
+    border:1px solid rgba(255,255,255,.2);border-radius:7px;cursor:pointer;
+    font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:12px;
     letter-spacing:.06em;text-transform:uppercase;
-    padding:11px 20px;min-height:44px;
-    transition:background .15s,border-color .15s,transform .1s;
-    display:inline-flex;align-items:center;gap:6px;
+    padding:9px 10px;
+    transition:background .15s,transform .1s;
+    display:flex;align-items:center;justify-content:center;gap:5px;width:100%;
   }
-  .irp-btn:hover{background:#e8edf5;border-color:var(--safe-navy);}
-  .irp-btn:active{transform:scale(.97);}
-  .irp-btn-end{color:var(--safe-red);border-color:rgba(232,25,44,.3);}
-  .irp-btn-end:hover{background:rgba(232,25,44,.06);border-color:var(--safe-red);}
+  .irp-btn:hover{background:rgba(255,255,255,.18);}
+  .irp-btn:active{transform:scale(.96);}
+  .irp-btn-end{color:rgba(255,180,180,.85);border-color:rgba(232,25,44,.35);}
+  .irp-btn-end:hover{background:rgba(232,25,44,.18);}
 
-  /* Finish & Build Report button */
+  /* Build Report button */
   .irp-btn-build{
     background:#10b981;color:#fff;
-    border:2px solid rgba(255,255,255,.2);border-radius:8px;cursor:pointer;
-    font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:15px;
+    border:1.5px solid rgba(255,255,255,.2);border-radius:7px;cursor:pointer;
+    font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:12px;
     letter-spacing:.06em;text-transform:uppercase;
-    padding:13px 24px;min-height:48px;
-    box-shadow:0 3px 12px rgba(16,185,129,.4);
+    padding:11px 10px;
+    box-shadow:0 2px 10px rgba(16,185,129,.45);
     transition:background .15s,transform .1s;
-    display:inline-flex;align-items:center;gap:8px;
+    display:flex;align-items:center;justify-content:center;gap:6px;width:100%;
   }
   .irp-btn-build:hover{background:#0ea472;}
-  .irp-btn-build:active{transform:scale(.97);}
+  .irp-btn-build:active{transform:scale(.96);}
 
-  @keyframes irpPulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.4;transform:scale(.82);}}
+  @keyframes irpPulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.35;transform:scale(.78);}}
   .irp-dot.recording{animation:irpPulse 1.2s ease-in-out infinite;}
   .input-area textarea:focus{border-color:var(--safe-navy);}
   .input-area textarea::placeholder{color:var(--text-muted);}
@@ -870,24 +920,53 @@ async function recordingGenerateDraft(){
   updateRecordingUI();
 
   const transcript = recordingSession.combinedTranscript.trim();
+  const segCount   = recordingSession.segments.length;
+  const totalTime  = recordingSession.totalElapsed;
 
-  // Show the transcript so supervisor can see what was captured
+  // ── 1. Clear the welcome card (or any pre-flow UI) and start the chat area ──
+  // Recording is the intake layer — no form flow was required first.
+  // We initialize the report context here, not before.
   chatWindow.innerHTML = '';
-  showVoiceFloat();
+  if(typeof showVoiceFloat === 'function') showVoiceFloat();
 
-  addBubble(`<strong>Recording Complete</strong><br>
-    ${recordingSession.segments.length} segment${recordingSession.segments.length!==1?'s':''} · ${formatElapsed(recordingSession.totalElapsed)} recorded`, 'ai');
+  // Initialize the Incident Report context now (recording-first path)
+  incidentType = 'incident';
+  activeFlow   = incidentFlow;
+  flowIndex    = 0;
+
+  // Stamp the auto-captured timestamp (date/time already captured at page load)
+  // These are already in formData from init() — just confirm they're set
+  if(!formData.date || !formData.time){
+    const now = new Date();
+    setFieldSystem('date', now.toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'}));
+    setFieldSystem('time', now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}));
+  }
+  setFieldSystem('venue', formData.venue || 'Ford Field, Detroit, Michigan');
+
+  // ── 2. Show recording summary ─────────────────────────────────────────────
+  addBubble(
+    `<strong>Recording Complete</strong><br>` +
+    `${segCount} segment${segCount!==1?'s':''} · ${formatElapsed(totalTime)} recorded`,
+    'ai'
+  );
 
   if(transcript){
-    addBubble(`<strong>Transcript captured (${transcript.split(' ').length} words):</strong><br>
-      <div style="font-size:12px;color:var(--text-muted);max-height:120px;overflow-y:auto;margin-top:6px;line-height:1.6;border-left:3px solid var(--safe-navy);padding-left:8px;">${escapeHtml(transcript)}</div>`, 'ai');
+    addBubble(
+      `<strong>Transcript captured (${transcript.split(' ').length} words):</strong><br>` +
+      `<div style="font-size:12px;color:var(--text-muted);max-height:120px;overflow-y:auto;margin-top:6px;line-height:1.6;border-left:3px solid var(--safe-navy);padding-left:8px;">${escapeHtml(transcript)}</div>`,
+      'ai'
+    );
   } else {
-    addBubble(`No transcript was captured. This may happen if microphone permission was denied or speech recognition wasn't available.<br>
-      <strong>We'll ask you all the questions manually.</strong>`, 'ai');
+    addBubble(
+      `No transcript was captured — microphone permission may have been denied or speech recognition was unavailable.<br>` +
+      `<strong>I'll ask you the report questions manually.</strong>`,
+      'ai'
+    );
   }
 
+  // ── 3. Extract fields from transcript ─────────────────────────────────────
   showTyping();
-  addBubble('Extracting incident details from your recording…', 'ai');
+  addBubble('Extracting incident details from your recording\u2026', 'ai');
 
   try {
     let extracted = null;
@@ -897,52 +976,82 @@ async function recordingGenerateDraft(){
       removeTyping();
       applyExtractedFields(extracted);
 
-      // Show what was auto-filled
       const filledCount = Object.keys(extracted.fields||{}).length + (extracted.people||[]).length;
-      addBubble(`<strong>✅ ${filledCount} field${filledCount!==1?'s':''} auto-filled from your recording.</strong><br>
-        ${extracted.missingFields?.length ? `<span style="color:var(--safe-red);">${extracted.missingFields.length} fields need follow-up questions.</span>` : 'All key fields were captured.'}`, 'ai');
+      addBubble(
+        `<strong>\u2705 ${filledCount} field${filledCount!==1?'s':''} filled from your recording.</strong><br>` +
+        (extracted.missingFields?.length
+          ? `<span style="color:var(--safe-red);">${extracted.missingFields.length} fields need follow-up questions.</span>`
+          : 'All key fields were captured.'),
+        'ai'
+      );
 
-      // Show draft narrative if generated
       if(extracted.draftNarrative){
-        addBubble(`<strong>Draft Narrative:</strong><br><em>"${escapeHtml(extracted.draftNarrative)}"</em><br><br>
-          You can refine this at the review stage.`, 'ai');
+        addBubble(
+          `<strong>Draft Narrative:</strong><br><em>\u201c${escapeHtml(extracted.draftNarrative)}\u201d</em><br><br>` +
+          `You can refine this at the review stage.`,
+          'ai'
+        );
       }
     } else {
       removeTyping();
       extracted = { fields:{}, people:[], missingFields:[], unclearFields:[], suggestedFollowUp:[] };
     }
 
-    // Set flow context so the review and submission flow works
-    incidentType = 'incident';
-    activeFlow   = incidentFlow;
-
-    // Answer missing/unclear fields conversationally
-    if(extracted.suggestedFollowUp?.length || extracted.unclearFields?.length){
-      addBubble('Let me ask a few quick follow-up questions for the missing details.','ai');
+    // ── 4. Ask follow-up questions for missing/unclear fields only ─────────
+    // Fields already extracted from the recording are skipped.
+    // The supervisor only answers what the recording didn't cover.
+    const needsFollowUp = (extracted.suggestedFollowUp?.length || extracted.unclearFields?.length);
+    if(needsFollowUp){
+      await delay(300);
+      addBubble(
+        `I have a few follow-up questions for the fields your recording didn\u2019t cover. ` +
+        `This should only take a moment.`,
+        'ai'
+      );
       await delay(400);
       await resumeFlowForMissingFields(extracted.suggestedFollowUp, extracted.unclearFields);
     }
 
-    // Set supervisor name if not already in formData (required for the report)
+    // ── 5. Collect supervisor name if not captured from recording ──────────
     if(!formData.supervisorFirstName){
       showTyping(); await delay(400); removeTyping();
-      addBubble("One more thing — what's your first name?", 'ai');
+      addBubble("One last thing \u2014 what\u2019s your first name?", 'ai');
       inputArea.style.display='flex'; awaitingInput=true;
       const fn = await new Promise(resolve => {
-        sendInterceptor = async(v) => { inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; resolve(v.trim()); };
+        sendInterceptor = async(v) => {
+          inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
+          resolve(v.trim());
+        };
       });
-      addBubble(fn,'user');
+      addBubble(fn, 'user');
       setFieldSupervisor('supervisorFirstName', fn);
     }
+    if(!formData.supervisorLastName){
+      showTyping(); await delay(300); removeTyping();
+      addBubble(`And your last name, ${escapeHtml(formData.supervisorFirstName)}?`, 'ai');
+      inputArea.style.display='flex'; awaitingInput=true;
+      const ln = await new Promise(resolve => {
+        sendInterceptor = async(v) => {
+          inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
+          resolve(v.trim());
+        };
+      });
+      addBubble(ln, 'user');
+      setFieldSupervisor('supervisorLastName', ln);
+    }
 
-    // Transition to draft ready — show the standard final form
+    // ── 6. Hand off to the standard final review ───────────────────────────
+    // showFinalForm() handles: report card, inline edit, signature, PDF,
+    // Sheets submission, email — exactly as in the manual flow.
     recordingSession.status = 'draftReady';
     updateRecordingUI();
 
-    addBubble('Your draft report is ready. Review it below, then sign and submit.','ai');
+    await delay(300);
+    addBubble(
+      'Your draft report is ready. Review everything carefully, make any edits, then sign and submit.',
+      'ai'
+    );
     await delay(500);
-
-    // Hand off to the existing showFinalForm which handles PDF, Sheets, preview, signature
     await showFinalForm();
 
   } catch(e){
@@ -950,14 +1059,20 @@ async function recordingGenerateDraft(){
     recordingSession.status = 'error';
     updateRecordingUI();
     console.error('Recording pipeline error:', e);
-    addBubble(`Something went wrong building your report: ${escapeHtml(e.message||String(e))}<br><br>
-      Your transcript has been saved. You can complete the report manually using the standard workflow.`, 'ai');
-    // Fall back to manual flow
-    incidentType = 'incident';
-    activeFlow   = incidentFlow;
-    flowIndex    = 0;
-    await delay(600);
-    await askNextQuestion();
+    addBubble(
+      `Something went wrong building your report: ${escapeHtml(e.message||String(e))}<br><br>` +
+      `Your transcript has been saved. You can complete the report manually \u2014 ` +
+      `tap <strong>Start Report</strong> below to continue.`,
+      'ai'
+    );
+    // Show a fallback Start Report button
+    const fallbackBtn = document.createElement('button');
+    fallbackBtn.className = 'start-btn';
+    fallbackBtn.style.cssText = 'margin-top:10px;';
+    fallbackBtn.textContent = '\u25b6 Start Report Manually';
+    fallbackBtn.onclick = () => { fallbackBtn.remove(); startFlow(); };
+    chatWindow.appendChild(fallbackBtn);
+    scrollBottom();
   }
 }
 
@@ -970,59 +1085,58 @@ function updateRecordingUI(){
   const elapsed  = recordingElapsedMs();
   const segCount = recordingSession.segments.length;
 
-  // Show the panel when the flag is on — always visible so the supervisor
-  // sees it immediately. It hides itself after recording ends and the draft
-  // pipeline hands off to showFinalForm().
+  // Show the dock when the flag is on and recording is not yet handed off.
   const visible = enableVoiceIncidentCapture && st !== 'draftReady';
-  panel.style.display = visible ? 'block' : 'none';
+  panel.style.display = visible ? 'flex' : 'none';
 
-  // Status dot
-  const dot = document.getElementById('irpDot');
-  if(dot){
-    const colors = {recording:'var(--safe-red)',paused:'#f59e0b',
-                    processing:'#3b82f6',draftReady:'#10b981',error:'#ef4444'};
-    dot.style.background = colors[st] || 'var(--border)';
-    dot.className = 'irp-dot' + (st === 'recording' ? ' recording' : '');
-  }
+  // Dot color shared by collapsed pill + expanded area
+  const dotColors = {recording:'var(--safe-red)',paused:'#f59e0b',
+                     processing:'#3b82f6',draftReady:'#10b981',error:'#ef4444'};
+  const dotBg = dotColors[st] || 'rgba(200,205,212,.3)';
+  const dotClass = 'irp-dot' + (st==='recording' ? ' recording' : '');
+
+  const syncDot = (id) => { const d=document.getElementById(id); if(d){ d.style.background=dotBg; d.className=dotClass; } };
+  syncDot('irpDotCollapsed');
+  syncDot('irpDot');
 
   const setText = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
-  const statLabels = {idle:'Ready to record',recording:'Recording\u2026',paused:'Paused',
-                      ended:'Recording complete',processing:'Building report\u2026',
-                      draftReady:'Draft ready',error:'Error — tap Record to retry'};
+  const statLabels = {idle:'Ready',recording:'Recording…',paused:'Paused',
+                      ended:'Complete',processing:'Building…',
+                      draftReady:'Draft ready',error:'Error — retry'};
   setText('irpStatus', statLabels[st] || st);
-  setText('irpTimer',  st==='idle' ? '' : formatElapsed(elapsed));
-  setText('irpSegs',   segCount > 0 ? `${segCount} segment${segCount!==1?'s':''}` : '');
 
-  // Subtext
+  const timerEl = document.getElementById('irpTimer');
+  if(timerEl){ timerEl.style.display = st!=='idle'?'block':'none'; timerEl.textContent = st!=='idle'?formatElapsed(elapsed):''; }
+  setText('irpSegs', segCount > 0 ? segCount + ' segment' + (segCount!==1?'s':'') : '');
+
   const sub = document.getElementById('irpSubtext');
-  if(sub){
-    sub.textContent = st === 'idle'
-      ? 'Record the incident in your own words. Pause and resume as needed. AI will build a draft report when finished.'
-      : st === 'recording' ? 'Speak clearly. Tap Pause to take a break, or End Recording when done.'
-      : st === 'paused'    ? 'Recording paused. Tap Resume to continue or End Recording when done.'
-      : st === 'ended'     ? `${segCount} segment${segCount!==1?'s':''} recorded · ${formatElapsed(recordingSession.totalElapsed)} total`
-      : st === 'processing'? 'Extracting incident details from your recording\u2026'
-      : st === 'draftReady'? 'Your draft report is ready to review.'
-      : '';
-  }
+  if(sub) sub.textContent =
+      st==='idle'       ? 'Tap Record to begin.'
+    : st==='recording'  ? 'Speak clearly. Tap Pause if needed.'
+    : st==='paused'     ? 'Paused. Resume or End when ready.'
+    : st==='ended'      ? 'Tap Build Report to extract fields.'
+    : st==='processing' ? 'AI is extracting incident details…'
+    : '';
 
-  // Button visibility
-  const show = (id,v) => { const el=document.getElementById(id); if(el) el.style.display=v?'inline-flex':'none'; };
+  const show = (id,v) => { const el=document.getElementById(id); if(el) el.style.display=v?'flex':'none'; };
   show('irpBtnStart',    st==='idle'||st==='error');
   show('irpBtnPause',    st==='recording');
   show('irpBtnResume',   st==='paused');
   show('irpBtnEnd',      st==='recording'||st==='paused');
   show('irpBtnGenerate', st==='ended');
 
-  // Also keep the banner dot in sync (compact status only — no buttons there now)
+  // Auto-expand dock when recording starts; auto-collapse when done
+  const isExpanded = panel.classList.contains('irp-expanded');
+  if(st==='recording' && !isExpanded && typeof irpToggleExpand!=='undefined') irpToggleExpand();
+  if((st==='draftReady'||st==='processing') && isExpanded && typeof irpCollapse!=='undefined') irpCollapse();
+
+  // Banner compact strip sync
   const bannerDot = document.getElementById('recStatusDot');
-  if(bannerDot){
-    bannerDot.style.background = (document.getElementById('irpDot')||{}).style.background || 'rgba(200,205,212,.3)';
-  }
+  if(bannerDot) bannerDot.style.background = dotBg;
   const setText2 = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
-  setText2('recStatusText', st === 'idle' ? 'Not Recording' : statLabels[st] || st);
-  setText2('recTimer',      st === 'idle' ? '--:--' : formatElapsed(elapsed));
-  setText2('recSegCount',   segCount > 0 ? `${segCount} seg${segCount!==1?'s':''}` : '');
+  setText2('recStatusText', st==='idle'?'Not Recording':statLabels[st]||st);
+  setText2('recTimer',      st==='idle'?'--:--':formatElapsed(elapsed));
+  setText2('recSegCount',   segCount>0?segCount+' seg'+(segCount!==1?'s':''):'');
 }
 
 // ── MOUNT INCIDENT RECORDING PANEL (inside .main, above the input area) ──────
@@ -1035,34 +1149,61 @@ function mountRecordingControls(){
   const panel = document.getElementById('incidentRecordingPanel');
   if(!panel) return;
 
+  // Move the panel to document.body so position:fixed works correctly
+  // independent of any scrolling parent (it was originally inside .main).
+  document.body.appendChild(panel);
+
   panel.innerHTML = `
-    <div class="irp-header">
-      <span class="irp-title">Incident Recording</span>
-    </div>
-    <div class="irp-status-row">
-      <div class="irp-dot" id="irpDot" style="background:var(--border);"></div>
-      <span class="irp-status" id="irpStatus">Ready to record</span>
-      <span class="irp-timer" id="irpTimer"></span>
-      <span class="irp-segs"  id="irpSegs"></span>
-    </div>
-    <p class="irp-subtext" id="irpSubtext">Record the incident in your own words. Pause and resume as needed. AI will build a draft report when finished.</p>
-    <div class="irp-buttons">
-      <button id="irpBtnStart"
-              class="irp-btn-record"
-              onclick="recordingStart()"
-              title="Begin recording the incident">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" style="flex-shrink:0">
-          <circle cx="7" cy="7" r="7"/>
-        </svg>
-        Record Incident
-      </button>
-      <button id="irpBtnPause"    class="irp-btn"          onclick="recordingPause()"         title="Pause recording"              style="display:none">⏸ Pause</button>
-      <button id="irpBtnResume"   class="irp-btn"          onclick="recordingResume()"        title="Resume recording"             style="display:none">▶ Resume</button>
-      <button id="irpBtnEnd"      class="irp-btn irp-btn-end" onclick="recordingEnd()"        title="End the recording session"    style="display:none">■ End Recording</button>
-      <button id="irpBtnGenerate" class="irp-btn-build"    onclick="recordingGenerateDraft()" title="Build an Incident Report from your recording" style="display:none">🎤 Finish &amp; Build Report</button>
+    <button class="irp-collapsed-btn" id="irpCollapsedBtn"
+            onclick="irpToggleExpand()"
+            title="Incident Recording — tap to expand">
+      <div class="irp-dot" id="irpDotCollapsed"></div>
+      <span style="writing-mode:vertical-lr;text-orientation:mixed;transform:rotate(180deg);
+                   font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:800;
+                   letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.7);">🎤 Record</span>
+    </button>
+    <div class="irp-inner" id="irpExpandedArea" style="display:none;flex-direction:column;">
+      <div class="irp-header">
+        <span class="irp-title">Incident Recording</span>
+        <button class="irp-close-btn" onclick="irpCollapse()" title="Collapse">✕</button>
+      </div>
+      <div class="irp-status-row">
+        <div class="irp-dot" id="irpDot"></div>
+        <span class="irp-status" id="irpStatus">Ready to record</span>
+      </div>
+      <div class="irp-timer" id="irpTimer" style="display:none;"></div>
+      <div class="irp-segs" id="irpSegs"></div>
+      <p class="irp-subtext" id="irpSubtext">Record the incident in your own words. Pause as needed.</p>
+      <div class="irp-buttons">
+        <button id="irpBtnStart"    class="irp-btn-record"       onclick="recordingStart()"         title="Begin recording">
+          <svg width="9" height="9" viewBox="0 0 9 9" fill="currentColor"><circle cx="4.5" cy="4.5" r="4.5"/></svg>
+          Record Incident
+        </button>
+        <button id="irpBtnPause"    class="irp-btn"              onclick="recordingPause()"         title="Pause"           style="display:none">⏸ Pause</button>
+        <button id="irpBtnResume"   class="irp-btn"              onclick="recordingResume()"        title="Resume"          style="display:none">▶ Resume</button>
+        <button id="irpBtnEnd"      class="irp-btn irp-btn-end"  onclick="recordingEnd()"           title="End recording"   style="display:none">■ End</button>
+        <button id="irpBtnGenerate" class="irp-btn-build"        onclick="recordingGenerateDraft()" title="Build draft report" style="display:none">🎤 Build Report</button>
+      </div>
     </div>
   `;
   panel._mounted = true;
+
+  window.irpToggleExpand = function(){
+    const exp = document.getElementById('irpExpandedArea');
+    const col = document.getElementById('irpCollapsedBtn');
+    if(!exp || !col) return;
+    const expanding = (exp.style.display === 'none' || exp.style.display === '');
+    exp.style.display   = expanding ? 'flex' : 'none';
+    col.style.display   = expanding ? 'none' : 'flex';
+    panel.classList.toggle('irp-expanded', expanding);
+  };
+  window.irpCollapse = function(){
+    const exp = document.getElementById('irpExpandedArea');
+    const col = document.getElementById('irpCollapsedBtn');
+    if(exp) exp.style.display = 'none';
+    if(col) col.style.display = 'flex';
+    panel.classList.remove('irp-expanded');
+  };
 
   // ── 2. Keep a compact status strip in the context banner (no buttons) ──────
   // The banner just shows the current recording state as text. All controls
