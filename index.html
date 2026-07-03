@@ -4,13 +4,22 @@
   S.A.F.E. MANAGEMENT — AI-POWERED INCIDENT REPORTING SYSTEM
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
-  APPLICATION VERSION: 1.0.0   (canonical production baseline)
+  APPLICATION VERSION: 1.1.0   (v1.0.0 canonical baseline + voice recorder)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
 
   CHANGELOG
   ----------------------------------------------------------------------------
+  v1.1.0 — Incident voice recorder (mobile-first).
+           - New self-contained recorder: record / pause / resume / end,
+             live timer, status line, playback, delete, re-record.
+           - Audio persisted locally in IndexedDB only; never uploaded.
+           - Mounts inline at the incident-description step; visible at all
+             screen widths (no desktop-only dock, no 1060px hide).
+           - Feature-flagged (enableVoiceIncidentCapture); off = exact v1.0.0.
+           - Preserves v1.0.0 security fix: no API key in browser code.
+           - Build Report (audio -> AI fields) intentionally deferred to v1.2.0.
   v1.0.0 — Canonical production baseline.
            - Rebuilt from the 3,292-line project Index.html (verified superset:
              all older-file functionality + photo upload, signature pad,
@@ -259,6 +268,22 @@
   /* ACTION BUTTONS ROW */
   .action-btn-row{display:flex;gap:8px;margin-top:8px;}
   .action-btn-row button{flex:1;}
+
+  /* ── VOICE INCIDENT RECORDER (v1.1.0) ─ mobile-first, visible at all widths ── */
+  .rec-card{background:#fff;border:1px solid var(--border);border-left:4px solid var(--safe-red);border-radius:12px;padding:14px;margin:10px 0;max-width:100%;}
+  .rec-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+  .rec-dot{width:10px;height:10px;border-radius:50%;background:var(--text-muted);flex-shrink:0;}
+  .rec-dot.live{background:var(--safe-red);animation:recPulse 1.2s ease-in-out infinite;}
+  .rec-title{font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--safe-navy);}
+  .rec-timer{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:700;font-size:16px;color:var(--safe-navy);}
+  .rec-status{font-size:12px;color:var(--text-muted);margin-bottom:10px;line-height:1.4;}
+  .rec-controls{display:flex;flex-wrap:wrap;gap:8px;}
+  .rec-btn{flex:1 1 auto;min-height:46px;min-width:96px;border-radius:10px;border:1px solid var(--border);background:#f4f7fb;color:var(--safe-navy);font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:transform .1s,background .15s;}
+  .rec-btn:active{transform:scale(.97);}
+  .rec-btn.primary{background:var(--safe-red);border-color:var(--safe-red);color:#fff;}
+  .rec-btn.danger{color:var(--safe-red);border-color:rgba(232,25,44,.35);background:#fff;}
+  .rec-note{font-size:11px;color:var(--text-muted);margin-top:8px;line-height:1.4;}
+  @keyframes recPulse{0%,100%{opacity:1;}50%{opacity:.35;}}
 </style>
 </head>
 <body>
@@ -324,7 +349,7 @@
     <div class="season-motto">Stronger Together</div>
   </div>
   <div class="header-right">
-    <div class="header-badge">Beta</div>
+    <div class="header-badge">v1.1.0</div>
   </div>
 </header>
 
@@ -375,7 +400,8 @@
 // AI features require a key supplied at runtime (window.ANTHROPIC_API_KEY).
 // NEVER hardcode a key here or in any committed file. See api-config.example.js.
 const ANTHROPIC_API_KEY = window.ANTHROPIC_API_KEY || '';  // No key in committed code. Provided at runtime via gitignored api-config.js (local) or a server-side proxy.
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
+const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -609,7 +635,7 @@ const incidentFlow = [
   {key:'guestClothing', ask:()=>`What was ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest'} wearing? Describe the shirt, jacket, hat, or any other distinctive clothing.`},
   {key:'guestFeatures', ask:()=>`Any distinguishing features for ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest'}? Select all that apply.`, isAppearanceFeatures:true},
   {key:'guestPhotos', ask:()=>`Do you have any photos of ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest or subject'}? Upload up to 3 photos.`, isPhotoUpload:true, photoType:'guest'},
-  {key:'incidentDescription', ask:()=>`${formData.supervisorFirstName||'Officer'}, describe what happened in your own words — what you saw, what was said, what actions were taken. Don't worry about how it sounds; I'll clean it up.`},
+  {key:'incidentDescription', mountRecorder:true, ask:()=>`${formData.supervisorFirstName||'Officer'}, describe what happened in your own words — what you saw, what was said, what actions were taken. Don't worry about how it sounds; I'll clean it up.`},
   {key:'scenePhotos', ask:"Do you have any photos of the scene, location, or evidence? Upload up to 3 photos.", isPhotoUpload:true, photoType:'scene'},
   {key:'guestStatement', ask:()=>`What did ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest'} say about the incident? This becomes part of the official record.`, isGuestStatement:true},
   {key:'witnesses', ask:"Were there any witnesses — staff, security, or guests? If yes, share their names or descriptions.", isWitnesses:true},
@@ -1802,6 +1828,129 @@ function showInlineOptions(options, onSelect) {
 }
 
 // ── FLOW LOGIC ─────────────────────────────────────────────────────────────
+// ── VOICE INCIDENT RECORDER (v1.1.0) ─────────────────────────────────────────
+// Self-contained. Captures audio via MediaRecorder, persists locally in
+// IndexedDB, and offers playback / delete / re-record. No upload, no API key,
+// no report auto-fill (Build Report is deferred to v1.2.0).
+const REC_DB_NAME='safe_recordings', REC_STORE='drafts', REC_LAST_LS='safe_last_recording_id';
+const recState={status:'idle',mediaRecorder:null,stream:null,chunks:[],blob:null,blobUrl:null,audioEl:null,draftId:null,startedAt:0,elapsedBeforePause:0,timerInt:null,mimeType:''};
+
+function recSupported(){return !!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.MediaRecorder);}
+function recOpenDB(){return new Promise((res,rej)=>{const r=indexedDB.open(REC_DB_NAME,1);r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains(REC_STORE))db.createObjectStore(REC_STORE,{keyPath:'id'});};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+async function recDbSave(id,blob,durationMs){try{const db=await recOpenDB();await new Promise((res,rej)=>{const tx=db.transaction(REC_STORE,'readwrite');tx.objectStore(REC_STORE).put({id,blob,durationMs,savedAt:Date.now()});tx.oncomplete=res;tx.onerror=()=>rej(tx.error);});localStorage.setItem(REC_LAST_LS,id);return true;}catch(e){console.error('recDbSave',e);return false;}}
+async function recDbLoad(id){try{const db=await recOpenDB();return await new Promise((res,rej)=>{const tx=db.transaction(REC_STORE,'readonly');const rq=tx.objectStore(REC_STORE).get(id);rq.onsuccess=()=>res(rq.result||null);rq.onerror=()=>rej(rq.error);});}catch(e){console.error('recDbLoad',e);return null;}}
+async function recDbDelete(id){try{const db=await recOpenDB();await new Promise((res,rej)=>{const tx=db.transaction(REC_STORE,'readwrite');tx.objectStore(REC_STORE).delete(id);tx.oncomplete=res;tx.onerror=()=>rej(tx.error);});if(localStorage.getItem(REC_LAST_LS)===id)localStorage.removeItem(REC_LAST_LS);return true;}catch(e){console.error('recDbDelete',e);return false;}}
+
+function recFmt(ms){const s=Math.max(0,Math.floor(ms/1000));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}
+function recElapsed(){let e=recState.elapsedBeforePause;if(recState.status==='recording')e+=Date.now()-recState.startedAt;return e;}
+function recSetStatus(t){const el=document.getElementById('recStatus');if(el)el.textContent=t;}
+function recSetTimer(){const el=document.getElementById('recTimer');if(el)el.textContent=recFmt(recElapsed());}
+function recTickStart(){recTickStop();recState.timerInt=setInterval(recSetTimer,250);}
+function recTickStop(){if(recState.timerInt){clearInterval(recState.timerInt);recState.timerInt=null;}}
+function recDotLive(on){const d=document.getElementById('recDot');if(d)d.classList.toggle('live',!!on);}
+function recStopStream(){if(recState.stream){recState.stream.getTracks().forEach(t=>{try{t.stop();}catch(_){}});recState.stream=null;}}
+
+async function recStart(){
+  if(!recSupported()){recSetStatus('Recording is not supported on this device or browser.');return;}
+  try{recState.stream=await navigator.mediaDevices.getUserMedia({audio:true});}
+  catch(e){recSetStatus('Microphone access was blocked. Enable it in your browser settings to record.');return;}
+  const types=['audio/webm;codecs=opus','audio/webm','audio/mp4'];
+  recState.mimeType=types.find(t=>{try{return MediaRecorder.isTypeSupported(t);}catch(_){return false;}})||'';
+  recState.chunks=[];
+  try{recState.mediaRecorder=new MediaRecorder(recState.stream,recState.mimeType?{mimeType:recState.mimeType}:{});}
+  catch(e){recSetStatus('Could not start the recorder on this device.');recStopStream();return;}
+  recState.mediaRecorder.ondataavailable=e=>{if(e.data&&e.data.size>0)recState.chunks.push(e.data);};
+  recState.mediaRecorder.onstop=recFinalize;
+  recState.mediaRecorder.start();
+  recState.status='recording';recState.elapsedBeforePause=0;recState.startedAt=Date.now();recState.draftId='rec_'+Date.now();
+  recTickStart();recDotLive(true);recSetStatus('Recording your account of the incident…');recRenderControls();
+}
+function recPause(){
+  if(recState.status!=='recording'||!recState.mediaRecorder)return;
+  try{recState.mediaRecorder.pause();}catch(_){}
+  recState.elapsedBeforePause=recElapsed();recState.status='paused';
+  recTickStop();recSetTimer();recDotLive(false);recSetStatus('Paused. Resume when ready.');recRenderControls();
+}
+function recResume(){
+  if(recState.status!=='paused'||!recState.mediaRecorder)return;
+  try{recState.mediaRecorder.resume();}catch(_){}
+  recState.startedAt=Date.now();recState.status='recording';
+  recTickStart();recDotLive(true);recSetStatus('Recording your account of the incident…');recRenderControls();
+}
+function recEnd(){
+  if(recState.status!=='recording'&&recState.status!=='paused')return;
+  recTickStop();recDotLive(false);
+  try{recState.mediaRecorder.stop();}catch(_){recFinalize();}
+}
+async function recFinalize(){
+  recStopStream();
+  const type=(recState.chunks[0]&&recState.chunks[0].type)||recState.mimeType||'audio/webm';
+  recState.blob=recState.chunks.length?new Blob(recState.chunks,{type}):null;
+  if(recState.blobUrl){URL.revokeObjectURL(recState.blobUrl);recState.blobUrl=null;}
+  if(recState.blob){
+    recState.blobUrl=URL.createObjectURL(recState.blob);
+    recState.status='saved';
+    const dur=recElapsed();recState.elapsedBeforePause=dur;
+    const ok=await recDbSave(recState.draftId,recState.blob,dur);
+    recSetStatus(ok?'Recording saved on this device.':'Recording captured (could not save to device storage).');
+  }else{recState.status='idle';recSetStatus('No audio was captured. Try again.');}
+  recSetTimer();recRenderControls();
+}
+function recPlayToggle(){
+  if(!recState.blobUrl)return;
+  const a=recState.audioEl||document.getElementById('recAudio');if(!a)return;
+  if(a.paused){a.src=recState.blobUrl;a.play();}else{a.pause();}
+}
+async function recDeleteRecording(){
+  recStopStream();
+  const a=recState.audioEl||document.getElementById('recAudio');if(a){try{a.pause();}catch(_){}}
+  if(recState.blobUrl){URL.revokeObjectURL(recState.blobUrl);recState.blobUrl=null;}
+  if(recState.draftId)await recDbDelete(recState.draftId);
+  recState.blob=null;recState.chunks=[];recState.draftId=null;recState.elapsedBeforePause=0;recState.status='idle';
+  recSetTimer();recSetStatus('Recording deleted. You can record again.');recRenderControls();
+}
+async function recReRecord(){await recDeleteRecording();recSetStatus('Ready to record again.');recRenderControls();}
+
+function recBtn(label,fn,cls){return '<button type="button" class="rec-btn '+(cls||'')+'" onclick="'+fn+'">'+label+'</button>';}
+function recRenderControls(){
+  const c=document.getElementById('recControls');if(!c)return;
+  let html='';
+  if(recState.status==='idle'){html=recBtn('● Record','recStart()','primary');}
+  else if(recState.status==='recording'){html=recBtn('❙❙ Pause','recPause()')+recBtn('■ End','recEnd()','danger');}
+  else if(recState.status==='paused'){html=recBtn('▶ Resume','recResume()','primary')+recBtn('■ End','recEnd()','danger');}
+  else if(recState.status==='saved'){html=recBtn('▶ Play','recPlayToggle()','primary')+recBtn('↻ Re-record','recReRecord()')+recBtn('🗑 Delete','recDeleteRecording()','danger');}
+  c.innerHTML=html;
+}
+async function recRestore(){
+  const id=localStorage.getItem(REC_LAST_LS);if(!id)return;
+  const rec=await recDbLoad(id);if(!rec||!rec.blob)return;
+  recState.blob=rec.blob;recState.draftId=id;recState.elapsedBeforePause=rec.durationMs||0;
+  if(recState.blobUrl)URL.revokeObjectURL(recState.blobUrl);
+  recState.blobUrl=URL.createObjectURL(rec.blob);recState.status='saved';
+  recSetTimer();recSetStatus('A saved recording was restored from this device.');recRenderControls();
+}
+function mountRecorderCard(){
+  const existing=document.getElementById('recCard');if(existing)existing.remove();
+  const card=document.createElement('div');card.className='rec-card';card.id='recCard';
+  card.innerHTML=
+    '<div class="rec-head"><span class="rec-dot" id="recDot"></span>'+
+    '<span class="rec-title">Incident voice recorder</span>'+
+    '<span class="rec-timer" id="recTimer">00:00</span></div>'+
+    '<div class="rec-status" id="recStatus">Optional: record your account. Stored only on this device.</div>'+
+    '<div class="rec-controls" id="recControls"></div>'+
+    '<audio id="recAudio" style="display:none"></audio>'+
+    '<div class="rec-note">You can also just type your description below — recording is optional in this version and is saved locally only (never uploaded).</div>';
+  chatWindow.appendChild(card);scrollBottom();
+  recState.audioEl=card.querySelector('#recAudio');
+  if(recState.audioEl){
+    recState.audioEl.addEventListener('play',()=>{const b=document.querySelector('#recControls .rec-btn.primary');if(b&&recState.status==='saved')b.textContent='❙❙ Pause';});
+    recState.audioEl.addEventListener('pause',()=>{const b=document.querySelector('#recControls .rec-btn.primary');if(b&&recState.status==='saved')b.textContent='▶ Play';});
+    recState.audioEl.addEventListener('ended',()=>{const b=document.querySelector('#recControls .rec-btn.primary');if(b&&recState.status==='saved')b.textContent='▶ Play';});
+  }
+  if(!recSupported()){recSetStatus('Recording is not supported on this device or browser — please type your description below.');recState.status='idle';const cc=document.getElementById('recControls');if(cc)cc.innerHTML='';return;}
+  recState.status='idle';recRenderControls();recRestore();
+}
+
 async function askNextQuestion(){
   while(flowIndex<activeFlow.length){
     const step=activeFlow[flowIndex];
@@ -1814,6 +1963,7 @@ async function askNextQuestion(){
   showTyping(); await delay(800); removeTyping();
   const askText = typeof step.ask === 'function' ? step.ask() : step.ask;
   addBubble(askText,'ai');
+  if(step.mountRecorder && enableVoiceIncidentCapture){ mountRecorderCard(); }
 
   // Show saved email as tap option
   if(step.savedEmailChip && savedEmail){
