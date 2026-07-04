@@ -4,13 +4,37 @@
   S.A.F.E. MANAGEMENT — AI-POWERED INCIDENT REPORTING SYSTEM
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
-  APPLICATION VERSION: 1.1.0   (v1.0.0 canonical baseline + voice recorder)
+  APPLICATION VERSION: 1.3.0   (Gold Standard: shared-engine de-dup + name confirm + HR writer)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
 
   CHANGELOG
   ----------------------------------------------------------------------------
+  v1.3.0 — Gold Standard recovery.
+           - ROOT-CAUSE FIX: handleSend is the sole renderer of supervisor input;
+             removed duplicate addBubble() from 9 interceptors. Ends double-rendered
+             names (Peyton / Buchanan / Esperanza Spalding).
+           - Employee-name confirmation shows First/Middle/Last/Suffix with YES / EDIT.
+           - AI rewrite reframed as HR/legal-grade AP writer (facts preserved).
+             NOTE: runs only with a runtime key/proxy; keyless Pages falls back to raw.
+           - Recorder untouched; no API key; no experimental-branch merge.
+  v1.2.0 — Employee Recognition restoration (Atlas).
+           - Single intelligent employee-name entry + shared parser
+             (first/middle/last/suffix), displayName authoritative, name alias,
+             confirm-before-save. Fixes duplicate/garbled names.
+           - Recognition values: color-coded multi-select; selected values now
+             appear in the final recognition report.
+           - "None" quick-select restored on recognition Additional Comments.
+           - On-screen header now reflects report type (Incident vs Recognition).
+           - Removed the repetitive second greeting; shortened verbose prompts.
+           - AP-style rewrite/confirmation verified (unchanged, working).
+           - Recorder untouched; no API key; no experimental-branch merge.
+  v1.1.1 — Fix: removed redundant supervisorLastName step from recognitionFlow
+           (startFlow already collects first + last name), eliminating the
+           duplicate last-name question on the Employee Recognition path.
+           Single-line flow change only; recorder, security, and all other
+           flow branches unchanged.
   v1.1.0 — Incident voice recorder (mobile-first).
            - New self-contained recorder: record / pause / resume / end,
              live timer, status line, playback, delete, re-record.
@@ -284,6 +308,15 @@
   .rec-btn.danger{color:var(--safe-red);border-color:rgba(232,25,44,.35);background:#fff;}
   .rec-note{font-size:11px;color:var(--text-muted);margin-top:8px;line-height:1.4;}
   @keyframes recPulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+
+  /* ── RECOGNITION VALUE MULTI-SELECT (v1.2.0) ── */
+  .recval-wrap{margin:10px 0;}
+  .recval-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
+  .recval-btn{flex:1 1 calc(50% - 8px);min-height:46px;border:1.5px solid var(--border);background:#fff;color:var(--safe-navy);border-radius:10px;font-weight:700;font-size:13px;cursor:pointer;padding:8px;transition:transform .12s,background .12s,color .12s,border-color .12s;}
+  .recval-btn:active{transform:scale(.97);}
+  .recval-btn.sel{color:#fff;}
+  .recval-done{width:100%;min-height:46px;border:none;border-radius:10px;background:var(--safe-navy);color:#fff;font-weight:700;font-size:14px;cursor:pointer;}
+  .recval-done:disabled{background:var(--border);color:#8a94a3;cursor:not-allowed;}
 </style>
 </head>
 <body>
@@ -296,7 +329,7 @@
   </div>
   <div class="header-divider"></div>
   <div class="header-info">
-    <h1>S.A.F.E. Incident Report</h1>
+    <h1 id="reportTitle">S.A.F.E. Incident Report</h1>
     <p>Security · Athletic Facilities · Events</p>
   </div>
   <div class="header-divider"></div>
@@ -349,7 +382,7 @@
     <div class="season-motto">Stronger Together</div>
   </div>
   <div class="header-right">
-    <div class="header-badge">v1.1.0</div>
+    <div class="header-badge">v1.3.0</div>
   </div>
 </header>
 
@@ -400,7 +433,7 @@
 // AI features require a key supplied at runtime (window.ANTHROPIC_API_KEY).
 // NEVER hardcode a key here or in any committed file. See api-config.example.js.
 const ANTHROPIC_API_KEY = window.ANTHROPIC_API_KEY || '';  // No key in committed code. Provided at runtime via gitignored api-config.js (local) or a server-side proxy.
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.3.0';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -648,15 +681,14 @@ const incidentFlow = [
 ];
 
 const recognitionFlow = [
-  {key:'supervisorLastName', ask:()=>`And your last name, ${formData.supervisorFirstName||''}?`},
   {key:'supervisorTitle', ask:"What is your title or role?"},
   {key:'supervisorEmail', ask:()=>savedEmail ? `What is your email address? We have <strong>${savedEmail}</strong> on file — tap to use it, or type a new one.` : 'What is your email address? A copy of this recognition will be sent to you automatically.', isEmail:true, savedEmailChip:true},
-  {key:'employeeFirstName', ask:"What is the first name of the employee you are recognizing?"},
-  {key:'employeeLastName', ask:"And their last name?"},
+  {key:'employeeName', ask:"Tell me the employee's name.", isEmployeeName:true},
   {key:'employeeRole', ask:"What is their role or position?"},
-  {key:'recognitionDescription', ask:"Tell me what this employee did. Describe the situation and their actions — don't worry about wording, I'll write it up professionally."},
-  {key:'recognitionImpact', ask:"How did their actions reflect S.A.F.E. values or benefit Ford Field operations, guests, or fellow staff?"},
-  {key:'additionalComments', ask:"Anything else you'd like added to this recognition? If not, say 'none.'"},
+  {key:'recognitionDescription', ask:"Tell me what this employee did — I'll write it up professionally."},
+  {key:'recognitionImpact', ask:"How did their actions reflect S.A.F.E. values or help the team?"},
+  {key:'recognitionValues', ask:"Which S.A.F.E. values did they demonstrate? Select all that apply.", isRecognitionValues:true},
+  {key:'additionalComments', ask:"Anything else to add to this recognition?", isAdditionalComments:true},
 ];
 
 // ── DOM ────────────────────────────────────────────────────────────────────
@@ -743,8 +775,8 @@ async function cleanWithAI(rawText, context, fieldType, fieldKey){
         model:"claude-sonnet-4-6",
         max_tokens:300,
         system: fieldType === 'description'
-          ? "You are a professional security report writer for S.A.F.E. Management. Rewrite incident descriptions in AP Style, third person past tense. Never use I, we, she, he, they. Use female subject, male subject, or subject. Return ONLY the rewritten text."
-          : "You are a professional security report writer for S.A.F.E. Management. Rewrite field entries in AP Style. For clothing: start with 'The subject was wearing...'. For names/witnesses: format as 'Witnesses included [name] ([role])'. Never start with 'Witnesses included' for clothing fields. Return ONLY the rewritten text.",
+          ? "You are a professional HR and security report writer for S.A.F.E. Management. Rewrite the supervisor's rough notes into polished, professional AP-style prose suitable for Human Resources, legal, and management review. Third person, past tense. Never use I, we, he, she, they; refer to people as 'the subject', 'a male subject', 'a female subject', or by name. Preserve every fact exactly; never invent, add, exaggerate, or omit facts. Return ONLY the rewritten text."
+          : "You are a professional HR and security report writer for S.A.F.E. Management. Rewrite field entries into polished AP style suitable for HR, legal, and management review. For clothing: start with 'The subject was wearing...'. For names/witnesses: format as 'Witnesses included [name] ([role])'. Never start with 'Witnesses included' for clothing fields. Preserve all facts exactly; invent nothing. Return ONLY the rewritten text.",
         messages:[{role:"user",content:
           fieldType === 'description'
             ? 'Rewrite in professional AP Style past tense third person. Replace: girl=female subject, guy=male subject, slap=strike, fight=physical altercation, went their own ways=departed the area separately. Keep all facts. Return only rewritten text.\n\nInput: ' + rawText
@@ -798,11 +830,12 @@ function sendViaMailto(isIncident){
     body += `EMS/Police: ${fd.emsPolice||'N/A'}\nGuest Transported: ${fd.guestTransported||'N/A'}\n\n`;
     body += `FOLLOW-UP\n---------\nRequired: ${fd.followUp||'N/A'}\nDetails: ${fd.followUpDetails||'N/A'}\n\n`;
   } else {
-    const empName=`${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim();
+    const empName=fd.employeeDisplayName||`${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim();
     body += `RECOGNITION DETAILS\n-------------------\n`;
     body += `Employee: ${empName}\nRole: ${fd.employeeRole||'N/A'}\n\n`;
     body += `Description:\n${fd.recognitionDescription||'N/A'}\n\n`;
     body += `Impact & S.A.F.E. Values:\n${fd.recognitionImpact||'N/A'}\n\n`;
+    body += `S.A.F.E. Values Demonstrated: ${fd.recognitionValues||'N/A'}\n\n`;
   }
   body += `Additional Comments: ${fd.additionalComments||'None'}\n\n`;
   body += `---\nPhysical description provided for identification purposes only.\nThis report is confidential and intended solely for S.A.F.E. Management and Ford Field HR review.`;
@@ -1951,6 +1984,35 @@ function mountRecorderCard(){
   recState.status='idle';recRenderControls();recRestore();
 }
 
+// ── EMPLOYEE NAME PARSER (v1.2.0) ────────────────────────────────────────────
+// Parses one free-text name into {first, middle, last, suffix, displayName}.
+// Supports: First Last / First Middle Last / First M. Last / suffixes Jr. Sr. II III IV /
+// single-name input (first only, last blank — caller must confirm before accepting).
+function parseName(raw){
+  const cleaned=(raw||'').replace(/\s+/g,' ').trim();
+  if(!cleaned) return {first:'',middle:'',last:'',suffix:'',displayName:''};
+  const sufMap={'jr':'Jr.','jr.':'Jr.','sr':'Sr.','sr.':'Sr.','ii':'II','iii':'III','iv':'IV'};
+  let tokens=cleaned.split(' ');
+  let suffix='';
+  const lastTok=tokens[tokens.length-1].toLowerCase();
+  if(tokens.length>1 && sufMap[lastTok]){ suffix=sufMap[lastTok]; tokens=tokens.slice(0,-1); }
+  let first='',middle='',last='';
+  if(tokens.length===1){ first=tokens[0]; }
+  else if(tokens.length===2){ first=tokens[0]; last=tokens[1]; }
+  else if(tokens.length>=3){ first=tokens[0]; last=tokens[tokens.length-1]; middle=tokens.slice(1,-1).join(' '); }
+  const displayName=([first,middle,last].filter(Boolean).join(' ')+(suffix?(' '+suffix):'')).trim();
+  return {first,middle,last,suffix,displayName};
+}
+// displayName is authoritative; employeeName kept as backward-compatible alias.
+function applyEmployeeName(p){
+  formData.employeeDisplayName=p.displayName;
+  formData.employeeName=p.displayName;
+  formData.employeeFirstName=p.first;
+  formData.employeeMiddle=p.middle;
+  formData.employeeLastName=p.last;
+  formData.employeeSuffix=p.suffix;
+}
+
 async function askNextQuestion(){
   while(flowIndex<activeFlow.length){
     const step=activeFlow[flowIndex];
@@ -2211,7 +2273,7 @@ async function askNextQuestion(){
       inputArea.style.display='flex'; awaitingInput=true;
       document.getElementById('inputHint').style.display='block';
       sendInterceptor=async(lastName)=>{
-        addBubble(lastName,'user');
+        
         formData.guestName = lastName.trim();
         inputArea.style.display='none'; awaitingInput=false;
         sendInterceptor=null;
@@ -2260,6 +2322,66 @@ async function askNextQuestion(){
     return;
   }
 
+  if(step.isEmployeeName){
+    inputArea.style.display='flex'; awaitingInput=true;
+    document.getElementById('inputHint').style.display='block';
+    userInput.focus();
+    sendInterceptor=async(rawName)=>{
+      // handleSend already rendered the supervisor's message — do not re-render.
+      const parsed=parseName(rawName);
+      if(!parsed.first){
+        showTyping(); await delay(300); removeTyping();
+        addBubble("I didn't catch a name — please type the employee's full name.",'ai');
+        await askNextQuestion(); return;
+      }
+      inputArea.style.display='none'; awaitingInput=false;
+      showTyping(); await delay(500); removeTyping();
+      addBubble(`I found:<br>First: <strong>${parsed.first}</strong><br>Middle: <strong>${parsed.middle||'None'}</strong><br>Last: <strong>${parsed.last||'None'}</strong><br>Suffix: <strong>${parsed.suffix||'None'}</strong><br><br>Use this?`,'ai');
+      addQuickReplies(['✅ Yes','✏️ Edit'], async(ans)=>{
+        clearQuickReplies(); addBubble(ans,'user');
+        if(ans.includes('Yes')){ applyEmployeeName(parsed); flowIndex++; await askNextQuestion(); }
+        else {
+          showTyping(); await delay(300); removeTyping();
+          addBubble("No problem — type the name again and I'll re-check it.",'ai');
+          await askNextQuestion();
+        }
+      });
+    };
+    return;
+  }
+
+  if(step.isRecognitionValues){
+    inputArea.style.display='none';
+    document.getElementById('inputHint').style.display='none';
+    awaitingInput=false;
+    const cats={'Customer Service':'#1B4B8A','Teamwork':'#E8192C','Initiative':'#2F6FB0','Professionalism':'#4A5568','Leadership':'#B5121F','Safety':'#2C5282','Communication':'#6B7280','Reliability':'#7A2530'};
+    const wrap=document.createElement('div'); wrap.className='recval-wrap';
+    const grid=document.createElement('div'); grid.className='recval-grid';
+    const selected=new Set();
+    Object.keys(cats).forEach(c=>{
+      const b=document.createElement('button'); b.type='button'; b.className='recval-btn'; b.textContent=c;
+      b.onclick=()=>{
+        if(selected.has(c)){ selected.delete(c); b.classList.remove('sel'); b.style.background=''; b.style.color=''; b.style.borderColor=''; }
+        else { selected.add(c); b.classList.add('sel'); b.style.background=cats[c]; b.style.color='#fff'; b.style.borderColor=cats[c]; }
+        done.disabled=selected.size===0;
+      };
+      grid.appendChild(b);
+    });
+    const done=document.createElement('button'); done.type='button'; done.className='recval-done'; done.textContent='Done — add selected values'; done.disabled=true;
+    done.onclick=async()=>{
+      const arr=[...selected]; wrap.remove();
+      addBubble(arr.length?arr.join(', '):'None selected','user');
+      formData.recognitionValues=arr.join(', ');
+      formData.recognitionValuesList=arr;
+      flowIndex++; await askNextQuestion();
+    };
+    wrap.appendChild(grid); wrap.appendChild(done);
+    chatWindow.appendChild(wrap); scrollBottom();
+    return;
+  }
+
+
+
 
   if(step.isGuestStatement){
     showInlineOptions(['Refused to Speak','Uncooperative'], async(val)=>{
@@ -2303,6 +2425,7 @@ async function processAnswer(raw){
     formData[key]=raw;
     incidentType=raw.includes('Incident')?'incident':'recognition';
     activeFlow=incidentType==='incident'?incidentFlow:recognitionFlow;
+    { const _t=document.getElementById('reportTitle'); if(_t) _t.textContent = incidentType==='incident' ? 'S.A.F.E. Incident Report' : 'S.A.F.E. Employee Recognition'; }
     flowIndex=0; await askNextQuestion(); return;
   }
 
@@ -2344,7 +2467,7 @@ async function processAnswer(raw){
       addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
         clearQuickReplies(); addBubble(confirm,'user');
         if(confirm.startsWith('Yes')){formData.actionTaken=cleaned;flowIndex++;await askNextQuestion();}
-        else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{addBubble(e,'user');formData.actionTaken=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
+        else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{formData.actionTaken=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
         else{addBubble("No problem — describe it again.",'ai');inputArea.style.display='flex';awaitingInput=true;}
       });
     };
@@ -2379,7 +2502,7 @@ async function processAnswer(raw){
     addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
       if(confirm.startsWith('Yes')){formData[key]=cleaned;flowIndex++;await askNextQuestion();}
-      else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{addBubble(e,'user');formData[key]=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
+      else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{formData[key]=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
       else{addBubble("No problem — describe it again.",'ai');inputArea.style.display='flex';awaitingInput=true;}
     });
     return;
@@ -2394,7 +2517,7 @@ async function processAnswer(raw){
     addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
       if(confirm.startsWith('Yes')){formData[key]=cleaned;flowIndex++;await askNextQuestion();}
-      else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{addBubble(e,'user');formData[key]=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
+      else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{formData[key]=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
       else{addBubble("No problem — describe it again.",'ai');inputArea.style.display='flex';awaitingInput=true;}
     });
     return;
@@ -2409,7 +2532,7 @@ async function processAnswer(raw){
     addQuickReplies(['Yes, that looks right','✏️ Edit','No, let me re-describe'],async(confirm)=>{
       clearQuickReplies(); addBubble(confirm,'user');
       if(confirm.startsWith('Yes')){formData[key]=cleaned;flowIndex++;await askNextQuestion();}
-      else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{addBubble(e,'user');formData[key]=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
+      else if(confirm.startsWith('✏️')){userInput.value=cleaned;inputArea.style.display='flex';awaitingInput=true;sendInterceptor=async(e)=>{formData[key]=e;inputArea.style.display='none';awaitingInput=false;flowIndex++;await askNextQuestion();};}
       else{addBubble("No problem — describe it again.",'ai');inputArea.style.display='flex';awaitingInput=true;}
     });
     return;
@@ -2513,7 +2636,7 @@ async function processAnswer(raw){
           sendInterceptor=async(_intercepted)=>{
             const edited=_intercepted.trim();
             if(!edited){flowIndex++;await askNextQuestion();return;}
-            addBubble(edited,'user');
+            
             formData[key]=edited; inputArea.style.display='none'; awaitingInput=false;
             sendInterceptor=null; flowIndex++;await askNextQuestion();
           };
@@ -2565,7 +2688,7 @@ async function processAnswer(raw){
         sendInterceptor=async(_intercepted)=>{
           const edited=_intercepted.trim();
           if(!edited){ flowIndex++; await askNextQuestion(); return; }
-          addBubble(edited,'user');
+          
           formData[key]=edited; inputArea.style.display='none'; awaitingInput=false;
           sendInterceptor=null;
           flowIndex++; await askNextQuestion();
@@ -2585,7 +2708,7 @@ async function showFinalForm(){
   const isIncident=incidentType==='incident';
   const supName=`${formData.supervisorFirstName||''} ${formData.supervisorLastName||''}`.trim();
   formData.supervisorName=supName;
-  const empName=`${formData.employeeFirstName||''} ${formData.employeeLastName||''}`.trim();
+  const empName=formData.employeeDisplayName||`${formData.employeeFirstName||''} ${formData.employeeLastName||''}`.trim();
   formData.employeeName=empName;
 
   // Generate professional narrative for incidents
@@ -2745,7 +2868,7 @@ Return ONLY the narrative text. No preamble, no labels, no markdown.`;
 function generatePDF(isIncident) {
   const fd = formData;
   const supName = `${fd.supervisorFirstName||''} ${fd.supervisorLastName||''}`.trim();
-  const empName = `${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim();
+  const empName = fd.employeeDisplayName||`${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim();
   const title = isIncident ? 'Incident Report' : 'Employee Recognition Report';
   const submissionId = 'SAFE-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(Math.random()*9000+1000);
 
@@ -2912,6 +3035,7 @@ function generatePDF(isIncident) {
     body += `</div>`;
     body += `<div class="field"><div class="field-label">Description of Good Deed</div><div class="field-value narrative">${fd.recognitionDescription || 'Not provided'}</div></div>`;
     body += `<div class="field" style="margin-top:10px;"><div class="field-label">Impact & S.A.F.E. Values</div><div class="field-value narrative">${fd.recognitionImpact || 'Not provided'}</div></div>`;
+    body += `<div class="field"><div class="field-label">S.A.F.E. Values Demonstrated</div><div class="field-value">${fd.recognitionValues || 'Not provided'}</div></div>`;
   }
 
   // Additional Comments
@@ -3030,11 +3154,12 @@ function generateWord(isIncident) {
     content += `FOLLOW-UP\n${'-'.repeat(30)}\n`;
     content += `Required: ${fd.followUp||'N/A'}\nDetails: ${fd.followUpDetails||'N/A'}\n\n`;
   } else {
-    const empName=`${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim();
+    const empName=fd.employeeDisplayName||`${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim();
     content += `RECOGNITION DETAILS\n${'-'.repeat(30)}\n`;
     content += `Employee: ${empName}\nRole: ${fd.employeeRole||'N/A'}\n\n`;
     content += `Description:\n${fd.recognitionDescription||'N/A'}\n\n`;
     content += `Impact & S.A.F.E. Values:\n${fd.recognitionImpact||'N/A'}\n\n`;
+    content += `S.A.F.E. Values Demonstrated: ${fd.recognitionValues||'N/A'}\n\n`;
   }
   content += `Additional Comments: ${fd.additionalComments||'None'}\n\n`;
   content += `${'='.repeat(50)}\n`;
@@ -3146,6 +3271,7 @@ function buildFormHTML(isIncident,supName,empName){
     h+=ff('Employee Name',empName); h+=ff('Employee Role',fd.employeeRole,'employeeRole');
     h+=ff('Description of Good Deed',fd.recognitionDescription,'recognitionDescription');
     h+=ff('Impact & S.A.F.E. Values',fd.recognitionImpact,'recognitionImpact');
+    h+=ff('S.A.F.E. Values Demonstrated',fd.recognitionValues);
   }
 
   h+=ff('Additional Comments',fd.additionalComments,'additionalComments');
@@ -3164,6 +3290,8 @@ function delay(ms){return new Promise(r=>setTimeout(r,ms));}
 let sendInterceptor = null; // custom one-shot handler
 
 async function handleSend(){
+  // CONTRACT (v1.3.0): handleSend is the SOLE renderer of the supervisor's
+  // input bubble. Interceptors receive the raw text and must NOT re-render it.
   const raw=userInput.value.trim();
   console.log('handleSend called — raw:', raw.slice(0,50), '| awaitingInput:', awaitingInput, '| interceptor:', !!sendInterceptor);
   if(!raw||!awaitingInput)return;
@@ -3393,7 +3521,7 @@ async function startFlow(){
   userInput.focus();
   sendInterceptor=async(firstName)=>{
     const name = firstName.trim().split(' ')[0];
-    addBubble(firstName,'user');
+    
     formData.supervisorFirstName = name;
     inputArea.style.display='none'; awaitingInput=false;
     sendInterceptor=null;
@@ -3404,13 +3532,13 @@ async function startFlow(){
     document.getElementById('inputHint').style.display='block';
     userInput.focus();
     sendInterceptor=async(lastName)=>{
-      addBubble(lastName,'user');
+      
       formData.supervisorLastName = lastName.trim();
       inputArea.style.display='none'; awaitingInput=false;
       sendInterceptor=null;
       // Now ask when incident occurred
       showTyping(); await delay(600); removeTyping();
-      addBubble(`Good to meet you, <strong>${name} ${formData.supervisorLastName}</strong>. When did this incident actually occur?`,'ai');
+      addBubble(`Thanks, <strong>${name}</strong>. When did this occur?`,'ai');
       await delay(300);
     addQuickReplies(['Just now','Earlier today','Yesterday','Another date'],async(val)=>{
       clearQuickReplies(); addBubble(val,'user');
