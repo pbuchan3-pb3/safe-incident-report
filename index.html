@@ -4,13 +4,22 @@
   S.A.F.E. MANAGEMENT — AI-POWERED INCIDENT REPORTING SYSTEM
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
-  APPLICATION VERSION: 1.4.1   (cleanWithAI execution-path instrumentation)
+  APPLICATION VERSION: 1.5.0   (Employee Recognition HR-writer prompt)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
 
   CHANGELOG
   ----------------------------------------------------------------------------
+  v1.5.0 — Employee Recognition rewrite prompt (HR recognition specialist).
+           - Recognition narrative fields now use a dedicated HR-recognition
+             system prompt + instruction (warm, professional; employee named,
+             then referred to by last name; emphasizes guest service, initiative,
+             teamwork, professionalism, operational impact; facts preserved).
+           - NEVER uses 'subject'/'female subject'/'male subject'/'individual' or
+             police-report phrasing for recognition.
+           - Incident prompts, transport/proxy, parser, recorder, diagnostics,
+             and all deployment/config are unchanged.
   v1.4.1 — Execution-path instrumentation (no prompt/wording changes).
            - cleanWithAI() emits one consolidated diagnostic per call:
              proxy reached, HTTP status, response received, got text,
@@ -403,7 +412,7 @@
     <div class="season-motto">Stronger Together</div>
   </div>
   <div class="header-right">
-    <div class="header-badge">v1.4.1</div>
+    <div class="header-badge">v1.5.0</div>
   </div>
 </header>
 
@@ -481,7 +490,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '1.4.1';
+const APP_VERSION = '1.5.0';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -798,6 +807,7 @@ async function cleanWithAI(rawText, context, fieldType, fieldKey){
   try{
     // Build field-specific instruction
     let fieldInstruction = '';
+    const isRecognition = (incidentType === 'recognition');
     if(fieldKey === 'guestClothing'){
       fieldInstruction = 'This is a CLOTHING description. Start with "The subject was wearing" and describe the clothing in AP Style. Hyphenate compound color modifiers (black-and-white). Never say "Witnesses included".';
     } else if(fieldKey === 'guestFeatures'){
@@ -822,11 +832,15 @@ async function cleanWithAI(rawText, context, fieldType, fieldKey){
       body:JSON.stringify({
         model:"claude-sonnet-4-6",
         max_tokens:300,
-        system: fieldType === 'description'
+        system: isRecognition
+          ? "You are an HR recognition specialist writing employee recognition narratives for S.A.F.E. Management at Ford Field. Rewrite the supervisor's rough notes into polished, warm, professional prose suitable for HR, management, and employee-recognition records. Refer to the employee by full name on first reference and by last name thereafter. NEVER use 'subject', 'female subject', 'male subject', 'individual', or any police-report or incident-report phrasing. Emphasize guest service, initiative, teamwork, professionalism, and positive operational impact where the notes support it. Preserve every fact exactly; never invent, add, exaggerate, or omit. Keep it warm, professional and concise. Return ONLY the rewritten narrative."
+          : fieldType === 'description'
           ? "You are a professional HR and security report writer for S.A.F.E. Management. Rewrite the supervisor's rough notes into polished, professional AP-style prose suitable for Human Resources, legal, and management review. Third person, past tense. Never use I, we, he, she, they; refer to people as 'the subject', 'a male subject', 'a female subject', or by name. Preserve every fact exactly; never invent, add, exaggerate, or omit facts. Return ONLY the rewritten text."
           : "You are a professional HR and security report writer for S.A.F.E. Management. Rewrite field entries into polished AP style suitable for HR, legal, and management review. For clothing: start with 'The subject was wearing...'. For names/witnesses: format as 'Witnesses included [name] ([role])'. Never start with 'Witnesses included' for clothing fields. Preserve all facts exactly; invent nothing. Return ONLY the rewritten text.",
         messages:[{role:"user",content:
-          fieldType === 'description'
+          isRecognition
+            ? ('Employee being recognized: ' + (formData.employeeDisplayName||'the employee') + (formData.employeeLastName ? (' Use the last name ' + formData.employeeLastName + ' after the first full-name reference.') : '.') + ' Rewrite these recognition notes as a warm, professional HR recognition narrative per the instructions. Keep all facts exactly; invent nothing. Return only the rewritten text. Input: ' + rawText)
+            : fieldType === 'description'
             ? 'Rewrite in professional AP Style past tense third person. Replace: girl=female subject, guy=male subject, slap=strike, fight=physical altercation, went their own ways=departed the area separately. Keep all facts. Return only rewritten text.\n\nInput: ' + rawText
             : fieldInstruction + ' Keep all facts exactly as stated. Return ONLY the rewritten text. No preamble, no labels, no quotation marks.\n\nInput: ' + rawText
         }]
