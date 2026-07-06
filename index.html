@@ -4,13 +4,20 @@
   S.A.F.E. MANAGEMENT — AI-POWERED INCIDENT REPORTING SYSTEM
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
-  APPLICATION VERSION: 1.5.0   (Employee Recognition HR-writer prompt)
+  APPLICATION VERSION: 1.6.0   (Editorial Engine: modular writing profiles)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
 
   CHANGELOG
   ----------------------------------------------------------------------------
+  v1.6.0 — Editorial Engine (Increment 1: modular profiles, behavior-preserving).
+           - EDITOR_PROFILES registry + resolveEditorProfile(); no if/else chain.
+           - Recognition & incident prompts relocated verbatim into profiles;
+             narrative steps declare editorProfile. Output unchanged.
+           - Registered (unused) profiles: discipline, executiveSummary, witnessStatement.
+           - Locked baseline untouched: proxy/transport/auth, recorder, parser,
+             diagnostics, deployment, api-config. No API key.
   v1.5.0 — Employee Recognition rewrite prompt (HR recognition specialist).
            - Recognition narrative fields now use a dedicated HR-recognition
              system prompt + instruction (warm, professional; employee named,
@@ -412,7 +419,7 @@
     <div class="season-motto">Stronger Together</div>
   </div>
   <div class="header-right">
-    <div class="header-badge">v1.5.0</div>
+    <div class="header-badge">v1.6.0</div>
   </div>
 </header>
 
@@ -490,7 +497,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -725,7 +732,7 @@ const incidentFlow = [
   {key:'guestClothing', ask:()=>`What was ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest'} wearing? Describe the shirt, jacket, hat, or any other distinctive clothing.`},
   {key:'guestFeatures', ask:()=>`Any distinguishing features for ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest'}? Select all that apply.`, isAppearanceFeatures:true},
   {key:'guestPhotos', ask:()=>`Do you have any photos of ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest or subject'}? Upload up to 3 photos.`, isPhotoUpload:true, photoType:'guest'},
-  {key:'incidentDescription', mountRecorder:true, ask:()=>`${formData.supervisorFirstName||'Officer'}, describe what happened in your own words — what you saw, what was said, what actions were taken. Don't worry about how it sounds; I'll clean it up.`},
+  {key:'incidentDescription', editorProfile:'incidentReport', mountRecorder:true, ask:()=>`${formData.supervisorFirstName||'Officer'}, describe what happened in your own words — what you saw, what was said, what actions were taken. Don't worry about how it sounds; I'll clean it up.`},
   {key:'scenePhotos', ask:"Do you have any photos of the scene, location, or evidence? Upload up to 3 photos.", isPhotoUpload:true, photoType:'scene'},
   {key:'guestStatement', ask:()=>`What did ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest'} say about the incident? This becomes part of the official record.`, isGuestStatement:true},
   {key:'witnesses', ask:"Were there any witnesses — staff, security, or guests? If yes, share their names or descriptions.", isWitnesses:true},
@@ -742,8 +749,8 @@ const recognitionFlow = [
   {key:'supervisorEmail', ask:()=>savedEmail ? `What is your email address? We have <strong>${savedEmail}</strong> on file — tap to use it, or type a new one.` : 'What is your email address? A copy of this recognition will be sent to you automatically.', isEmail:true, savedEmailChip:true},
   {key:'employeeName', ask:"Tell me the employee's name.", isEmployeeName:true},
   {key:'employeeRole', ask:"What is their role or position?"},
-  {key:'recognitionDescription', ask:"Tell me what this employee did — I'll write it up professionally."},
-  {key:'recognitionImpact', ask:"How did their actions reflect S.A.F.E. values or help the team?"},
+  {key:'recognitionDescription', editorProfile:'employeeRecognition', ask:"Tell me what this employee did — I'll write it up professionally."},
+  {key:'recognitionImpact', editorProfile:'employeeRecognition', ask:"How did their actions reflect S.A.F.E. values or help the team?"},
   {key:'recognitionValues', ask:"Which S.A.F.E. values did they demonstrate? Select all that apply.", isRecognitionValues:true},
   {key:'additionalComments', ask:"Anything else to add to this recognition?", isAdditionalComments:true},
 ];
@@ -803,11 +810,42 @@ function addQuickReplies(options, onSelect){
 function clearQuickReplies(){const qr=document.getElementById('quickReplies');if(qr)qr.remove();}
 
 // ── AI CLEANUP ─────────────────────────────────────────────────────────────
-async function cleanWithAI(rawText, context, fieldType, fieldKey){
+// ── EDITORIAL ENGINE (v1.6.0): modular writing profiles ──────────────────────
+const EDITOR_PROFILES = {
+  employeeRecognition: {
+    system: "You are an HR recognition specialist writing employee recognition narratives for S.A.F.E. Management at Ford Field. Rewrite the supervisor's rough notes into polished, warm, professional prose suitable for HR, management, and employee-recognition records. Refer to the employee by full name on first reference and by last name thereafter. NEVER use 'subject', 'female subject', 'male subject', 'individual', or any police-report or incident-report phrasing. Emphasize guest service, initiative, teamwork, professionalism, and positive operational impact where the notes support it. Preserve every fact exactly; never invent, add, exaggerate, or omit. Keep it warm, professional and concise. Return ONLY the rewritten narrative.",
+    instruction: function(rawText){ return 'Employee being recognized: ' + (formData.employeeDisplayName||'the employee') + (formData.employeeLastName ? (' Use the last name ' + formData.employeeLastName + ' after the first full-name reference.') : '.') + ' Rewrite these recognition notes as a warm, professional HR recognition narrative per the instructions. Keep all facts exactly; invent nothing. Return only the rewritten text. Input: ' + rawText; }
+  },
+  incidentReport: {
+    system: "You are a professional HR and security report writer for S.A.F.E. Management. Rewrite the supervisor's rough notes into polished, professional AP-style prose suitable for Human Resources, legal, and management review. Third person, past tense. Never use I, we, he, she, they; refer to people as 'the subject', 'a male subject', 'a female subject', or by name. Preserve every fact exactly; never invent, add, exaggerate, or omit facts. Return ONLY the rewritten text.",
+    instruction: function(rawText){ return 'Rewrite in professional AP Style past tense third person. Replace: girl=female subject, guy=male subject, slap=strike, fight=physical altercation, went their own ways=departed the area separately. Keep all facts. Return only rewritten text.\n\nInput: ' + rawText; }
+  },
+  discipline: {
+    system: "You are an HR corrective-documentation writer for S.A.F.E. Management. Rewrite the supervisor's notes into neutral, policy-based, precise corrective documentation appropriate for HR review. Describe behavior factually; never attack character; avoid emotional or inflammatory language; reference policy where the notes indicate one. Preserve every fact; never invent, exaggerate, or speculate. Return ONLY the rewritten text.",
+    instruction: function(rawText){ return 'Rewrite as neutral, policy-based HR corrective documentation. Describe behavior only; no character judgments; no emotional language. Keep all facts; invent nothing. Return only the rewritten text. Input: ' + rawText; }
+  },
+  executiveSummary: {
+    system: "You are an executive-summary writer for S.A.F.E. Management. Produce a single concise, high-level paragraph for management covering what happened, why it matters, operational impact, and any recommended follow-up. Executive tone, action-oriented. Preserve every fact; never invent or speculate. Return ONLY the paragraph.",
+    instruction: function(rawText){ return 'Write a single executive-summary paragraph: what happened, why it matters, operational impact, recommended follow-up. Keep all facts; invent nothing. Return only the paragraph. Input: ' + rawText; }
+  },
+  witnessStatement: {
+    system: "You are a witness-statement editor for S.A.F.E. Management. The text is a witness's own testimony and must remain legally attributable to them. Do NOT rewrite, summarize, rephrase, reorder, or add anything. Maintain the first-person voice and the original chronology. Correct ONLY spelling, punctuation, capitalization, and clear grammatical errors. Return ONLY the lightly corrected statement.",
+    instruction: function(rawText){ return 'Correct ONLY spelling, punctuation, capitalization, and grammar. Do not rewrite, summarize, reorder, or add facts. Preserve first-person voice and chronology. Return only the corrected statement. Input: ' + rawText; }
+  }
+};
+function resolveEditorProfile(name, isRecognition, fieldType){
+  if(name && EDITOR_PROFILES[name]) return EDITOR_PROFILES[name];
+  if(isRecognition) return EDITOR_PROFILES.employeeRecognition;
+  if(fieldType === 'description') return EDITOR_PROFILES.incidentReport;
+  return null;
+}
+
+async function cleanWithAI(rawText, context, fieldType, fieldKey, editorProfile){
   try{
     // Build field-specific instruction
     let fieldInstruction = '';
     const isRecognition = (incidentType === 'recognition');
+    const _profile = resolveEditorProfile(editorProfile, isRecognition, fieldType);
     if(fieldKey === 'guestClothing'){
       fieldInstruction = 'This is a CLOTHING description. Start with "The subject was wearing" and describe the clothing in AP Style. Hyphenate compound color modifiers (black-and-white). Never say "Witnesses included".';
     } else if(fieldKey === 'guestFeatures'){
@@ -832,17 +870,9 @@ async function cleanWithAI(rawText, context, fieldType, fieldKey){
       body:JSON.stringify({
         model:"claude-sonnet-4-6",
         max_tokens:300,
-        system: isRecognition
-          ? "You are an HR recognition specialist writing employee recognition narratives for S.A.F.E. Management at Ford Field. Rewrite the supervisor's rough notes into polished, warm, professional prose suitable for HR, management, and employee-recognition records. Refer to the employee by full name on first reference and by last name thereafter. NEVER use 'subject', 'female subject', 'male subject', 'individual', or any police-report or incident-report phrasing. Emphasize guest service, initiative, teamwork, professionalism, and positive operational impact where the notes support it. Preserve every fact exactly; never invent, add, exaggerate, or omit. Keep it warm, professional and concise. Return ONLY the rewritten narrative."
-          : fieldType === 'description'
-          ? "You are a professional HR and security report writer for S.A.F.E. Management. Rewrite the supervisor's rough notes into polished, professional AP-style prose suitable for Human Resources, legal, and management review. Third person, past tense. Never use I, we, he, she, they; refer to people as 'the subject', 'a male subject', 'a female subject', or by name. Preserve every fact exactly; never invent, add, exaggerate, or omit facts. Return ONLY the rewritten text."
-          : "You are a professional HR and security report writer for S.A.F.E. Management. Rewrite field entries into polished AP style suitable for HR, legal, and management review. For clothing: start with 'The subject was wearing...'. For names/witnesses: format as 'Witnesses included [name] ([role])'. Never start with 'Witnesses included' for clothing fields. Preserve all facts exactly; invent nothing. Return ONLY the rewritten text.",
+        system: _profile ? _profile.system : "You are a professional HR and security report writer for S.A.F.E. Management. Rewrite field entries into polished AP style suitable for HR, legal, and management review. For clothing: start with 'The subject was wearing...'. For names/witnesses: format as 'Witnesses included [name] ([role])'. Never start with 'Witnesses included' for clothing fields. Preserve all facts exactly; invent nothing. Return ONLY the rewritten text.",
         messages:[{role:"user",content:
-          isRecognition
-            ? ('Employee being recognized: ' + (formData.employeeDisplayName||'the employee') + (formData.employeeLastName ? (' Use the last name ' + formData.employeeLastName + ' after the first full-name reference.') : '.') + ' Rewrite these recognition notes as a warm, professional HR recognition narrative per the instructions. Keep all facts exactly; invent nothing. Return only the rewritten text. Input: ' + rawText)
-            : fieldType === 'description'
-            ? 'Rewrite in professional AP Style past tense third person. Replace: girl=female subject, guy=male subject, slap=strike, fight=physical altercation, went their own ways=departed the area separately. Keep all facts. Return only rewritten text.\n\nInput: ' + rawText
-            : fieldInstruction + ' Keep all facts exactly as stated. Return ONLY the rewritten text. No preamble, no labels, no quotation marks.\n\nInput: ' + rawText
+          _profile ? _profile.instruction(rawText) : (fieldInstruction + ' Keep all facts exactly as stated. Return ONLY the rewritten text. No preamble, no labels, no quotation marks.\n\nInput: ' + rawText)
         }]
       })
     });
@@ -2738,7 +2768,8 @@ async function processAnswer(raw){
     speak("Writing that up in professional language"); addBubble("Writing that up in professional language...","ai");
     const ctx=`This is a ${incidentType==='incident'?formData.incidentCategory+' incident':'employee recognition'} report for ${formData.venue}.`;
     const fieldType = ['incidentDescription','guestStatement','guestStatementDetail','recognitionDescription','recognitionImpact'].includes(key) ? 'description' : 'field';
-    const cleaned=await cleanWithAI(raw,ctx,fieldType,key);
+    const _step=(activeFlow||[]).find(function(st){return st&&st.key===key;})||{};
+    const cleaned=await cleanWithAI(raw,ctx,fieldType,key,_step.editorProfile);
     removeTyping(); showTyping(); await delay(500); removeTyping();
     addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this accurately capture what happened?`,'ai');
     addQuickReplies(['Yes, that looks right','✏️ Edit — change a word or two','No, let me re-describe'],async(confirm)=>{
