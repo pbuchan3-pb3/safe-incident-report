@@ -4,13 +4,21 @@
   S.A.F.E. MANAGEMENT — AI-POWERED INCIDENT REPORTING SYSTEM
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
-  APPLICATION VERSION: 1.8.0   (Recognition values drill-down accordion + behaviors)
+  APPLICATION VERSION: 1.8.1   (Guided title/role tap-to-select)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
 
   CHANGELOG
   ----------------------------------------------------------------------------
+  v1.8.1 — Guided title/role tap-to-select (regression audit outcome).
+           - AUDIT: no existing quick-select buttons were lost; incident and
+             recognition quick-selects are identical to the v1.0 baseline. The
+             recognition categories were intentionally upgraded to the accordion.
+           - Added tap-to-select buttons to "What is your title or role?" (both
+             flows) and employee role, per the pending "position tap-select"
+             feature. Free typing still works; "Other — specify" opens free text.
+           - No other flow, prompt, recorder, parser, proxy, or diagnostics change.
   v1.8.0 — Recognition values drill-down (config-driven accordion).
            - RECOGNITION_VALUE_CONFIG centralizes categories, colors, emoji,
              and behavior options (single source for UI, data, reports, AI).
@@ -456,7 +464,7 @@
     <div class="season-motto">Stronger Together</div>
   </div>
   <div class="header-right">
-    <div class="header-badge">v1.8.0</div>
+    <div class="header-badge">v1.8.1</div>
   </div>
 </header>
 
@@ -534,7 +542,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.8.1';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -750,7 +758,7 @@ const incidentFlow = [
   {key:'eventName', ask:"What event was taking place at the time of this incident?", isEventPicker:true},
   {key:'incidentCategory', ask:"What type of incident occurred?", quickReplies:['Slip / Fall / Medical','Intoxication / Ejection','Guest Altercation','Employee Misconduct','Unauthorized Access','Theft / Property Damage','Lost Person / Child','Other']},
   {key:'incidentSeverity', ask:"How would you rate the severity of this incident?", quickReplies:['Minor — Resolved on scene','Moderate — Required additional response','Serious — EMS / Police / Management involved']},
-  {key:'supervisorTitle', ask:"What is your title or role? For example: Event Security Supervisor, Lead Security Officer, etc."},
+  {key:'supervisorTitle', ask:"What is your title or role?", quickReplies:['Event Security Supervisor','Event Security','Guest Services','Usher','Parking','SAFE Ops','Manager','Other — specify']},
   {key:'supervisorEmail', ask:()=>savedEmail ? `What is your email address? We have <strong>${savedEmail}</strong> on file — tap to use it, or type a new one.` : 'What is your email address? A copy of this report will be sent to you automatically.', isEmail:true, savedEmailChip:true},
   {key:'incidentLocation', ask:()=>`Got it, ${formData.supervisorFirstName||'Officer'}. Where did the incident occur?`, isLocationPicker:true},
   {key:'environmentalConditions', ask:"Were there any environmental or surface conditions that may have contributed to this incident? For example: wet floor, spilled liquid, poor lighting, crowded area. If not applicable, say 'none.'", skipIf:(fd)=>fd.incidentCategory&&!fd.incidentCategory.includes('Slip')},
@@ -782,10 +790,10 @@ const incidentFlow = [
 ];
 
 const recognitionFlow = [
-  {key:'supervisorTitle', ask:"What is your title or role?"},
+  {key:'supervisorTitle', ask:"What is your title or role?", quickReplies:['Event Security Supervisor','Event Security','Guest Services','Usher','Parking','SAFE Ops','Manager','Other — specify']},
   {key:'supervisorEmail', ask:()=>savedEmail ? `What is your email address? We have <strong>${savedEmail}</strong> on file — tap to use it, or type a new one.` : 'What is your email address? A copy of this recognition will be sent to you automatically.', isEmail:true, savedEmailChip:true},
   {key:'employeeName', ask:"Tell me the employee's name.", isEmployeeName:true},
-  {key:'employeeRole', ask:"What is their role or position?"},
+  {key:'employeeRole', ask:"What is their role or position?", quickReplies:['Event Security','Guest Services','Usher','Parking','SAFE Ops','Supervisor','Manager','Other — specify']},
   {key:'recognitionDescription', editorProfile:'employeeRecognition', ask:"Tell me what this employee did — I'll write it up professionally."},
   {key:'recognitionValues', ask:"How did their actions reflect S.A.F.E. values? Tap all that apply.", isRecognitionValues:true},
   {key:'recognitionObservations', ask:"Any additional observations to add? (optional)", isRecognitionObservations:true},
@@ -2697,6 +2705,14 @@ async function processAnswer(raw){
     } else {
       formData[key]='Not provided'; flowIndex++; await askNextQuestion();
     }
+    return;
+  }
+
+  // title/role Other — reveal free text (do not store 'Other', stay on step)
+  if((key==='supervisorTitle'||key==='employeeRole') && raw==='Other — specify'){
+    showTyping(); await delay(300); removeTyping();
+    addBubble('Sure — type it below.','ai');
+    inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
     return;
   }
 
