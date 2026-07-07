@@ -4,13 +4,24 @@
   S.A.F.E. MANAGEMENT — AI-POWERED INCIDENT REPORTING SYSTEM
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
-  APPLICATION VERSION: 1.7.0   (Recognition values selector + value-weaving synthesis)
+  APPLICATION VERSION: 1.8.0   (Recognition values drill-down accordion + behaviors)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
 
   CHANGELOG
   ----------------------------------------------------------------------------
+  v1.8.0 — Recognition values drill-down (config-driven accordion).
+           - RECOGNITION_VALUE_CONFIG centralizes categories, colors, emoji,
+             and behavior options (single source for UI, data, reports, AI).
+           - Selector is now an accordion: tap a value to select+expand, choose
+             optional behavior chips, running summary, Clear + Done.
+           - New structured field recognitionValueBehaviors {value:[behaviors]}.
+           - Synthesis weaves selected values AND behaviors naturally.
+           - Reports add an "Observed Behaviors" section (email/PDF/export/card
+             + Sheets payload). Values still shown separately.
+           - Locked baseline untouched: proxy/transport/auth, recorder, parser,
+             diagnostics, deployment, Incident Report. No API key.
   v1.7.0 — Editorial Engine Increment 2: recognition values + weaving.
            - recognitionImpact free-text replaced by expanded 10-category
              color-coded selector ("How did their actions reflect S.A.F.E. values?").
@@ -364,6 +375,22 @@
   .safe-diag-panel .sdp-row{border-top:1px solid rgba(255,255,255,.1);padding:3px 0;word-break:break-word;}
   .safe-diag-panel .sdp-fb{color:#ff9b9b;font-weight:700;}
   .safe-diag-panel .sdp-r{color:#ffd27f;}
+
+  /* ── RECOGNITION VALUE ACCORDION (v1.8.0) ── */
+  .recval-help{font-size:12px;color:var(--text-muted);margin-bottom:10px;line-height:1.4;}
+  .recval-row{margin-bottom:8px;}
+  .recval-cat{width:100%;min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:8px;border:1.5px solid var(--border);background:#fff;color:var(--safe-navy);border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;padding:10px 12px;transition:background .12s,border-color .12s,color .12s;}
+  .recval-cat.sel{color:#fff;}
+  .recval-caret{font-size:12px;opacity:.7;}
+  .recval-panel{display:flex;flex-wrap:wrap;gap:6px;padding:8px 4px 2px;}
+  .recval-chip{border:1px solid var(--border);background:#f4f7fb;color:var(--safe-navy);border-radius:999px;font-size:12px;font-weight:600;padding:9px 13px;min-height:40px;cursor:pointer;transition:background .12s,color .12s,border-color .12s;}
+  .recval-chip.sel{background:var(--safe-navy);color:#fff;border-color:var(--safe-navy);}
+  .recval-summary{background:#f4f7fb;border-radius:10px;padding:10px 12px;font-size:12px;color:var(--safe-navy);margin:10px 0;line-height:1.5;}
+  .recval-summary .recval-sum-empty{color:var(--text-muted);}
+  .recval-summary .recval-sum-n{color:var(--safe-red);font-weight:700;}
+  .recval-controls{display:flex;gap:8px;}
+  .recval-clear{flex:0 0 auto;min-height:48px;border:1.5px solid var(--border);background:#fff;color:var(--safe-navy);border-radius:10px;font-weight:700;font-size:13px;cursor:pointer;padding:8px 14px;}
+  .recval-controls .recval-done{flex:1 1 auto;}
 </style>
 </head>
 <body>
@@ -429,7 +456,7 @@
     <div class="season-motto">Stronger Together</div>
   </div>
   <div class="header-right">
-    <div class="header-badge">v1.7.0</div>
+    <div class="header-badge">v1.8.0</div>
   </div>
 </header>
 
@@ -507,7 +534,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.8.0';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -942,6 +969,7 @@ function sendViaMailto(isIncident){
     body += `Description:\n${fd.recognitionNarrative||fd.recognitionDescription||'N/A'}\n\n`;
     body += `Additional Observations:\n${fd.recognitionObservations||'None'}\n\n`;
     body += `S.A.F.E. Values Demonstrated: ${fd.recognitionValues||'N/A'}\n\n`;
+    { const _ob=observedBehaviorsText(fd); if(_ob) body += `Observed Behaviors:\n${_ob}\n\n`; }
   }
   body += `Additional Comments: ${fd.additionalComments||'None'}\n\n`;
   body += `---\nPhysical description provided for identification purposes only.\nThis report is confidential and intended solely for S.A.F.E. Management and Ford Field HR review.`;
@@ -1003,6 +1031,7 @@ async function submitToSheets(isIncident) {
         recognitionImpact: fd.recognitionImpact || '',
         recognitionNarrative: fd.recognitionNarrative || '',
         recognitionValues: fd.recognitionValues || '',
+        recognitionValueBehaviors: JSON.stringify(fd.recognitionValueBehaviors||{}),
         recognitionObservations: fd.recognitionObservations || '',
         additionalComments: fd.additionalComments || ''
       });
@@ -2122,11 +2151,31 @@ function applyEmployeeName(p){
   formData.employeeSuffix=p.suffix;
 }
 
+const RECOGNITION_VALUE_CONFIG = [
+  {id:"guestService",label:"Guest Service",color:"#E8192C",emoji:"\ud83d\udfe5",behaviors:["Assisted guests proactively","Escorted guests to their seats or correct location","Answered guest questions professionally","Resolved guest concerns","Created a welcoming atmosphere","Went above and beyond for guests","Received positive guest feedback","Helped guests feel comfortable or included","Other"]},
+  {id:"teamwork",label:"Teamwork",color:"#1B4B8A",emoji:"\ud83d\udfe6",behaviors:["Volunteered to help another section","Assisted coworkers without being asked","Supported newer employees","Covered another assignment","Helped during a staffing shortage","Worked well under pressure","Maintained positive team morale","Coordinated well with supervisors or staff","Other"]},
+  {id:"initiative",label:"Initiative",color:"#2E7D46",emoji:"\ud83d\udfe9",behaviors:["Took action without being asked","Identified a need before being directed","Solved a problem independently","Prevented a potential issue","Improved the flow of operations","Followed up without being reminded","Suggested or used a better approach","Other"]},
+  {id:"leadership",label:"Leadership",color:"#B58A00",emoji:"\ud83d\udfe8",behaviors:["Led by example","Helped guide coworkers","Mentored or encouraged another employee","Took charge appropriately","Demonstrated sound judgment","Helped organize the response","Kept others calm","Other"]},
+  {id:"professionalism",label:"Professionalism",color:"#6B4C9A",emoji:"\ud83d\udfea",behaviors:["Remained calm and respectful","Maintained composure under pressure","Represented S.A.F.E. Management well","Used good judgment","Handled the situation with maturity","Maintained a positive attitude","Communicated professionally","Other"]},
+  {id:"communication",label:"Communication",color:"#C2632B",emoji:"\ud83d\udfe7",behaviors:["Gave clear directions","Communicated respectfully","Kept the supervisor informed","Explained information clearly to guests","Coordinated with SAFE Ops or staff","De-escalated through calm communication","Listened carefully","Other"]},
+  {id:"reliability",label:"Reliability",color:"#7A5230",emoji:"\ud83d\udfeb",behaviors:["Reported as assigned","Stayed at post","Completed assigned duties","Accepted additional responsibility","Followed through without reminders","Was dependable during the event","Helped maintain coverage","Other"]},
+  {id:"safety",label:"Safety",color:"#37475A",emoji:"\u2b1c",behaviors:["Helped maintain a safe environment","Identified a safety concern","Reported a potential hazard","Assisted with crowd movement","Helped prevent escalation","Kept an area clear","Supported EMS or emergency response if applicable","Other"]},
+  {id:"problemSolving",label:"Problem Solving",color:"#23272E",emoji:"\u2b1b",behaviors:["Resolved an issue proactively","Found a practical solution","Adapted to changing conditions","Helped correct confusion","Addressed a guest concern","Reduced disruption","Used good judgment to solve the issue","Other"]},
+  {id:"adaptability",label:"Adaptability",color:"#0F6E6E",emoji:"\ud83d\udfe9",behaviors:["Adjusted quickly to changing conditions","Assisted in a different area","Responded well to reassignment","Stayed flexible during the event","Helped where needed","Managed changing crowd conditions","Remained effective despite staffing changes","Other"]}
+];
+function observedBehaviorsText(fd){
+  const b=(fd&&fd.recognitionValueBehaviors)||{};
+  const keys=Object.keys(b).filter(function(k){return b[k]&&b[k].length;});
+  if(!keys.length) return '';
+  return keys.map(function(k){return k+' — '+b[k].join('; ')+'.';}).join('\n');
+}
+
 async function runRecognitionSynthesis(){
   inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
   const parts=[];
   if(formData.recognitionDescription) parts.push(formData.recognitionDescription);
   if(formData.recognitionValues) parts.push('S.A.F.E. values demonstrated (weave in naturally, do not list): '+formData.recognitionValues);
+  const _bt=observedBehaviorsText(formData); if(_bt) parts.push('Specific observed behaviors to weave in naturally (do not list as bullets): '+_bt.replace(/\n/g,' | '));
   if(formData.recognitionObservations && formData.recognitionObservations!=='None') parts.push('Additional observations: '+formData.recognitionObservations);
   const composed=parts.join('\n');
   showTyping(); speak('Putting the recognition together'); addBubble('Putting your recognition together...','ai');
@@ -2488,29 +2537,74 @@ async function askNextQuestion(){
     inputArea.style.display='none';
     document.getElementById('inputHint').style.display='none';
     awaitingInput=false;
-    const cats=[{n:'Guest Service',c:'#E8192C',e:'🟥'},{n:'Teamwork',c:'#1B4B8A',e:'🟦'},{n:'Initiative',c:'#2E7D46',e:'🟩'},{n:'Leadership',c:'#B58A00',e:'🟨'},{n:'Professionalism',c:'#6B4C9A',e:'🟪'},{n:'Communication',c:'#C2632B',e:'🟧'},{n:'Reliability',c:'#7A5230',e:'🟫'},{n:'Safety',c:'#37475A',e:'⬜'},{n:'Problem Solving',c:'#23272E',e:'⬛'},{n:'Adaptability',c:'#0F6E6E',e:'🟩'}];
+    const CFG=RECOGNITION_VALUE_CONFIG;
+    const selectedVals=new Set();
+    const selectedBeh={};
+    function ensureBeh(l){ if(!selectedBeh[l]) selectedBeh[l]=new Set(); return selectedBeh[l]; }
     const wrap=document.createElement('div'); wrap.className='recval-wrap';
-    const grid=document.createElement('div'); grid.className='recval-grid';
-    const selected=new Set();
-    cats.forEach(cat=>{
-      const b=document.createElement('button'); b.type='button'; b.className='recval-btn'; b.textContent=cat.e+' '+cat.n;
-      b.onclick=()=>{
-        if(selected.has(cat.n)){ selected.delete(cat.n); b.classList.remove('sel'); b.style.background=''; b.style.color=''; b.style.borderColor=''; }
-        else { selected.add(cat.n); b.classList.add('sel'); b.style.background=cat.c; b.style.color='#fff'; b.style.borderColor=cat.c; }
-        done.disabled=selected.size===0;
+    const help=document.createElement('div'); help.className='recval-help';
+    help.textContent='Select the values that best describe what you observed. You can expand a value to choose specific behaviors.';
+    wrap.appendChild(help);
+    const summary=document.createElement('div'); summary.className='recval-summary';
+    function updateSummary(){
+      const vals=[...selectedVals];
+      if(!vals.length){ summary.innerHTML='<b>Selected S.A.F.E. Values</b><br><span class="recval-sum-empty">None yet</span>'; }
+      else { summary.innerHTML='<b>Selected S.A.F.E. Values</b><br>'+vals.map(function(v){ const n=(selectedBeh[v]?selectedBeh[v].size:0); return v+(n?(' <span class="recval-sum-n">'+n+' behavior'+(n>1?'s':'')+'</span>'):''); }).join(', '); }
+      done.disabled=selectedVals.size===0;
+    }
+    CFG.forEach(function(cat){
+      const row=document.createElement('div'); row.className='recval-row';
+      const head=document.createElement('button'); head.type='button'; head.className='recval-cat';
+      head.innerHTML='<span>'+cat.emoji+' '+cat.label+'</span><span class="recval-caret">▾</span>';
+      const panel=document.createElement('div'); panel.className='recval-panel'; panel.style.display='none';
+      function selectHead(){ selectedVals.add(cat.label); head.classList.add('sel'); head.style.background=cat.color; head.style.borderColor=cat.color; }
+      function deselectHead(){ selectedVals.delete(cat.label); head.classList.remove('sel'); head.style.background=''; head.style.borderColor=''; }
+      cat.behaviors.forEach(function(bh){
+        const chip=document.createElement('button'); chip.type='button'; chip.className='recval-chip'; chip.textContent=bh;
+        chip.onclick=function(ev){ ev.stopPropagation();
+          const set=ensureBeh(cat.label);
+          if(set.has(bh)){ set.delete(bh); chip.classList.remove('sel'); }
+          else { set.add(bh); chip.classList.add('sel'); if(!selectedVals.has(cat.label)) selectHead(); }
+          updateSummary();
+        };
+        panel.appendChild(chip);
+      });
+      head.onclick=function(){
+        const open=panel.style.display!=='none';
+        if(selectedVals.has(cat.label)){
+          if(open){
+            panel.style.display='none';
+            if(!selectedBeh[cat.label]||!selectedBeh[cat.label].size) deselectHead();
+          } else { panel.style.display='flex'; }
+        } else { selectHead(); panel.style.display='flex'; }
+        updateSummary();
       };
-      grid.appendChild(b);
+      row.appendChild(head); row.appendChild(panel); wrap.appendChild(row);
     });
-    const done=document.createElement('button'); done.type='button'; done.className='recval-done'; done.textContent='Done — add selected values'; done.disabled=true;
-    done.onclick=async()=>{
-      const arr=[...selected]; wrap.remove();
-      addBubble(arr.length?arr.join(', '):'None selected','user');
-      formData.recognitionValues=arr.join(', ');
-      formData.recognitionValuesList=arr;
+    wrap.appendChild(summary);
+    const controls=document.createElement('div'); controls.className='recval-controls';
+    const clear=document.createElement('button'); clear.type='button'; clear.className='recval-clear'; clear.textContent='Clear selections';
+    clear.onclick=function(){ selectedVals.clear(); for(const k in selectedBeh) delete selectedBeh[k];
+      wrap.querySelectorAll('.recval-cat').forEach(function(hh){hh.classList.remove('sel');hh.style.background='';hh.style.borderColor='';});
+      wrap.querySelectorAll('.recval-chip').forEach(function(c){c.classList.remove('sel');});
+      wrap.querySelectorAll('.recval-panel').forEach(function(pp){pp.style.display='none';});
+      updateSummary();
+    };
+    const done=document.createElement('button'); done.type='button'; done.className='recval-done'; done.textContent='Done'; done.disabled=true;
+    done.onclick=async function(){
+      const vals=[...selectedVals];
+      const beh={}; vals.forEach(function(v){ if(selectedBeh[v]&&selectedBeh[v].size) beh[v]=[...selectedBeh[v]]; });
+      wrap.remove();
+      formData.recognitionValuesList=vals;
+      formData.recognitionValues=vals.join(', ');
+      formData.recognitionValueBehaviors=beh;
+      const behCount=Object.keys(beh).reduce(function(a,k){return a+beh[k].length;},0);
+      addBubble(vals.length?(vals.join(', ')+(behCount?(' ('+behCount+' behavior'+(behCount>1?'s':'')+')'):'')):'None selected','user');
       flowIndex++; await askNextQuestion();
     };
-    wrap.appendChild(grid); wrap.appendChild(done);
-    chatWindow.appendChild(wrap); scrollBottom();
+    controls.appendChild(clear); controls.appendChild(done);
+    wrap.appendChild(controls);
+    chatWindow.appendChild(wrap); scrollBottom(); updateSummary();
     return;
   }
 
@@ -3189,6 +3283,7 @@ function generatePDF(isIncident) {
     body += `<div class="field"><div class="field-label">Description of Good Deed</div><div class="field-value narrative">${fd.recognitionNarrative || fd.recognitionDescription || 'Not provided'}</div></div>`;
     body += `<div class="field" style="margin-top:10px;"><div class="field-label">Additional Observations</div><div class="field-value narrative">${fd.recognitionObservations || 'None'}</div></div>`;
     body += `<div class="field"><div class="field-label">S.A.F.E. Values Demonstrated</div><div class="field-value">${fd.recognitionValues || 'Not provided'}</div></div>`;
+    { const _ob=observedBehaviorsText(fd); if(_ob) body += `<div class="field" style="margin-top:10px;"><div class="field-label">Observed Behaviors</div><div class="field-value narrative">${_ob.replace(/\n/g,'<br>')}</div></div>`; }
   }
 
   // Additional Comments
@@ -3313,6 +3408,7 @@ function generateWord(isIncident) {
     content += `Description:\n${fd.recognitionNarrative||fd.recognitionDescription||'N/A'}\n\n`;
     content += `Additional Observations:\n${fd.recognitionObservations||'None'}\n\n`;
     content += `S.A.F.E. Values Demonstrated: ${fd.recognitionValues||'N/A'}\n\n`;
+    { const _ob=observedBehaviorsText(fd); if(_ob) content += `Observed Behaviors:\n${_ob}\n\n`; }
   }
   content += `Additional Comments: ${fd.additionalComments||'None'}\n\n`;
   content += `${'='.repeat(50)}\n`;
@@ -3425,6 +3521,7 @@ function buildFormHTML(isIncident,supName,empName){
     h+=ff('Description of Good Deed',fd.recognitionNarrative||fd.recognitionDescription,'recognitionDescription');
     h+=ff('Additional Observations',fd.recognitionObservations);
     h+=ff('S.A.F.E. Values Demonstrated',fd.recognitionValues);
+    { const _ob=observedBehaviorsText(fd); if(_ob) h+=ff('Observed Behaviors', _ob.replace(/\n/g,'<br>')); }
   }
 
   h+=ff('Additional Comments',fd.additionalComments,'additionalComments');
