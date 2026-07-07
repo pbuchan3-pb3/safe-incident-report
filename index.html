@@ -4,13 +4,30 @@
   S.A.F.E. MANAGEMENT — AI-POWERED INCIDENT REPORTING SYSTEM
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
-  APPLICATION VERSION: 1.9.4   (Title/position dedup, guest statement, recorder submit)
+  APPLICATION VERSION: 1.9.5   (Recorder 2.2 + clothing/timeline/feedback refinement)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
 
   CHANGELOG
   ----------------------------------------------------------------------------
+  v1.9.5 — Recorder 2.2 + interview refinement.
+           - Recorder: idle shows only Record + Type Instead; Recording.../Paused/
+             Complete states; buttons Record/Pause/Stop/Resume, and Review /
+             Record Again / Delete / "➡ Send Recording" (no editor jargon).
+           - Startup bug fixed: no auto-restore, no premature "saved" message.
+           - Concise status messages (Ready / Recording... / Paused / Complete /
+             Sending...).
+           - Clothing: "I don't recall" one-click stores a standard line; typed
+             clothing is AP-edited; uncertainty phrasing handled in the editor.
+           - Assignment timeline uses the role noun from Position Held (supervisor/
+             manager/director/employee), never "officer".
+           - Guest statement detects accidental app-feedback and redirects instead
+             of saving it into the report.
+           - Preserve originals: assignmentTimelineRaw, guestStatementRaw,
+             guestClothingRaw.
+           - Locked baseline untouched: proxy, name/seat parsers, Editorial Engine,
+             Operational Context, diagnostics.
   v1.9.4 — Incident cleanup + recorder submit path.
            - Removed redundant "title or role" question; reports now use
              positionHeld (Supervisor Position) once.
@@ -534,7 +551,7 @@
     <div class="season-motto">Stronger Together</div>
   </div>
   <div class="header-right">
-    <div class="header-badge">v1.9.4</div>
+    <div class="header-badge">v1.9.5</div>
   </div>
 </header>
 
@@ -612,7 +629,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '1.9.4';
+const APP_VERSION = '1.9.5';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -847,7 +864,7 @@ const incidentFlow = [
   {key:'guestBuild', ask:()=>`How would you describe ${guestPoss()} build?`, isAppearanceBuild:true},
   {key:'guestHair', ask:()=>`What is ${guestPoss()} hair color?`, isAppearanceHair:true},
   {key:'guestHairStyle', ask:()=>`How would you describe ${guestPoss()} hair style?`, isAppearanceHairStyle:true},
-  {key:'guestClothing', ask:()=>`What was ${guestRef()} wearing? Describe the shirt, jacket, hat, or any other distinctive clothing.`},
+  {key:'guestClothing', ask:()=>`What was ${guestRef()} wearing? Describe the shirt, jacket, hat, or any other distinctive clothing.`, isGuestClothing:true},
   {key:'guestFeatures', ask:()=>`Any distinguishing features for ${guestRef()}? Select all that apply.`, isAppearanceFeatures:true},
   {key:'guestPhotos', ask:()=>`Do you have any photos of ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest or subject'}? Upload up to 3 photos.`, isPhotoUpload:true, photoType:'guest'},
   {key:'incidentDescription', editorProfile:'incidentReport', mountRecorder:true, ask:()=>`${formData.supervisorFirstName||'Officer'}, describe what happened in your own words — what you saw, what was said, what actions were taken. Don't worry about how it sounds; I'll clean it up.`},
@@ -987,7 +1004,7 @@ async function cleanWithAI(rawText, context, fieldType, fieldKey, editorProfile)
       body:JSON.stringify({
         model:"claude-sonnet-4-6",
         max_tokens:300,
-        system: _profile ? _profile.system : "You are a professional HR and security report writer for S.A.F.E. Management. Rewrite field entries into polished AP style suitable for HR, legal, and management review. For clothing: rewrite as 'The subject was wearing <items>'. Strip any leading first-person or narrative verb from the input (e.g. 'She wore', 'He wore', 'They wore', 'I saw') and never duplicate the input's wording; clean nonstandard phrasing into professional language without overstating. For names/witnesses: format as 'Witnesses included [name] ([role])'. Never start with 'Witnesses included' for clothing fields. Preserve all facts exactly; invent nothing. Return ONLY the rewritten text.",
+        system: _profile ? _profile.system : "You are a professional HR and security report writer for S.A.F.E. Management. Rewrite field entries into polished AP style suitable for HR, legal, and management review. For clothing: if the input expresses uncertainty (e.g. \"I'm not sure\", \"I forgot\", \"don't remember\", \"can't recall\"), output exactly \"The guest's clothing could not be recalled.\" and nothing else. Otherwise rewrite as 'The subject was wearing <items>'. Strip any leading first-person or narrative verb from the input (e.g. 'She wore', 'He wore', 'They wore', 'I saw') and never duplicate the input's wording; clean nonstandard phrasing into professional language without overstating. For names/witnesses: format as 'Witnesses included [name] ([role])'. Never start with 'Witnesses included' for clothing fields. Preserve all facts exactly; invent nothing. Return ONLY the rewritten text.",
         messages:[{role:"user",content:
           _profile ? _profile.instruction(rawText) : (fieldInstruction + ' Keep all facts exactly as stated. Return ONLY the rewritten text. No preamble, no labels, no quotation marks.\n\nInput: ' + rawText)
         }]
@@ -2114,19 +2131,19 @@ async function recStart(){
   recState.mediaRecorder.onstop=recFinalize;
   recState.mediaRecorder.start();
   recState.status='recording';recState.elapsedBeforePause=0;recState.startedAt=Date.now();recState.draftId='rec_'+Date.now();
-  recTickStart();recDotLive(true);recSetStatus('Recording your account of the incident…');recRenderControls();
+  recTickStart();recDotLive(true);recSetStatus('Recording...');recRenderControls();
 }
 function recPause(){
   if(recState.status!=='recording'||!recState.mediaRecorder)return;
   try{recState.mediaRecorder.pause();}catch(_){}
   recState.elapsedBeforePause=recElapsed();recState.status='paused';
-  recTickStop();recSetTimer();recDotLive(false);recSetStatus('Paused. Resume when ready.');recRenderControls();
+  recTickStop();recSetTimer();recDotLive(false);recSetStatus('Paused');recRenderControls();
 }
 function recResume(){
   if(recState.status!=='paused'||!recState.mediaRecorder)return;
   try{recState.mediaRecorder.resume();}catch(_){}
   recState.startedAt=Date.now();recState.status='recording';
-  recTickStart();recDotLive(true);recSetStatus('Recording your account of the incident…');recRenderControls();
+  recTickStart();recDotLive(true);recSetStatus('Recording...');recRenderControls();
 }
 function recEnd(){
   if(recState.status!=='recording'&&recState.status!=='paused')return;
@@ -2143,7 +2160,7 @@ async function recFinalize(){
     recState.status='saved';
     const dur=recElapsed();recState.elapsedBeforePause=dur;
     const ok=await recDbSave(recState.draftId,recState.blob,dur);
-    recSetStatus(ok?'Recording saved on this device.':'Recording captured (could not save to device storage).');
+    recSetStatus(ok?'✓ Recording Complete':'Recording captured (storage unavailable)');
   }else{recState.status='idle';recSetStatus('No audio was captured. Try again.');}
   recSetTimer();recRenderControls();
 }
@@ -2163,15 +2180,15 @@ async function recDeleteRecording(){
 async function recReRecord(){await recDeleteRecording();recSetStatus('Ready to record again.');recRenderControls();}
 
 function recBtn(label,fn,cls){return '<button type="button" class="rec-btn '+(cls||'')+'" onclick="'+fn+'">'+label+'</button>';}
-function recSendToAI(){ recSetStatus('Recording is saved locally, but automatic transcription is not enabled yet. Please type or dictate your statement in the text box below to send it for AP-style rewrite.'); inputArea.style.display='flex'; awaitingInput=true; var h=document.getElementById('inputHint'); if(h) h.style.display='block'; userInput.focus(); }
+function recSendToAI(){ recSetStatus('Sending... Automatic transcription is not available yet — please type or dictate your statement below and Atlas will process it automatically.'); inputArea.style.display='flex'; awaitingInput=true; var h=document.getElementById('inputHint'); if(h) h.style.display='block'; userInput.focus(); }
 function recTypeInstead(){ recSetStatus('Type or dictate your statement below.'); inputArea.style.display='flex'; awaitingInput=true; var h=document.getElementById('inputHint'); if(h) h.style.display='block'; userInput.focus(); }
 function recRenderControls(){
   const c=document.getElementById('recControls');if(!c)return;
   let html='';
-  if(recState.status==='idle'){html=recBtn('● Record','recStart()','primary');}
-  else if(recState.status==='recording'){html=recBtn('❙❙ Pause','recPause()')+recBtn('■ End','recEnd()','danger');}
-  else if(recState.status==='paused'){html=recBtn('▶ Resume','recResume()','primary')+recBtn('■ End','recEnd()','danger');}
-  else if(recState.status==='saved'){html=recBtn('✨ Send to AP-Style Rewrite','recSendToAI()','primary')+recBtn('▶ Review','recPlayToggle()')+recBtn('↻ Re-record','recReRecord()')+recBtn('🗑 Delete','recDeleteRecording()','danger')+recBtn('✏ Type Instead','recTypeInstead()');}
+  if(recState.status==='idle'){html=recBtn('🎤 Record','recStart()','primary')+recBtn('⌨ Type Instead','recTypeInstead()');}
+  else if(recState.status==='recording'){html=recBtn('⏸ Pause','recPause()')+recBtn('■ Stop','recEnd()','danger');}
+  else if(recState.status==='paused'){html=recBtn('▶ Resume','recResume()','primary')+recBtn('■ Stop','recEnd()','danger');}
+  else if(recState.status==='saved'){html=recBtn('➡ Send Recording','recSendToAI()','primary')+recBtn('▶ Review','recPlayToggle()')+recBtn('↻ Record Again','recReRecord()')+recBtn('🗑 Delete','recDeleteRecording()','danger');}
   c.innerHTML=html;
 }
 async function recRestore(){
@@ -2189,10 +2206,10 @@ function mountRecorderCard(){
     '<div class="rec-head"><span class="rec-dot" id="recDot"></span>'+
     '<span class="rec-title">Incident voice recorder</span>'+
     '<span class="rec-timer" id="recTimer">00:00</span></div>'+
-    '<div class="rec-status" id="recStatus">Optional: record your account. Stored only on this device.</div>'+
+    '<div class="rec-status" id="recStatus">Ready</div>'+
     '<div class="rec-controls" id="recControls"></div>'+
     '<audio id="recAudio" style="display:none"></audio>'+
-    '<div class="rec-note">After recording, tap ✨ Send to AP-Style Rewrite. Automatic transcription is not enabled yet, so please type or dictate your statement below to send it for AP-style rewrite. Saved locally only (never uploaded).</div>';
+    '<div class="rec-note">Tap Record to capture your statement, or Type Instead. Saved locally only.</div>';
   chatWindow.appendChild(card);scrollBottom();
   recState.audioEl=card.querySelector('#recAudio');
   if(recState.audioEl){
@@ -2201,7 +2218,7 @@ function mountRecorderCard(){
     recState.audioEl.addEventListener('ended',()=>{const b=document.querySelector('#recControls .rec-btn.primary');if(b&&recState.status==='saved')b.textContent='▶ Play';});
   }
   if(!recSupported()){recSetStatus('Recording is not supported on this device or browser — please type your description below.');recState.status='idle';const cc=document.getElementById('recControls');if(cc)cc.innerHTML='';return;}
-  recState.status='idle';recRenderControls();recRestore();
+  recState.status='idle';recRenderControls();
 }
 
 // ── EMPLOYEE NAME PARSER (v1.2.0) ────────────────────────────────────────────
@@ -2374,6 +2391,8 @@ async function runRecognitionSynthesis(){
 }
 
 // ── GUEST REFERENCE + SEAT PARSING (v1.9.3) ──────────────────────────────────
+function roleNoun(){ const p=(formData.positionHeld||'').toLowerCase(); if(p.indexOf('director')!==-1) return 'director'; if(p.indexOf('manager')!==-1) return 'manager'; if(p.indexOf('supervisor')!==-1) return 'supervisor'; if(p) return 'employee'; return 'supervisor'; }
+function looksLikeAppFeedback(t){ return /\b(atlas|the app|this app|the button|the recorder|the interface|the screen|glitch|this is a bug|it'?s a bug|crash|crashed|the workflow|doesn'?t work|not working|froze|freezes)\b/i.test(t||''); }
 function guestStatementText(fd){ if(fd.guestStatementDetail) return fd.guestStatementDetail; if(fd.guestStatementStatus) return fd.guestStatementStatus; return fd.guestStatement||'N/A'; }
 function guestRef(){
   return (formData.guestNameStatus==='Known' && formData.guestLastName) ? formData.guestLastName : 'the guest';
@@ -2863,7 +2882,7 @@ async function askNextQuestion(){
         sendInterceptor=async(raw)=>{
           inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
           showTyping(); await delay(400); removeTyping();
-          const cleaned=await cleanWithAI((raw||'').trim(), 'Supervisor assignment timeline for '+formData.venue+'.', 'field', 'assignmentTimeline');
+          formData.assignmentTimelineRaw=(raw||'').trim(); const cleaned=await cleanWithAI((raw||'').trim(), 'Assignment timeline for the '+roleNoun()+' at '+formData.venue+'. Refer to the person as "the '+roleNoun()+'", never "the officer".', 'field', 'assignmentTimeline');
           formData.assignmentTimeline=cleaned||(raw||'').trim();
           flowIndex++; await askNextQuestion();
         };
@@ -3019,6 +3038,18 @@ async function askNextQuestion(){
 
 
 
+  if(step.isGuestClothing){
+    showInlineOptions(["I don't recall"], async(val)=>{
+      addBubble(val,'user'); sendInterceptor=null;
+      inputArea.style.display='none'; awaitingInput=false;
+      formData.guestClothing="The reporting supervisor could not recall the guest's clothing.";
+      formData.guestClothingRaw=val;
+      flowIndex++; await askNextQuestion();
+    });
+    inputArea.style.display='flex'; awaitingInput=true; document.getElementById('inputHint').style.display='block'; userInput.focus();
+    return;
+  }
+
   if(step.isGuestStatement){
     inputArea.style.display='none'; awaitingInput=false;
     showInlineOptions(['Refused to speak','No statement provided','Verbal statement','Written statement','Unknown'], async(choice)=>{
@@ -3030,7 +3061,14 @@ async function askNextQuestion(){
         if(choice==='Verbal statement' && typeof mountRecorderCard==='function' && typeof enableVoiceIncidentCapture!=='undefined' && enableVoiceIncidentCapture){ mountRecorderCard(); }
         inputArea.style.display='flex'; awaitingInput=true; document.getElementById('inputHint').style.display='block'; userInput.focus();
         sendInterceptor=async(raw)=>{
+          if(looksLikeAppFeedback(raw)){
+            showTyping(); await delay(300); removeTyping();
+            addBubble("It looks like you're commenting on the application rather than entering the guest's statement. Would you like to continue entering the guest's statement, or edit your previous response?",'ai');
+            addQuickReplies(['Continue entering statement','Edit previous response'], async(a)=>{ clearQuickReplies(); addBubble(a,'user'); inputArea.style.display='flex'; awaitingInput=true; userInput.focus(); });
+            return;
+          }
           inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
+          formData.guestStatementRaw=(raw||'').trim();
           showTyping(); await delay(400); removeTyping();
           const cleaned=await cleanWithAI((raw||'').trim(), 'Guest statement for an incident at '+formData.venue+'.', 'description', 'guestStatement', 'witnessStatement');
           formData.guestStatementDetail=cleaned||(raw||'').trim();
