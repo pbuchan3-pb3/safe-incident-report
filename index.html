@@ -4,13 +4,28 @@
   S.A.F.E. MANAGEMENT — AI-POWERED INCIDENT REPORTING SYSTEM
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
-  APPLICATION VERSION: 1.9.0   (UX: supervisor full-name, larger editor, impact-focused synthesis)
+  APPLICATION VERSION: 1.9.2   (Operational Context Engine)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
 
   CHANGELOG
   ----------------------------------------------------------------------------
+  v1.9.2 — Operational Context Engine (config-driven, venue-aware, additive).
+           - Centralized POSITION_CONFIG, ASSIGNMENT_CONFIG (grouped; sections
+             101-146 generated), VENUE_CONFIG (Ford Field) — configuration over code.
+           - New shared flow (collected once in baseFlow, reused by both workflows):
+             Position -> Assignments -> Timeline -> Operational Summary (Looks
+             Correct / Edit).
+           - Intelligent "Other" everywhere: free text -> AP-style standardize,
+             stores original (audit) + standardized label.
+           - Operational Context shown on the on-screen review card; data stored
+             in formData for reports/analytics.
+           - Locked baseline untouched: proxy, recorder, name parser, AP engine,
+             Incident/Recognition/Corrective workflows, signature, PDF/Word
+             generation, AI routing, diagnostics. No API key.
+           - Deferred (explicit PDF/Word lock): wiring Operational Context into
+             PDF/Word/email report bodies.
   v1.9.0 — UX refinement (batch A of the v1.9 directive).
            - Supervisor name: single "What is your full name?" using the shared
              parser + the same First/Middle/Last/Suffix confirmation as employees.
@@ -420,6 +435,12 @@
   .recval-other{display:flex;gap:6px;width:100%;margin-top:6px;}
   .recval-other-input{flex:1;border:1.5px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;min-height:40px;}
   .recval-other-save{border:none;background:var(--safe-navy);color:#fff;border-radius:8px;font-weight:700;font-size:12px;padding:8px 12px;cursor:pointer;}
+
+  /* ── OPERATIONAL CONTEXT (v1.9.2) ── */
+  .op-wrap{margin:10px 0;display:flex;flex-direction:column;gap:8px;}
+  .op-btn{width:100%;min-height:48px;border:1.5px solid var(--border);background:#fff;color:var(--safe-navy);border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;padding:10px 12px;transition:background .12s,border-color .12s;}
+  .op-btn:active{transform:scale(.98);}
+  .op-btn:hover{border-color:var(--safe-navy);}
 </style>
 </head>
 <body>
@@ -485,7 +506,7 @@
     <div class="season-motto">Stronger Together</div>
   </div>
   <div class="header-right">
-    <div class="header-badge">v1.9.0</div>
+    <div class="header-badge">v1.9.2</div>
   </div>
 </header>
 
@@ -563,7 +584,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '1.9.0';
+const APP_VERSION = '1.9.2';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -772,6 +793,10 @@ const savedEmail = localStorage.getItem('safe_supervisor_email') || '';
 // ── FLOWS ──────────────────────────────────────────────────────────────────
 const baseFlow = [
   {key:'venue', ask:()=>`This report is being filed for <strong>Ford Field, Detroit, Michigan</strong>. Tap to confirm.`, quickReplies:['✅ Confirmed — Ford Field, Detroit']},
+  {key:'positionHeld', isPositionHeld:true, ask:"What position did you hold during today's event?"},
+  {key:'assignmentsWorked', isAssignments:true, ask:"Which assignment(s) did you work during today's event?"},
+  {key:'assignmentTimeline', isAssignmentTimeline:true, ask:"Did you remain in these assignment(s) for your entire shift?"},
+  {key:'operationalSummary', isOperationalSummary:true, ask:"Let me confirm today's operational context."},
   {key:'formType', ask:()=>`${formData.supervisorFirstName||'Officer'}, what type of report are we filing today?`, quickReplies:['Incident Report','Employee Recognition']},
 ];
 
@@ -2180,6 +2205,44 @@ function applyEmployeeName(p){
   formData.employeeSuffix=p.suffix;
 }
 
+// ── OPERATIONAL CONTEXT ENGINE (v1.9.2): configuration over code ──────────────
+// Update these configs (not logic) to change gates, sections, clubs, or add venues.
+const POSITION_CONFIG = ['Director','Manager','Event Security Supervisor','Guest Services Supervisor','Courtesy Team Supervisor','Event Security','Guest Services','Courtesy Team','Team Member','Other'];
+
+const ASSIGNMENT_CONFIG = [
+  {group:'Exterior Security', items:['Gate A','Gate B','Gate C','Gate D','Gate E','Gate F','Gate G','Pride Plaza','Vehicle Inspection','Loading Dock']},
+  {group:'Security Inspection', items:['Gate A Magnetometers','Gate B Magnetometers','Gate C Magnetometers','Gate D Magnetometers','Gate E Magnetometers','Gate F Magnetometers','Gate G Magnetometers']},
+  {group:'Lower Seating Bowl', items:Array.from({length:46},function(_,i){return 'Section '+(101+i);})},
+  {group:'Upper Seating Bowl', items:['All Upper Bowl sections']},
+  {group:'Premium Areas', items:['Suites','Comerica Gridiron Club','MotorCity Casino Club','Hall of Legends']},
+  {group:'Field', items:['Home Sideline','Visitor Sideline','Stage Pit','Backstage','Field Access']},
+  {group:'Administrative', items:['Command Post','HR','Credential Office','Dispatch']}
+];
+
+// Venue-aware: future venues reuse the same data model.
+const VENUE_CONFIG = {
+  fordField: { name:'Ford Field, Detroit, Michigan', positions:POSITION_CONFIG, assignmentGroups:ASSIGNMENT_CONFIG }
+};
+const ACTIVE_VENUE = 'fordField';
+function activeVenueConfig(){ return VENUE_CONFIG[ACTIVE_VENUE]; }
+
+// Standardize a free-text "Other" entry via the AP-style field editor (meaning preserved).
+async function standardizeOther(text, contextLabel){
+  const raw=(text||'').trim();
+  if(!raw) return { original:'', label:'' };
+  const cleaned=await cleanWithAI(raw, 'Standardize this '+contextLabel+' label for S.A.F.E. operational records; keep the meaning, fix only formatting/capitalization.', 'field', 'operationalOther');
+  return { original:raw, label:(cleaned||raw).trim() };
+}
+
+// Operational context for report outputs.
+function operationalContextText(fd){
+  const lines=[];
+  if(fd.positionHeld) lines.push('Position: '+fd.positionHeld);
+  if(fd.assignmentsWorked && fd.assignmentsWorked.length) lines.push('Assignments Worked: '+fd.assignmentsWorked.join(', '));
+  if(fd.assignmentTimeline) lines.push('Assignment Timeline: '+fd.assignmentTimeline);
+  return lines.join('\n');
+}
+
 const RECOGNITION_VALUE_CONFIG = [
   {id:"guestService",label:"Guest Service",color:"#E8192C",emoji:"\ud83d\udfe5",behaviors:["Assisted guests proactively","Escorted guests to their seats or correct location","Answered guest questions professionally","Resolved guest concerns","Created a welcoming atmosphere","Went above and beyond for guests","Received positive guest feedback","Helped guests feel comfortable or included","Other"]},
   {id:"teamwork",label:"Teamwork",color:"#1B4B8A",emoji:"\ud83d\udfe6",behaviors:["Volunteered to help another section","Assisted coworkers without being asked","Supported newer employees","Covered another assignment","Helped during a staffing shortage","Worked well under pressure","Maintained positive team morale","Coordinated well with supervisors or staff","Other"]},
@@ -2616,6 +2679,132 @@ async function askNextQuestion(){
         }
       });
     };
+    return;
+  }
+
+  if(step.isPositionHeld){
+    inputArea.style.display='none'; awaitingInput=false;
+    const wrap=document.createElement('div'); wrap.className='op-wrap';
+    activeVenueConfig().positions.forEach(function(pos){
+      const b=document.createElement('button'); b.type='button'; b.className='op-btn'; b.textContent=pos;
+      b.onclick=async function(){
+        if(pos==='Other'){
+          wrap.remove(); addBubble('Other','user');
+          showTyping(); await delay(300); removeTyping();
+          addBubble('Please enter your position.','ai');
+          inputArea.style.display='flex'; awaitingInput=true; document.getElementById('inputHint').style.display='block'; userInput.focus();
+          sendInterceptor=async(raw)=>{
+            inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
+            showTyping(); await delay(400); removeTyping();
+            const r=await standardizeOther(raw,'position');
+            formData.positionHeld=r.label; formData.positionHeldOriginal=r.original;
+            addBubble('Recorded position: <strong>'+r.label+'</strong>','ai');
+            flowIndex++; await askNextQuestion();
+          };
+          return;
+        }
+        wrap.remove(); addBubble(pos,'user');
+        formData.positionHeld=pos;
+        flowIndex++; await askNextQuestion();
+      };
+      wrap.appendChild(b);
+    });
+    chatWindow.appendChild(wrap); scrollBottom();
+    return;
+  }
+
+  if(step.isAssignments){
+    inputArea.style.display='none'; awaitingInput=false;
+    const groups=activeVenueConfig().assignmentGroups;
+    const selected=new Set();
+    const others={};
+    const wrap=document.createElement('div'); wrap.className='op-wrap';
+    const help=document.createElement('div'); help.className='recval-help'; help.textContent='Select every assignment you worked. Expand a group to see its options.'; wrap.appendChild(help);
+    const summary=document.createElement('div'); summary.className='recval-summary'; wrap.appendChild(summary);
+    function updateSummary(){
+      const arr=[...selected];
+      summary.innerHTML='<b>Assignments Selected</b>'+(arr.length?'<br>'+arr.join(', '):'<br><span class="recval-sum-empty">None yet</span>');
+      done.disabled=selected.size===0;
+    }
+    groups.forEach(function(g){
+      const row=document.createElement('div'); row.className='recval-row';
+      const head=document.createElement('button'); head.type='button'; head.className='recval-cat'; head.innerHTML='<span>'+g.group+'</span><span class="recval-caret">▾</span>';
+      const panel=document.createElement('div'); panel.className='recval-panel'; panel.style.display='none';
+      let otherBox=null;
+      g.items.forEach(function(it){
+        const chip=document.createElement('button'); chip.type='button'; chip.className='recval-chip'; chip.textContent=it;
+        chip.onclick=function(ev){ ev.stopPropagation();
+          if(selected.has(it)){ selected.delete(it); chip.classList.remove('sel'); } else { selected.add(it); chip.classList.add('sel'); }
+          updateSummary();
+        };
+        panel.appendChild(chip);
+      });
+      const oc=document.createElement('button'); oc.type='button'; oc.className='recval-chip'; oc.textContent='Other';
+      oc.onclick=function(ev){ ev.stopPropagation();
+        if(oc.classList.contains('sel')){ oc.classList.remove('sel'); if(otherBox){otherBox.remove();otherBox=null;} [...selected].forEach(function(l){ if(l.indexOf(g.group+' (Other): ')===0) selected.delete(l); }); delete others[g.group]; updateSummary(); return; }
+        oc.classList.add('sel');
+        if(!otherBox){
+          otherBox=document.createElement('div'); otherBox.className='recval-other';
+          const ta=document.createElement('input'); ta.type='text'; ta.className='recval-other-input'; ta.placeholder='Describe the assignment...';
+          const sv=document.createElement('button'); sv.type='button'; sv.className='recval-other-save'; sv.textContent='Add';
+          sv.onclick=async function(){ const t=ta.value.trim(); if(!t) return; sv.disabled=true; sv.textContent='...'; const r=await standardizeOther(t,'assignment'); selected.add(g.group+' (Other): '+r.label); others[g.group]=r.original; ta.disabled=true; sv.textContent='Added ✓'; updateSummary(); };
+          ta.addEventListener('keydown',function(e){ if(e.key==='Enter'){e.preventDefault();sv.onclick();} });
+          otherBox.appendChild(ta); otherBox.appendChild(sv); panel.appendChild(otherBox); ta.focus();
+        }
+      };
+      panel.appendChild(oc);
+      head.onclick=function(){ panel.style.display = panel.style.display==='none'?'flex':'none'; };
+      row.appendChild(head); row.appendChild(panel); wrap.appendChild(row);
+    });
+    const controls=document.createElement('div'); controls.className='recval-controls';
+    const done=document.createElement('button'); done.type='button'; done.className='recval-done'; done.textContent='Done'; done.disabled=true;
+    done.onclick=async function(){
+      wrap.remove();
+      formData.assignmentsWorked=[...selected];
+      formData.assignmentsWorkedOriginal=others;
+      addBubble(formData.assignmentsWorked.join(', '),'user');
+      flowIndex++; await askNextQuestion();
+    };
+    controls.appendChild(done); wrap.appendChild(controls);
+    chatWindow.appendChild(wrap); scrollBottom(); updateSummary();
+    return;
+  }
+
+  if(step.isAssignmentTimeline){
+    inputArea.style.display='none'; awaitingInput=false;
+    addQuickReplies(['✅ Yes','🔄 No — I was reassigned'], async function(ans){
+      clearQuickReplies(); addBubble(ans,'user');
+      if(ans.indexOf('Yes')!==-1){
+        formData.assignmentTimeline='Remained in the assigned position(s) for the entire shift.';
+        flowIndex++; await askNextQuestion();
+      } else {
+        showTyping(); await delay(300); removeTyping();
+        addBubble('Describe your reassignment(s).','ai');
+        inputArea.style.display='flex'; awaitingInput=true; document.getElementById('inputHint').style.display='block'; userInput.focus();
+        sendInterceptor=async(raw)=>{
+          inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
+          showTyping(); await delay(400); removeTyping();
+          const cleaned=await cleanWithAI((raw||'').trim(), 'Supervisor assignment timeline for '+formData.venue+'.', 'field', 'assignmentTimeline');
+          formData.assignmentTimeline=cleaned||(raw||'').trim();
+          flowIndex++; await askNextQuestion();
+        };
+      }
+    });
+    return;
+  }
+
+  if(step.isOperationalSummary){
+    inputArea.style.display='none'; awaitingInput=false;
+    let html='<b>Today\'s Operational Context</b><br><br>';
+    html+='<b>Position</b><br>'+(formData.positionHeld||'—')+'<br><br>';
+    html+='<b>Assignments Worked</b><br>'+((formData.assignmentsWorked&&formData.assignmentsWorked.length)?formData.assignmentsWorked.map(function(a){return '\u2713 '+a;}).join('<br>'):'None')+'<br><br>';
+    html+='<b>Assignment Timeline</b><br>'+(formData.assignmentTimeline||'—');
+    addBubble(html,'ai');
+    addQuickReplies(['✅ Looks Correct','✏ Edit'], async function(ans){
+      clearQuickReplies(); addBubble(ans,'user');
+      if(ans.indexOf('Looks Correct')!==-1){ flowIndex++; await askNextQuestion(); }
+      else { flowIndex=activeFlow.findIndex(function(s){return s.key==='positionHeld';}); await askNextQuestion(); }
+    });
     return;
   }
 
@@ -3594,6 +3783,7 @@ function buildFormHTML(isIncident,supName,empName){
   h+=ff('Venue',fd.venue);
   h+=ff('Report Type',fd.formType); h+=ff('Prepared By',supName);
   h+=ff('Supervisor Title',fd.supervisorTitle,'supervisorTitle'); h+=ff('Supervisor Email',fd.supervisorEmail);
+  { const _oc=operationalContextText(fd); if(_oc) h+=ff('Operational Context', _oc.replace(/\n/g,'<br>')); }
 
   if(isIncident){
     h+=`<div class="form-section-title">Incident Details</div>`;
