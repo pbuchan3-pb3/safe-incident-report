@@ -4,13 +4,26 @@
   S.A.F.E. MANAGEMENT — AI-POWERED INCIDENT REPORTING SYSTEM
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
-  APPLICATION VERSION: 1.9.3   (Incident guest/seat/clothing bug fixes)
+  APPLICATION VERSION: 1.9.4   (Title/position dedup, guest statement, recorder submit)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
 
   CHANGELOG
   ----------------------------------------------------------------------------
+  v1.9.4 — Incident cleanup + recorder submit path.
+           - Removed redundant "title or role" question; reports now use
+             positionHeld (Supervisor Position) once.
+           - Seat: acknowledges "Got it — Section Q, Row 8, Seat Unknown."; prompt
+             reworded; parsed, never narrated.
+           - Guest statement: status buttons (Refused / No statement / Verbal /
+             Written / Unknown); Verbal shows the recorder + text and runs through
+             the Witness Statement Editor; stored as guestStatementStatus + Detail.
+           - Recorder: primary "✨ Send to AP-Style Rewrite" + Review / Re-record /
+             Delete / Type Instead; honest "transcription not enabled" message so
+             the user is never stuck; note text updated.
+           - Locked baseline untouched: proxy, recorder core engine, name parser,
+             Editorial Engine, Operational Context architecture, diagnostics.
   v1.9.3 — Incident stabilization (critical live-testing bug fixes).
            - Guest name flow split into Full name / Only last name / Unknown /
              Guest refused (distinct guestNameStatus); typed answers now captured
@@ -521,7 +534,7 @@
     <div class="season-motto">Stronger Together</div>
   </div>
   <div class="header-right">
-    <div class="header-badge">v1.9.3</div>
+    <div class="header-badge">v1.9.4</div>
   </div>
 </header>
 
@@ -599,7 +612,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '1.9.3';
+const APP_VERSION = '1.9.4';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -819,7 +832,6 @@ const incidentFlow = [
   {key:'eventName', ask:"What event was taking place at the time of this incident?", isEventPicker:true},
   {key:'incidentCategory', ask:"What type of incident occurred?", quickReplies:['Slip / Fall / Medical','Intoxication / Ejection','Guest Altercation','Employee Misconduct','Unauthorized Access','Theft / Property Damage','Lost Person / Child','Other']},
   {key:'incidentSeverity', ask:"How would you rate the severity of this incident?", quickReplies:['Minor — Resolved on scene','Moderate — Required additional response','Serious — EMS / Police / Management involved']},
-  {key:'supervisorTitle', ask:"What is your title or role?", quickReplies:['Event Security Supervisor','Event Security','Guest Services','Usher','Parking','SAFE Ops','Manager','Other — specify']},
   {key:'supervisorEmail', ask:()=>savedEmail ? `What is your email address? We have <strong>${savedEmail}</strong> on file — tap to use it, or type a new one.` : 'What is your email address? A copy of this report will be sent to you automatically.', isEmail:true, savedEmailChip:true},
   {key:'incidentLocation', ask:()=>`Got it, ${formData.supervisorFirstName||'Officer'}. Where did the incident occur?`, isLocationPicker:true},
   {key:'environmentalConditions', ask:"Were there any environmental or surface conditions that may have contributed to this incident? For example: wet floor, spilled liquid, poor lighting, crowded area. If not applicable, say 'none.'", skipIf:(fd)=>fd.incidentCategory&&!fd.incidentCategory.includes('Slip')},
@@ -828,7 +840,7 @@ const incidentFlow = [
   {key:'safeOpsContacted', ask:"Was Safe Ops or a manager contacted about this incident?", quickReplies:['Yes — contacted Safe Ops','Yes — contacted my manager','Both contacted','No — not contacted']},
   {key:'safeOpsWho', ask:"Who specifically was contacted? Please provide their name or title.", skipIf:(fd)=>fd.safeOpsContacted&&fd.safeOpsContacted.startsWith('No')},
   {key:'guestName', ask:"What is the guest's first name? If you only have their last name, that's fine too.", isGuestName:true},
-  {key:'guestSeat', ask:()=>`What is ${guestPoss()} seat location? Please provide Section, Row, and Seat number.`, isGuestSeat:true},
+  {key:'guestSeat', ask:()=>`What is ${guestPoss()} seat location? Please provide section, row and seat number if known.`, isGuestSeat:true},
   {key:'guestGender', ask:()=>`Let's document ${guestPoss()} physical description for identification purposes. First — what is their gender?`, isAppearanceGender:true},
   {key:'guestAgeRange', ask:()=>`What is ${guestPoss()} approximate age range?`, isAppearanceAge:true},
   {key:'guestHeight', ask:()=>`How would you describe ${guestPoss()} height?`, isAppearanceHeight:true},
@@ -840,7 +852,7 @@ const incidentFlow = [
   {key:'guestPhotos', ask:()=>`Do you have any photos of ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest or subject'}? Upload up to 3 photos.`, isPhotoUpload:true, photoType:'guest'},
   {key:'incidentDescription', editorProfile:'incidentReport', mountRecorder:true, ask:()=>`${formData.supervisorFirstName||'Officer'}, describe what happened in your own words — what you saw, what was said, what actions were taken. Don't worry about how it sounds; I'll clean it up.`},
   {key:'scenePhotos', ask:"Do you have any photos of the scene, location, or evidence? Upload up to 3 photos.", isPhotoUpload:true, photoType:'scene'},
-  {key:'guestStatement', ask:()=>`What did ${guestRef()} say about the incident? This becomes part of the official record.`, isGuestStatement:true},
+  {key:'guestStatement', ask:()=>`Did ${guestRef()} provide a statement about the incident?`, isGuestStatement:true},
   {key:'witnesses', ask:"Were there any witnesses — staff, security, or guests? If yes, share their names or descriptions.", isWitnesses:true},
   {key:'actionTaken', ask:"What action was taken?", quickReplies:['Verbal Warning','Written Warning','Ejection from Venue','Referred to Guest Services','Suspension','Termination','EMS Called','Detroit PD Called','No Action Taken','Other — specify'],isActionTaken:true},
   {key:'emsPolice', ask:"Was EMS or Detroit PD involved? If yes, provide any report number or officer name if available.", isEmsPolice:true},
@@ -851,7 +863,6 @@ const incidentFlow = [
 ];
 
 const recognitionFlow = [
-  {key:'supervisorTitle', ask:"What is your title or role?", quickReplies:['Event Security Supervisor','Event Security','Guest Services','Usher','Parking','SAFE Ops','Manager','Other — specify']},
   {key:'supervisorEmail', ask:()=>savedEmail ? `What is your email address? We have <strong>${savedEmail}</strong> on file — tap to use it, or type a new one.` : 'What is your email address? A copy of this recognition will be sent to you automatically.', isEmail:true, savedEmailChip:true},
   {key:'employeeName', ask:"Tell me the employee's name.", isEmployeeName:true},
   {key:'employeeRole', ask:"What is their role or position?", quickReplies:['Event Security','Guest Services','Usher','Parking','SAFE Ops','Supervisor','Manager','Other — specify']},
@@ -1008,7 +1019,7 @@ function sendViaMailto(isIncident){
   body += `================================\n`;
   body += `Incident Date: ${fd.incidentDate||fd.date}\nIncident Time: ${fd.incidentTime||fd.time}\n`;
   body += `Report Filed: ${fd.date} at ${fd.time} (Auto-Captured)\nVenue: ${fd.venue}\nReport Type: ${fd.formType}\n`;
-  body += `Prepared By: ${supName}\nTitle: ${fd.supervisorTitle||'N/A'}\nSupervisor Email: ${supEmail}\n\n`;
+  body += `Prepared By: ${supName}\nSupervisor Position: ${fd.positionHeld||'N/A'}\nSupervisor Email: ${supEmail}\n\n`;
 
   if(isIncident){
     body += `INCIDENT DETAILS\n----------------\n`;
@@ -1026,7 +1037,7 @@ function sendViaMailto(isIncident){
     body += `Hair Color: ${fd.guestHair||'Unknown'}\n`;
     body += `Clothing: ${fd.guestClothing||'Unknown'}\nDistinguishing Features: ${fd.guestFeatures||'Unknown'}\n\n`;
     body += `INCIDENT NARRATIVE\n------------------\n${fd.incidentDescription||'N/A'}\n\n`;
-    body += `Guest Statement: ${fd.guestStatement||'N/A'}\n`;
+    body += `Guest Statement: ${guestStatementText(fd)}\n`;
     body += `Guest Statement Detail: ${fd.guestStatementDetail||'N/A'}\n`;
     body += `Witnesses: ${fd.witnesses||'None'}\nAction Taken: ${fd.actionTaken||'N/A'}\n`;
     body += `EMS/Police: ${fd.emsPolice||'N/A'}\nGuest Transported: ${fd.guestTransported||'N/A'}\n\n`;
@@ -1074,7 +1085,7 @@ async function submitToSheets(isIncident) {
         safeOpsWho: fd.safeOpsWho || '',
         supervisorFirstName: fd.supervisorFirstName || '',
         supervisorLastName: fd.supervisorLastName || '',
-        supervisorTitle: fd.supervisorTitle || '',
+        supervisorTitle: fd.positionHeld || fd.supervisorTitle || '',
         supervisorEmail: fd.supervisorEmail || '',
         guestName: fd.guestName || '',
         guestSeat: fd.guestSeat || '',
@@ -1086,7 +1097,7 @@ async function submitToSheets(isIncident) {
         guestClothing: fd.guestClothing || '',
         guestFeatures: fd.guestFeatures || '',
         incidentDescription: fd.incidentDescription || '',
-        guestStatement: fd.guestStatement || '',
+        guestStatement: guestStatementText(fd), guestStatementStatus: fd.guestStatementStatus || '',
         guestStatementDetail: fd.guestStatementDetail || '',
         witnesses: fd.witnesses || '',
         actionTaken: fd.actionTaken || '',
@@ -2152,13 +2163,15 @@ async function recDeleteRecording(){
 async function recReRecord(){await recDeleteRecording();recSetStatus('Ready to record again.');recRenderControls();}
 
 function recBtn(label,fn,cls){return '<button type="button" class="rec-btn '+(cls||'')+'" onclick="'+fn+'">'+label+'</button>';}
+function recSendToAI(){ recSetStatus('Recording is saved locally, but automatic transcription is not enabled yet. Please type or dictate your statement in the text box below to send it for AP-style rewrite.'); inputArea.style.display='flex'; awaitingInput=true; var h=document.getElementById('inputHint'); if(h) h.style.display='block'; userInput.focus(); }
+function recTypeInstead(){ recSetStatus('Type or dictate your statement below.'); inputArea.style.display='flex'; awaitingInput=true; var h=document.getElementById('inputHint'); if(h) h.style.display='block'; userInput.focus(); }
 function recRenderControls(){
   const c=document.getElementById('recControls');if(!c)return;
   let html='';
   if(recState.status==='idle'){html=recBtn('● Record','recStart()','primary');}
   else if(recState.status==='recording'){html=recBtn('❙❙ Pause','recPause()')+recBtn('■ End','recEnd()','danger');}
   else if(recState.status==='paused'){html=recBtn('▶ Resume','recResume()','primary')+recBtn('■ End','recEnd()','danger');}
-  else if(recState.status==='saved'){html=recBtn('▶ Play','recPlayToggle()','primary')+recBtn('↻ Re-record','recReRecord()')+recBtn('🗑 Delete','recDeleteRecording()','danger');}
+  else if(recState.status==='saved'){html=recBtn('✨ Send to AP-Style Rewrite','recSendToAI()','primary')+recBtn('▶ Review','recPlayToggle()')+recBtn('↻ Re-record','recReRecord()')+recBtn('🗑 Delete','recDeleteRecording()','danger')+recBtn('✏ Type Instead','recTypeInstead()');}
   c.innerHTML=html;
 }
 async function recRestore(){
@@ -2179,7 +2192,7 @@ function mountRecorderCard(){
     '<div class="rec-status" id="recStatus">Optional: record your account. Stored only on this device.</div>'+
     '<div class="rec-controls" id="recControls"></div>'+
     '<audio id="recAudio" style="display:none"></audio>'+
-    '<div class="rec-note">You can also just type your description below — recording is optional in this version and is saved locally only (never uploaded).</div>';
+    '<div class="rec-note">After recording, tap ✨ Send to AP-Style Rewrite. Automatic transcription is not enabled yet, so please type or dictate your statement below to send it for AP-style rewrite. Saved locally only (never uploaded).</div>';
   chatWindow.appendChild(card);scrollBottom();
   recState.audioEl=card.querySelector('#recAudio');
   if(recState.audioEl){
@@ -2361,6 +2374,7 @@ async function runRecognitionSynthesis(){
 }
 
 // ── GUEST REFERENCE + SEAT PARSING (v1.9.3) ──────────────────────────────────
+function guestStatementText(fd){ if(fd.guestStatementDetail) return fd.guestStatementDetail; if(fd.guestStatementStatus) return fd.guestStatementStatus; return fd.guestStatement||'N/A'; }
 function guestRef(){
   return (formData.guestNameStatus==='Known' && formData.guestLastName) ? formData.guestLastName : 'the guest';
 }
@@ -2685,6 +2699,8 @@ async function askNextQuestion(){
       formData.guestSeatSection=sp.section; formData.guestSeatRow=sp.row; formData.guestSeatNumber=sp.number; formData.guestSeatRaw=sp.raw;
       formData.guestSeat=guestSeatDisplay(formData);
       addBubble(formData.guestSeat,'user');
+      showTyping(); await delay(300); removeTyping();
+      addBubble('Got it — '+formData.guestSeat+'.','ai');
       flowIndex++; await askNextQuestion();
     };
     return;
@@ -3004,14 +3020,28 @@ async function askNextQuestion(){
 
 
   if(step.isGuestStatement){
-    showInlineOptions(['Refused to Speak','Uncooperative'], async(val)=>{
-      addBubble(val,'user');
-      // These are pre-defined values — skip AI cleanup, save directly
-      formData.guestStatement = val;
+    inputArea.style.display='none'; awaitingInput=false;
+    showInlineOptions(['Refused to speak','No statement provided','Verbal statement','Written statement','Unknown'], async(choice)=>{
+      addBubble(choice,'user');
+      formData.guestStatementStatus=choice;
+      if(choice==='Verbal statement'||choice==='Written statement'){
+        showTyping(); await delay(300); removeTyping();
+        addBubble('What did '+guestRef()+" say? You can record it or type it below — I'll keep it in their own words and only fix grammar and spelling.",'ai');
+        if(choice==='Verbal statement' && typeof mountRecorderCard==='function' && typeof enableVoiceIncidentCapture!=='undefined' && enableVoiceIncidentCapture){ mountRecorderCard(); }
+        inputArea.style.display='flex'; awaitingInput=true; document.getElementById('inputHint').style.display='block'; userInput.focus();
+        sendInterceptor=async(raw)=>{
+          inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
+          showTyping(); await delay(400); removeTyping();
+          const cleaned=await cleanWithAI((raw||'').trim(), 'Guest statement for an incident at '+formData.venue+'.', 'description', 'guestStatement', 'witnessStatement');
+          formData.guestStatementDetail=cleaned||(raw||'').trim();
+          addBubble('Recorded statement:<br><br><em>"'+formData.guestStatementDetail+'"</em>','ai');
+          flowIndex++; await askNextQuestion();
+        };
+        return;
+      }
+      formData.guestStatementDetail='';
       flowIndex++; await askNextQuestion();
     });
-    inputArea.style.display='flex'; awaitingInput=true;
-    document.getElementById('inputHint').style.display='block';
     return;
   }
 
@@ -3075,7 +3105,7 @@ async function processAnswer(raw){
   }
 
   // title/role Other — reveal free text (do not store 'Other', stay on step)
-  if((key==='supervisorTitle'||key==='employeeRole') && raw==='Other — specify'){
+  if(key==='employeeRole' && raw==='Other — specify'){
     showTyping(); await delay(300); removeTyping();
     addBubble('Sure — type it below.','ai');
     inputArea.style.display='flex'; awaitingInput=true; userInput.focus();
@@ -3327,11 +3357,11 @@ Event: ${formData.eventName||'N/A'}
 Location: ${formData.incidentLocation||'N/A'}
 Incident Type: ${formData.incidentCategory||'N/A'}
 Severity: ${formData.incidentSeverity||'N/A'}
-Reporting Officer: ${supName}, ${formData.supervisorTitle||''}
+Reporting Officer: ${supName}, ${formData.positionHeld||''}
 Guest Name: ${formData.guestName||'Unknown'}
 Guest Description: ${formData.guestGender||''} ${formData.guestAgeRange||''} ${formData.guestHeight||''} ${formData.guestBuild||''} Hair: ${formData.guestHair||''} ${formData.guestHairStyle||''} Clothing: ${formData.guestClothing||''} Features: ${formData.guestFeatures||''}
 Incident Description: ${formData.incidentDescription||'N/A'}
-Guest Statement: ${formData.guestStatement||'N/A'}
+Guest Statement: ${guestStatementText(formData)}
 Witnesses: ${formData.witnesses||'None'}
 Action Taken: ${formData.actionTaken||'N/A'}
 EMS/Police: ${formData.emsPolice||'N/A'}
@@ -3428,7 +3458,7 @@ Return ONLY the narrative text. No preamble, no labels, no markdown.`;
       // Show signature on card
       const sigRow = document.createElement('div');
       sigRow.style.cssText='padding:10px 18px;border-top:1px solid var(--border);margin-top:8px;';
-      sigRow.innerHTML=`<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:4px;">Supervisor Signature</div><img src="${sigDataUrl}" style="max-width:200px;border:1px solid var(--border);border-radius:6px;display:block;"/><div style="font-size:13px;font-weight:700;color:var(--text-main);margin-top:6px;border-top:1.5px solid var(--border);padding-top:4px;">${supName}</div><div style="font-size:11px;color:var(--text-muted);">${formData.supervisorTitle||''}</div>`;
+      sigRow.innerHTML=`<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:4px;">Supervisor Signature</div><img src="${sigDataUrl}" style="max-width:200px;border:1px solid var(--border);border-radius:6px;display:block;"/><div style="font-size:13px;font-weight:700;color:var(--text-main);margin-top:6px;border-top:1.5px solid var(--border);padding-top:4px;">${supName}</div><div style="font-size:11px;color:var(--text-muted);">${formData.positionHeld||''}</div>`;
       card.appendChild(sigRow);
       // Show submit buttons — report is now locked
       const submitWrap = document.createElement('div');
@@ -3563,7 +3593,7 @@ function generatePDF(isIncident) {
   body += fv('Report Filed (Auto-Captured)', fd.date + ' at ' + fd.time);
   body += fv('Venue', fd.venue);
   body += fv('Prepared By', supName);
-  body += fv('Supervisor Title', fd.supervisorTitle);
+  body += fv('Supervisor Position', fd.positionHeld);
   body += fv('Supervisor Email', fd.supervisorEmail);
   body += fv('Report Type', fd.formType);
   body += `</div>`;
@@ -3612,7 +3642,7 @@ function generatePDF(isIncident) {
     }
     body += `<div class="field"><div class="field-label">Officer's Description</div><div class="field-value narrative">${fd.incidentDescription || 'Not provided'}</div></div>`;
     body += `<div class="field-grid" style="margin-top:10px;">`;
-    body += fv('Guest Account of Incident', fd.guestStatement);
+    body += fv('Guest Account of Incident', guestStatementText(fd));
     body += fv('Guest Statement Detail', fd.guestStatementDetail);
     body += fv('Witnesses', fd.witnesses);
     body += fv('Action Taken', fd.actionTaken);
@@ -3729,7 +3759,7 @@ function generateWord(isIncident) {
   content += `REPORT INFORMATION\n${'-'.repeat(30)}\n`;
   content += `Incident Date: ${fd.incidentDate||fd.date}\nIncident Time: ${fd.incidentTime||fd.time}\n`;
   content += `Venue: ${fd.venue}\nReport Type: ${fd.formType}\n`;
-  content += `Prepared By: ${supName}\nTitle: ${fd.supervisorTitle||'N/A'}\nEmail: ${fd.supervisorEmail||'N/A'}\n\n`;
+  content += `Prepared By: ${supName}\nSupervisor Position: ${fd.positionHeld||'N/A'}\nEmail: ${fd.supervisorEmail||'N/A'}\n\n`;
 
   if(isIncident){
     content += `INCIDENT DETAILS\n${'-'.repeat(30)}\n`;
@@ -3750,7 +3780,7 @@ function generateWord(isIncident) {
       content += `PROFESSIONAL NARRATIVE\n${'-'.repeat(30)}\n${fd.professionalNarrative}\n\n`;
     }
     content += `INCIDENT NARRATIVE\n${'-'.repeat(30)}\n${fd.incidentDescription||'N/A'}\n\n`;
-    content += `Guest Statement: ${fd.guestStatement||'N/A'}\n`;
+    content += `Guest Statement: ${guestStatementText(fd)}\n`;
     content += `Witnesses: ${fd.witnesses||'None'}\nAction Taken: ${fd.actionTaken||'N/A'}\n`;
     content += `EMS/Police: ${fd.emsPolice||'N/A'}\nGuest Transported: ${fd.guestTransported||'N/A'}\n\n`;
     content += `FOLLOW-UP\n${'-'.repeat(30)}\n`;
@@ -3817,7 +3847,7 @@ function buildFormHTML(isIncident,supName,empName){
   h+=ff('Report Filed (Auto-Captured)',fd.date+' at '+fd.time);
   h+=ff('Venue',fd.venue);
   h+=ff('Report Type',fd.formType); h+=ff('Prepared By',supName);
-  h+=ff('Supervisor Title',fd.supervisorTitle,'supervisorTitle'); h+=ff('Supervisor Email',fd.supervisorEmail);
+  h+=ff('Supervisor Position',fd.positionHeld); h+=ff('Supervisor Email',fd.supervisorEmail);
   { const _oc=operationalContextText(fd); if(_oc) h+=ff('Operational Context', _oc.replace(/\n/g,'<br>')); }
 
   if(isIncident){
@@ -3862,7 +3892,7 @@ function buildFormHTML(isIncident,supName,empName){
     } else {
       h+=ff('Scene Photos',fd.scenePhotos||'None');
     }
-    h+=ff('Guest Account of Incident',fd.guestStatement,'guestStatement');
+    h+=ff('Guest Account of Incident',guestStatementText(fd),'guestStatement');
     h+=ff('Guest Statement Detail',fd.guestStatementDetail,'guestStatementDetail');
     h+=ff('Witnesses',fd.witnesses,'witnesses');
     h+=ff('Action Taken',fd.actionTaken,'actionTaken');
