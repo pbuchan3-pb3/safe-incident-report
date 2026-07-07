@@ -4,13 +4,24 @@
   S.A.F.E. MANAGEMENT — AI-POWERED INCIDENT REPORTING SYSTEM
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
-  APPLICATION VERSION: 1.9.5   (Recorder 2.2 + clothing/timeline/feedback refinement)
+  APPLICATION VERSION: 1.9.6   (Recorder 2.2 final polish: review flow, collapse, motion)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
 
   CHANGELOG
   ----------------------------------------------------------------------------
+  v1.9.6 — Recorder 2.2 final polish.
+           - Fixed playback bug: reviewing no longer overwrites the "Send
+             Recording" label (Review button toggles its own label now).
+           - Send Recording collapses the recorder into a compact "✓ Recording
+             Attached" card (Length / Review / Replace) so it stops consuming space.
+           - Review flow never dead-ends: Send Recording is always the primary
+             action in the completed state.
+           - Lightweight motion: soft bubble fade-in (record pulse + progress
+             animation already present). No redesign.
+           - Locked baseline untouched: proxy, parsers, Editorial Engine,
+             Operational Context, diagnostics.
   v1.9.5 — Recorder 2.2 + interview refinement.
            - Recorder: idle shows only Record + Type Instead; Recording.../Paused/
              Complete states; buttons Record/Pause/Stop/Resume, and Review /
@@ -269,7 +280,10 @@
   .avatar{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;}
   .avatar.ai{background:var(--safe-navy);color:#fff;}
   .avatar.user{background:var(--safe-red);color:#fff;}
-  .bubble{max-width:84%;padding:11px 15px;border-radius:16px;font-size:15px;line-height:1.6;}
+  .bubble{max-width:84%;padding:11px 15px;border-radius:16px;font-size:15px;line-height:1.6;animation:bubbleIn .22s ease-out;}
+  @keyframes bubbleIn{from{opacity:0;transform:translateY(5px);}to{opacity:1;transform:translateY(0);}}
+  .rec-card.rec-collapsed{opacity:.96;}
+  .rec-card{transition:opacity .2s ease;}
   .bubble.ai{background:#fff;border:1px solid var(--border);border-bottom-left-radius:4px;color:var(--text-main);box-shadow:0 1px 3px rgba(0,0,0,.06);}
   .bubble.user{background:var(--safe-navy);color:#fff;border-bottom-right-radius:4px;}
 
@@ -551,7 +565,7 @@
     <div class="season-motto">Stronger Together</div>
   </div>
   <div class="header-right">
-    <div class="header-badge">v1.9.5</div>
+    <div class="header-badge">v1.9.6</div>
   </div>
 </header>
 
@@ -629,7 +643,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '1.9.5';
+const APP_VERSION = '1.9.6';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -2180,7 +2194,24 @@ async function recDeleteRecording(){
 async function recReRecord(){await recDeleteRecording();recSetStatus('Ready to record again.');recRenderControls();}
 
 function recBtn(label,fn,cls){return '<button type="button" class="rec-btn '+(cls||'')+'" onclick="'+fn+'">'+label+'</button>';}
-function recSendToAI(){ recSetStatus('Sending... Automatic transcription is not available yet — please type or dictate your statement below and Atlas will process it automatically.'); inputArea.style.display='flex'; awaitingInput=true; var h=document.getElementById('inputHint'); if(h) h.style.display='block'; userInput.focus(); }
+function recCollapse(){
+  const card=document.getElementById('recCard'); if(!card) return;
+  const dur=recFmt(recState.elapsedBeforePause||recElapsed());
+  card.classList.add('rec-collapsed');
+  card.innerHTML='<div class="rec-head"><span class="rec-dot"></span><span class="rec-title">\u2713 Recording Attached</span><span class="rec-timer">'+dur+'</span></div>'+
+    '<div class="rec-controls" id="recControls">'+recBtn('\u25b6 Review','recPlayToggle()')+recBtn('\u21bb Replace','recReRecord()')+'</div>'+
+    '<audio id="recAudio" style="display:none"></audio>';
+  recState.audioEl=card.querySelector('#recAudio');
+  recState.status='attached';
+}
+function recSendToAI(){
+  if(recState.status!=='saved'){ return; }
+  recCollapse();
+  showTyping(); delay(300).then(function(){ removeTyping();
+    addBubble("Your recording is attached (automatic transcription isn't available yet). Please type or dictate the statement below and I'll process it automatically.",'ai');
+    inputArea.style.display='flex'; awaitingInput=true; var h=document.getElementById('inputHint'); if(h) h.style.display='block'; userInput.focus();
+  });
+}
 function recTypeInstead(){ recSetStatus('Type or dictate your statement below.'); inputArea.style.display='flex'; awaitingInput=true; var h=document.getElementById('inputHint'); if(h) h.style.display='block'; userInput.focus(); }
 function recRenderControls(){
   const c=document.getElementById('recControls');if(!c)return;
@@ -2213,9 +2244,10 @@ function mountRecorderCard(){
   chatWindow.appendChild(card);scrollBottom();
   recState.audioEl=card.querySelector('#recAudio');
   if(recState.audioEl){
-    recState.audioEl.addEventListener('play',()=>{const b=document.querySelector('#recControls .rec-btn.primary');if(b&&recState.status==='saved')b.textContent='❙❙ Pause';});
-    recState.audioEl.addEventListener('pause',()=>{const b=document.querySelector('#recControls .rec-btn.primary');if(b&&recState.status==='saved')b.textContent='▶ Play';});
-    recState.audioEl.addEventListener('ended',()=>{const b=document.querySelector('#recControls .rec-btn.primary');if(b&&recState.status==='saved')b.textContent='▶ Play';});
+    function _recReviewBtn(){ return [].slice.call(document.querySelectorAll('#recControls .rec-btn')).filter(function(b){return /Review|Pause/.test(b.textContent);})[0]; }
+    recState.audioEl.addEventListener('play',()=>{const b=_recReviewBtn();if(b)b.textContent='❙❙ Pause';});
+    recState.audioEl.addEventListener('pause',()=>{const b=_recReviewBtn();if(b)b.textContent='▶ Review';});
+    recState.audioEl.addEventListener('ended',()=>{const b=_recReviewBtn();if(b)b.textContent='▶ Review';});
   }
   if(!recSupported()){recSetStatus('Recording is not supported on this device or browser — please type your description below.');recState.status='idle';const cc=document.getElementById('recControls');if(cc)cc.innerHTML='';return;}
   recState.status='idle';recRenderControls();
