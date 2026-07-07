@@ -4,13 +4,26 @@
   S.A.F.E. MANAGEMENT — AI-POWERED INCIDENT REPORTING SYSTEM
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
-  APPLICATION VERSION: 1.8.1   (Guided title/role tap-to-select)
+  APPLICATION VERSION: 1.9.0   (UX: supervisor full-name, larger editor, impact-focused synthesis)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
 
   CHANGELOG
   ----------------------------------------------------------------------------
+  v1.9.0 — UX refinement (batch A of the v1.9 directive).
+           - Supervisor name: single "What is your full name?" using the shared
+             parser + the same First/Middle/Last/Suffix confirmation as employees.
+           - Edit textarea ~2x taller (max-height 110->220) with auto-resize.
+           - Recognition synthesis emphasizes concrete operational impact over
+             generic praise (employeeRecognition profile content only).
+           - Warm greetings preserved (Good <time>; Nice to meet you).
+           - Batch B (this pass): adaptive follow-up questions (max 2, value-based),
+             observations run through the recognition writer, two-step edit confirm
+             (Looks Great / Continue Editing), accordion selected-at-top + tap-to-jump,
+             inline "Other" behavior capture, and a Recognition Summary before synthesis.
+           - Locked baseline untouched: proxy/transport/auth, recorder, parser
+             logic, diagnostics, Editorial Engine architecture, accordion, Incident.
   v1.8.1 — Guided title/role tap-to-select (regression audit outcome).
            - AUDIT: no existing quick-select buttons were lost; incident and
              recognition quick-selects are identical to the v1.0 baseline. The
@@ -212,7 +225,7 @@
   @keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.4;}30%{transform:translateY(-6px);opacity:1;}}
 
   .input-area{background:#fff;border-top:1px solid var(--border);padding:10px 14px;display:flex;gap:8px;align-items:flex-end;flex-shrink:0;}
-  .input-area textarea{flex:1;border:2px solid var(--border);border-radius:12px;padding:10px 13px;font-family:'Inter',sans-serif;font-size:15px;resize:none;min-height:44px;max-height:110px;outline:none;transition:border-color .2s;line-height:1.5;}
+  .input-area textarea{flex:1;border:2px solid var(--border);border-radius:12px;padding:10px 13px;font-family:'Inter',sans-serif;font-size:15px;resize:none;min-height:44px;max-height:220px;outline:none;transition:border-color .2s;line-height:1.5;}
   .input-area textarea:focus{border-color:var(--safe-navy);}
   .input-area textarea::placeholder{color:var(--text-muted);}
   .send-btn{background:var(--safe-navy);border:none;border-radius:10px;width:44px;height:44px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .2s;}
@@ -399,6 +412,14 @@
   .recval-controls{display:flex;gap:8px;}
   .recval-clear{flex:0 0 auto;min-height:48px;border:1.5px solid var(--border);background:#fff;color:var(--safe-navy);border-radius:10px;font-weight:700;font-size:13px;cursor:pointer;padding:8px 14px;}
   .recval-controls .recval-done{flex:1 1 auto;}
+
+  /* ── RECOGNITION ACCORDION v1.9 additions ── */
+  .recval-sum-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
+  .recval-sum-chip{border:1px solid var(--safe-navy);background:#fff;color:var(--safe-navy);border-radius:999px;font-size:11px;font-weight:700;padding:6px 10px;cursor:pointer;}
+  .recval-sum-chip .recval-sum-n{background:var(--safe-red);color:#fff;border-radius:8px;padding:0 5px;margin-left:3px;}
+  .recval-other{display:flex;gap:6px;width:100%;margin-top:6px;}
+  .recval-other-input{flex:1;border:1.5px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;min-height:40px;}
+  .recval-other-save{border:none;background:var(--safe-navy);color:#fff;border-radius:8px;font-weight:700;font-size:12px;padding:8px 12px;cursor:pointer;}
 </style>
 </head>
 <body>
@@ -464,7 +485,7 @@
     <div class="season-motto">Stronger Together</div>
   </div>
   <div class="header-right">
-    <div class="header-badge">v1.8.1</div>
+    <div class="header-badge">v1.9.0</div>
   </div>
 </header>
 
@@ -542,7 +563,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '1.8.1';
+const APP_VERSION = '1.9.0';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -858,7 +879,7 @@ function clearQuickReplies(){const qr=document.getElementById('quickReplies');if
 // ── EDITORIAL ENGINE (v1.6.0): modular writing profiles ──────────────────────
 const EDITOR_PROFILES = {
   employeeRecognition: {
-    system: "You are an HR recognition specialist writing employee recognition narratives for S.A.F.E. Management at Ford Field. Rewrite the supervisor's rough notes into polished, warm, professional prose suitable for HR, management, and employee-recognition records. Refer to the employee by full name on first reference and by last name thereafter. NEVER use 'subject', 'female subject', 'male subject', 'individual', or any police-report or incident-report phrasing. Emphasize guest service, initiative, teamwork, professionalism, and positive operational impact where the notes support it. Preserve every fact exactly; never invent, add, exaggerate, or omit. Keep it warm, professional and concise. Return ONLY the rewritten narrative.",
+    system: "You are an HR recognition specialist writing employee recognition narratives for S.A.F.E. Management at Ford Field. Rewrite the supervisor's rough notes into polished, warm, professional prose suitable for HR, management, and employee-recognition records. Refer to the employee by full name on first reference and by last name thereafter. NEVER use 'subject', 'female subject', 'male subject', 'individual', or any police-report or incident-report phrasing. Emphasize concrete operational impact — improved guest experience, smoother operations, support to teammates, stronger access control, enhanced safety, or reinforced professionalism — rather than generic praise, and only where the notes support it. Preserve every fact exactly; never invent, add, exaggerate, or omit. Keep it warm, professional and concise. Return ONLY the rewritten narrative.",
     instruction: function(rawText){ return 'Employee being recognized: ' + (formData.employeeDisplayName||'the employee') + (formData.employeeLastName ? (' Use the last name ' + formData.employeeLastName + ' after the first full-name reference.') : '.') + ' Rewrite these recognition notes as a warm, professional HR recognition narrative per the instructions. Keep all facts exactly; invent nothing. Return only the rewritten text. Input: ' + rawText; }
   },
   incidentReport: {
@@ -2178,6 +2199,67 @@ function observedBehaviorsText(fd){
   return keys.map(function(k){return k+' — '+b[k].join('; ')+'.';}).join('\n');
 }
 
+const ADAPTIVE_QUESTIONS = {
+  'Guest Service': { q:'Approximately how many guests were assisted?', options:['A few','Several','Many','Dozens or more'] },
+  'Teamwork':      { q:'Did the employee volunteer, or were they asked?', options:['Volunteered','Was asked'] },
+  'Leadership':    { q:'Did the employee assist or guide newer staff?', options:['Yes','No'] },
+  'Initiative':    { q:'Did the employee take action before being directed?', options:['Yes','No'] }
+};
+
+async function runAdaptiveQuestions(vals){
+  const picked=[];
+  ['Guest Service','Initiative','Teamwork','Leadership'].forEach(function(v){
+    if(picked.length<2 && vals.indexOf(v)!==-1 && ADAPTIVE_QUESTIONS[v]) picked.push(v);
+  });
+  formData.recognitionAdaptive=[];
+  async function askOne(i){
+    if(i>=picked.length){ flowIndex++; await askNextQuestion(); return; }
+    const cfg=ADAPTIVE_QUESTIONS[picked[i]];
+    showTyping(); await delay(500); removeTyping();
+    addBubble(cfg.q,'ai');
+    addQuickReplies(cfg.options, async function(ans){
+      clearQuickReplies(); addBubble(ans,'user');
+      formData.recognitionAdaptive.push(cfg.q+' '+ans);
+      await askOne(i+1);
+    });
+  }
+  await askOne(0);
+}
+
+async function showRecognitionSummary(){
+  inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
+  const beh=formData.recognitionValueBehaviors||{};
+  const behLines=Object.keys(beh).filter(function(k){return beh[k]&&beh[k].length;}).map(function(k){return k+' — '+beh[k].join('; ');});
+  let html='<b>Recognition Summary</b><br>';
+  html+='<b>Employee:</b> '+(formData.employeeDisplayName||formData.employeeName||'—')+'<br>';
+  html+='<b>Values Selected:</b> '+(formData.recognitionValues||'None')+'<br>';
+  html+='<b>Observed Behaviors:</b> '+(behLines.length?('<br>'+behLines.join('<br>')):'None')+'<br>';
+  if(formData.recognitionAdaptive&&formData.recognitionAdaptive.length) html+='<b>Follow-up:</b> '+formData.recognitionAdaptive.join(' · ')+'<br>';
+  html+='<b>Additional Observations:</b> '+(formData.recognitionObservations&&formData.recognitionObservations!=='None'?formData.recognitionObservations:'None');
+  addBubble(html,'ai');
+  addQuickReplies(['Generate Final Recognition'], async function(ans){
+    clearQuickReplies(); addBubble(ans,'user');
+    await runRecognitionSynthesis();
+  });
+}
+
+function openRecognitionEditor(text){
+  addBubble('Edit it directly, then tap send:','ai');
+  userInput.value=text; userInput.style.height='auto'; userInput.style.height=Math.min(userInput.scrollHeight,220)+'px';
+  inputArea.style.display='flex'; awaitingInput=true;
+  sendInterceptor=async(edited)=>{
+    const val=(edited||'').trim(); inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
+    formData.recognitionNarrative=val;
+    showTyping(); await delay(300); removeTyping();
+    addBubble('Updated:<br><br><em>"'+val+'"</em>','ai');
+    addQuickReplies(['✓ Looks Great','✎ Continue Editing'], async(ans)=>{
+      clearQuickReplies(); addBubble(ans,'user');
+      if(ans.indexOf('Looks Great')!==-1){ flowIndex++; await askNextQuestion(); }
+      else { openRecognitionEditor(formData.recognitionNarrative); }
+    });
+  };
+}
+
 async function runRecognitionSynthesis(){
   inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
   const parts=[];
@@ -2185,6 +2267,7 @@ async function runRecognitionSynthesis(){
   if(formData.recognitionValues) parts.push('S.A.F.E. values demonstrated (weave in naturally, do not list): '+formData.recognitionValues);
   const _bt=observedBehaviorsText(formData); if(_bt) parts.push('Specific observed behaviors to weave in naturally (do not list as bullets): '+_bt.replace(/\n/g,' | '));
   if(formData.recognitionObservations && formData.recognitionObservations!=='None') parts.push('Additional observations: '+formData.recognitionObservations);
+  if(formData.recognitionAdaptive && formData.recognitionAdaptive.length) parts.push('Context from follow-up questions (use for operational detail, do not quote verbatim): '+formData.recognitionAdaptive.join('; '));
   const composed=parts.join('\n');
   showTyping(); speak('Putting the recognition together'); addBubble('Putting your recognition together...','ai');
   const ctx='This is an employee recognition report for '+formData.venue+'.';
@@ -2195,12 +2278,7 @@ async function runRecognitionSynthesis(){
   addQuickReplies(['Yes, perfect','✏️ Edit'], async(ans)=>{
     clearQuickReplies(); addBubble(ans,'user');
     if(ans.startsWith('Yes')){ flowIndex++; await askNextQuestion(); }
-    else {
-      addBubble('Edit it directly, then tap send:','ai');
-      userInput.value=woven; userInput.style.height='auto'; userInput.style.height=Math.min(userInput.scrollHeight,110)+'px';
-      inputArea.style.display='flex'; awaitingInput=true;
-      sendInterceptor=async(edited)=>{ formData.recognitionNarrative=(edited||'').trim(); inputArea.style.display='none'; awaitingInput=false; flowIndex++; await askNextQuestion(); };
-    }
+    else { openRecognitionEditor(woven); }
   });
 }
 
@@ -2548,16 +2626,28 @@ async function askNextQuestion(){
     const CFG=RECOGNITION_VALUE_CONFIG;
     const selectedVals=new Set();
     const selectedBeh={};
+    const catRefs={};
     function ensureBeh(l){ if(!selectedBeh[l]) selectedBeh[l]=new Set(); return selectedBeh[l]; }
     const wrap=document.createElement('div'); wrap.className='recval-wrap';
     const help=document.createElement('div'); help.className='recval-help';
     help.textContent='Select the values that best describe what you observed. You can expand a value to choose specific behaviors.';
     wrap.appendChild(help);
-    const summary=document.createElement('div'); summary.className='recval-summary';
+    const summary=document.createElement('div'); summary.className='recval-summary'; wrap.appendChild(summary);
+    function jumpTo(label){ const r=catRefs[label]; if(!r) return; if(r.panel.style.display==='none') r.head.onclick(); r.row.scrollIntoView({behavior:'smooth',block:'center'}); }
     function updateSummary(){
       const vals=[...selectedVals];
-      if(!vals.length){ summary.innerHTML='<b>Selected S.A.F.E. Values</b><br><span class="recval-sum-empty">None yet</span>'; }
-      else { summary.innerHTML='<b>Selected S.A.F.E. Values</b><br>'+vals.map(function(v){ const n=(selectedBeh[v]?selectedBeh[v].size:0); return v+(n?(' <span class="recval-sum-n">'+n+' behavior'+(n>1?'s':'')+'</span>'):''); }).join(', '); }
+      if(!vals.length){ summary.innerHTML='<b>Selected Values</b><br><span class="recval-sum-empty">None yet — tap a value below.</span>'; }
+      else {
+        summary.innerHTML='<b>Selected Values</b>';
+        const list=document.createElement('div'); list.className='recval-sum-list';
+        vals.forEach(function(v){ const n=(selectedBeh[v]?selectedBeh[v].size:0);
+          const chip=document.createElement('button'); chip.type='button'; chip.className='recval-sum-chip';
+          chip.innerHTML='✓ '+v+(n?(' <span class="recval-sum-n">'+n+'</span>'):'');
+          chip.onclick=function(){ jumpTo(v); };
+          list.appendChild(chip);
+        });
+        summary.appendChild(list);
+      }
       done.disabled=selectedVals.size===0;
     }
     CFG.forEach(function(cat){
@@ -2565,12 +2655,31 @@ async function askNextQuestion(){
       const head=document.createElement('button'); head.type='button'; head.className='recval-cat';
       head.innerHTML='<span>'+cat.emoji+' '+cat.label+'</span><span class="recval-caret">▾</span>';
       const panel=document.createElement('div'); panel.className='recval-panel'; panel.style.display='none';
+      let otherBox=null;
       function selectHead(){ selectedVals.add(cat.label); head.classList.add('sel'); head.style.background=cat.color; head.style.borderColor=cat.color; }
       function deselectHead(){ selectedVals.delete(cat.label); head.classList.remove('sel'); head.style.background=''; head.style.borderColor=''; }
       cat.behaviors.forEach(function(bh){
         const chip=document.createElement('button'); chip.type='button'; chip.className='recval-chip'; chip.textContent=bh;
         chip.onclick=function(ev){ ev.stopPropagation();
           const set=ensureBeh(cat.label);
+          if(bh==='Other'){
+            if(chip.classList.contains('sel')){
+              chip.classList.remove('sel');
+              [...set].forEach(function(x){ if(x.indexOf('Other:')===0) set.delete(x); });
+              if(otherBox){ otherBox.remove(); otherBox=null; }
+              updateSummary(); return;
+            }
+            chip.classList.add('sel'); if(!selectedVals.has(cat.label)) selectHead();
+            if(!otherBox){
+              otherBox=document.createElement('div'); otherBox.className='recval-other';
+              const ta=document.createElement('input'); ta.type='text'; ta.className='recval-other-input'; ta.placeholder='Describe this behavior...';
+              const sv=document.createElement('button'); sv.type='button'; sv.className='recval-other-save'; sv.textContent='Add';
+              sv.onclick=function(){ const t=ta.value.trim(); if(!t) return; [...set].forEach(function(x){ if(x.indexOf('Other:')===0) set.delete(x); }); set.add('Other: '+t); ta.disabled=true; sv.textContent='Added ✓'; sv.disabled=true; updateSummary(); };
+              ta.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); sv.onclick(); } });
+              otherBox.appendChild(ta); otherBox.appendChild(sv); panel.appendChild(otherBox); ta.focus();
+            }
+            updateSummary(); return;
+          }
           if(set.has(bh)){ set.delete(bh); chip.classList.remove('sel'); }
           else { set.add(bh); chip.classList.add('sel'); if(!selectedVals.has(cat.label)) selectHead(); }
           updateSummary();
@@ -2588,13 +2697,14 @@ async function askNextQuestion(){
         updateSummary();
       };
       row.appendChild(head); row.appendChild(panel); wrap.appendChild(row);
+      catRefs[cat.label]={head:head,panel:panel,row:row};
     });
-    wrap.appendChild(summary);
     const controls=document.createElement('div'); controls.className='recval-controls';
     const clear=document.createElement('button'); clear.type='button'; clear.className='recval-clear'; clear.textContent='Clear selections';
     clear.onclick=function(){ selectedVals.clear(); for(const k in selectedBeh) delete selectedBeh[k];
       wrap.querySelectorAll('.recval-cat').forEach(function(hh){hh.classList.remove('sel');hh.style.background='';hh.style.borderColor='';});
       wrap.querySelectorAll('.recval-chip').forEach(function(c){c.classList.remove('sel');});
+      wrap.querySelectorAll('.recval-other').forEach(function(o){o.remove();});
       wrap.querySelectorAll('.recval-panel').forEach(function(pp){pp.style.display='none';});
       updateSummary();
     };
@@ -2608,7 +2718,7 @@ async function askNextQuestion(){
       formData.recognitionValueBehaviors=beh;
       const behCount=Object.keys(beh).reduce(function(a,k){return a+beh[k].length;},0);
       addBubble(vals.length?(vals.join(', ')+(behCount?(' ('+behCount+' behavior'+(behCount>1?'s':'')+')'):'')):'None selected','user');
-      flowIndex++; await askNextQuestion();
+      await runAdaptiveQuestions(vals);
     };
     controls.appendChild(clear); controls.appendChild(done);
     wrap.appendChild(controls);
@@ -2616,7 +2726,7 @@ async function askNextQuestion(){
     return;
   }
 
-  if(step.isRecognitionObservations){
+    if(step.isRecognitionObservations){
     inputArea.style.display='flex'; awaitingInput=true;
     document.getElementById('inputHint').style.display='block';
     userInput.focus();
@@ -2624,12 +2734,16 @@ async function askNextQuestion(){
       clearQuickReplies(); addBubble(ans,'user'); sendInterceptor=null;
       inputArea.style.display='none'; awaitingInput=false;
       formData.recognitionObservations='None';
-      await runRecognitionSynthesis();
+      await showRecognitionSummary();
     });
     sendInterceptor=async(raw)=>{
       clearQuickReplies();
-      formData.recognitionObservations=(raw||'').trim();
-      await runRecognitionSynthesis();
+      inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
+      const _obsRaw=(raw||'').trim();
+      showTyping(); await delay(400); removeTyping();
+      const _obsClean=await cleanWithAI(_obsRaw, 'Employee recognition additional observations for '+formData.venue+'.', 'field', 'recognitionObservations', 'employeeRecognition');
+      formData.recognitionObservations=_obsClean||_obsRaw;
+      await showRecognitionSummary();
     };
     return;
   }
@@ -2893,7 +3007,7 @@ async function processAnswer(raw){
           showTyping(); await delay(300); removeTyping();
           addBubble('Here is the text — edit it directly, then tap send:','ai');
           userInput.value=cleaned; userInput.style.height='auto';
-          userInput.style.height=Math.min(userInput.scrollHeight,110)+'px';
+          userInput.style.height=Math.min(userInput.scrollHeight,220)+'px';
           inputArea.style.display='flex'; awaitingInput=true;
           sendInterceptor=async(_intercepted)=>{
             const edited=_intercepted.trim();
@@ -2946,7 +3060,7 @@ async function processAnswer(raw){
         addBubble('Here is the text — edit it directly, then tap send:','ai');
         userInput.value=cleaned;
         userInput.style.height='auto';
-        userInput.style.height=Math.min(userInput.scrollHeight,110)+'px';
+        userInput.style.height=Math.min(userInput.scrollHeight,220)+'px';
         inputArea.style.display='flex'; awaitingInput=true;
         sendInterceptor=async(_intercepted)=>{
           const edited=_intercepted.trim();
@@ -3574,7 +3688,7 @@ async function handleSend(){
 }
 
 userInput.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();handleSend();}});
-userInput.addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,110)+'px';});
+userInput.addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,220)+'px';});
 
 // ── INIT ───────────────────────────────────────────────────────────────────
 function getTimeOfDay(){const h=new Date().getHours();return h<12?'morning':h<17?'afternoon':'evening';}
@@ -3780,76 +3894,68 @@ async function startFlow(){
   showVoiceFloat();
   activeFlow=baseFlow; flowIndex=0;
   showTyping(); await delay(700); removeTyping();
-  addBubble(`Good ${getTimeOfDay()}. I've recorded right now as the <strong>report filing time: ${formData.date} at ${formData.time}</strong>. This timestamp is locked for HR records.<br><br>Before we begin — what is your first name?`,'ai');
-  inputArea.style.display='flex';
-  awaitingInput=true;
+  addBubble(`Good ${getTimeOfDay()}. I've recorded right now as the <strong>report filing time: ${formData.date} at ${formData.time}</strong>. This timestamp is locked for HR records.<br><br>To get started — what is your full name?`,'ai');
+  armSupervisorName();
+}
+
+function armSupervisorName(){
+  inputArea.style.display='flex'; awaitingInput=true;
   document.getElementById('inputHint').style.display='block';
   userInput.focus();
-  sendInterceptor=async(firstName)=>{
-    const name = firstName.trim().split(' ')[0];
-    
-    formData.supervisorFirstName = name;
-    inputArea.style.display='none'; awaitingInput=false;
-    sendInterceptor=null;
-    // Ask last name
-    showTyping(); await delay(600); removeTyping();
-    addBubble(`Nice to meet you, <strong>${name}</strong>. And your last name?`,'ai');
-    inputArea.style.display='flex'; awaitingInput=true;
-    document.getElementById('inputHint').style.display='block';
-    userInput.focus();
-    sendInterceptor=async(lastName)=>{
-      
-      formData.supervisorLastName = lastName.trim();
-      inputArea.style.display='none'; awaitingInput=false;
-      sendInterceptor=null;
-      // Now ask when incident occurred
-      showTyping(); await delay(600); removeTyping();
-      addBubble(`Thanks, <strong>${name}</strong>. When did this occur?`,'ai');
-      await delay(300);
-    addQuickReplies(['Just now','Earlier today','Yesterday','Another date'],async(val)=>{
-      clearQuickReplies(); addBubble(val,'user');
-      if(val==='Just now'){
-        formData.incidentDate=formData.date;
-        formData.incidentTime=formData.time;
-        await askNextQuestion();
-      } else if(val==='Earlier today'){
-        showTyping(); await delay(500); removeTyping();
-        addBubble("Please select the time the incident occurred.",'ai');
-        const defaultDt = new Date();
-        showDateTimePicker(defaultDt, async(dateStr, timeStr)=>{
-          addBubble(`📅 ${dateStr} at ${timeStr}`,'user');
-          formData.incidentDate = dateStr;
-          formData.incidentTime = timeStr;
-          await askNextQuestion();
-        });
-      } else if(val==='Yesterday'){
-        showTyping(); await delay(500); removeTyping();
-        addBubble("Please select the date and time the incident occurred.",'ai');
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate()-1);
-        showDateTimePicker(yesterday, async(dateStr, timeStr)=>{
-          addBubble(`📅 ${dateStr} at ${timeStr}`,'user');
-          formData.incidentDate = dateStr;
-          formData.incidentTime = timeStr;
-          await askNextQuestion();
-        });
+  sendInterceptor=async(rawName)=>{
+    const parsed=parseName(rawName);
+    if(!parsed.first){
+      showTyping(); await delay(300); removeTyping();
+      addBubble("I didn't catch a name — please type your full name.",'ai');
+      armSupervisorName(); return;
+    }
+    inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
+    showTyping(); await delay(500); removeTyping();
+    addBubble(`I found:<br>First: <strong>${parsed.first}</strong><br>Middle: <strong>${parsed.middle||'None'}</strong><br>Last: <strong>${parsed.last||'None'}</strong><br>Suffix: <strong>${parsed.suffix||'None'}</strong><br><br>Use this?`,'ai');
+    addQuickReplies(['✅ Yes','✏️ Edit'], async(ans)=>{
+      clearQuickReplies(); addBubble(ans,'user');
+      if(ans.includes('Yes')){
+        formData.supervisorFirstName=parsed.first;
+        formData.supervisorMiddle=parsed.middle;
+        formData.supervisorLastName=parsed.last;
+        formData.supervisorSuffix=parsed.suffix;
+        formData.supervisorDisplayName=parsed.displayName;
+        await askSupervisorTiming(parsed.first);
       } else {
-        showTyping(); await delay(500); removeTyping();
-        addBubble("Please select the date and time the incident occurred.",'ai');
-        const defaultDt = new Date();
-        showDateTimePicker(defaultDt, async(dateStr, timeStr)=>{
-          addBubble(`📅 ${dateStr} at ${timeStr}`,'user');
-          formData.incidentDate = dateStr;
-          formData.incidentTime = timeStr;
-          await askNextQuestion();
-        });
+        showTyping(); await delay(300); removeTyping();
+        addBubble("No problem — type your full name again and I'll re-check it.",'ai');
+        armSupervisorName();
       }
     });
-      inputArea.style.display='flex';
-      awaitingInput=true;
-      document.getElementById('inputHint').style.display='block';
-    };
   };
+}
+
+async function askSupervisorTiming(name){
+  showTyping(); await delay(600); removeTyping();
+  addBubble(`Nice to meet you, <strong>${name}</strong>. When did this occur?`,'ai');
+  await delay(300);
+  addQuickReplies(['Just now','Earlier today','Yesterday','Another date'],async(val)=>{
+    clearQuickReplies(); addBubble(val,'user');
+    if(val==='Just now'){
+      formData.incidentDate=formData.date; formData.incidentTime=formData.time;
+      await askNextQuestion();
+    } else if(val==='Earlier today'){
+      showTyping(); await delay(500); removeTyping();
+      addBubble("Please select the time the incident occurred.",'ai');
+      const defaultDt=new Date();
+      showDateTimePicker(defaultDt, async(dateStr,timeStr)=>{ addBubble(`📅 ${dateStr} at ${timeStr}`,'user'); formData.incidentDate=dateStr; formData.incidentTime=timeStr; await askNextQuestion(); });
+    } else if(val==='Yesterday'){
+      showTyping(); await delay(500); removeTyping();
+      addBubble("Please select the date and time the incident occurred.",'ai');
+      const yesterday=new Date(); yesterday.setDate(yesterday.getDate()-1);
+      showDateTimePicker(yesterday, async(dateStr,timeStr)=>{ addBubble(`📅 ${dateStr} at ${timeStr}`,'user'); formData.incidentDate=dateStr; formData.incidentTime=timeStr; await askNextQuestion(); });
+    } else {
+      showTyping(); await delay(500); removeTyping();
+      addBubble("Please select the date and time the incident occurred.",'ai');
+      const defaultDt=new Date();
+      showDateTimePicker(defaultDt, async(dateStr,timeStr)=>{ addBubble(`📅 ${dateStr} at ${timeStr}`,'user'); formData.incidentDate=dateStr; formData.incidentTime=timeStr; await askNextQuestion(); });
+    }
+  });
 }
 init();
 </script>
