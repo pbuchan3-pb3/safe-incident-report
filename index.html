@@ -4,13 +4,28 @@
   S.A.F.E. MANAGEMENT — AI-POWERED INCIDENT REPORTING SYSTEM
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
-  APPLICATION VERSION: 1.9.2   (Operational Context Engine)
+  APPLICATION VERSION: 1.9.3   (Incident guest/seat/clothing bug fixes)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
 
   CHANGELOG
   ----------------------------------------------------------------------------
+  v1.9.3 — Incident stabilization (critical live-testing bug fixes).
+           - Guest name flow split into Full name / Only last name / Unknown /
+             Guest refused (distinct guestNameStatus); typed answers now captured
+             by the handler, not leaked to processAnswer.
+           - Seat parsing: Section/Row/Seat parsed into guestSeatSection/Row/Number
+             + guestSeatRaw; seat text can no longer overwrite the guest name.
+           - Physical-description prompts use a clean guest reference (last name
+             if known, otherwise "the guest"); fixed "Let's capture ...'s appearance".
+           - Clothing rewrite strips leading "She wore/He wore" and no longer
+             duplicates phrasing.
+           - Deferred to next batch (larger features): shared Ford Field location
+             tree (#1-2), recorder overhaul + status + send-to-AI (#8-9), recorder
+             on all narrative fields (#10), guest-statement redesign (#11-12).
+           - Locked baseline untouched: proxy, recorder core, name parser, AP
+             engine, Recognition/Operational Context architecture, diagnostics.
   v1.9.2 — Operational Context Engine (config-driven, venue-aware, additive).
            - Centralized POSITION_CONFIG, ASSIGNMENT_CONFIG (grouped; sections
              101-146 generated), VENUE_CONFIG (Ford Field) — configuration over code.
@@ -506,7 +521,7 @@
     <div class="season-motto">Stronger Together</div>
   </div>
   <div class="header-right">
-    <div class="header-badge">v1.9.2</div>
+    <div class="header-badge">v1.9.3</div>
   </div>
 </header>
 
@@ -584,7 +599,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '1.9.2';
+const APP_VERSION = '1.9.3';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -813,19 +828,19 @@ const incidentFlow = [
   {key:'safeOpsContacted', ask:"Was Safe Ops or a manager contacted about this incident?", quickReplies:['Yes — contacted Safe Ops','Yes — contacted my manager','Both contacted','No — not contacted']},
   {key:'safeOpsWho', ask:"Who specifically was contacted? Please provide their name or title.", skipIf:(fd)=>fd.safeOpsContacted&&fd.safeOpsContacted.startsWith('No')},
   {key:'guestName', ask:"What is the guest's first name? If you only have their last name, that's fine too.", isGuestName:true},
-  {key:'guestSeat', ask:()=>`What is ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} seat location? Please provide Section, Row, and Seat number.`, isGuestSeat:true},
-  {key:'guestGender', ask:()=>`Let's capture ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} physical appearance. First — what is their gender?`, isAppearanceGender:true},
-  {key:'guestAgeRange', ask:()=>`What is ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} approximate age range?`, isAppearanceAge:true},
-  {key:'guestHeight', ask:()=>`How would you describe ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} height?`, isAppearanceHeight:true},
-  {key:'guestBuild', ask:()=>`How would you describe ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} build?`, isAppearanceBuild:true},
-  {key:'guestHair', ask:()=>`What is ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} hair color?`, isAppearanceHair:true},
-  {key:'guestHairStyle', ask:()=>`How would you describe ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName+"'s":'the guest\'s'} hair style?`, isAppearanceHairStyle:true},
-  {key:'guestClothing', ask:()=>`What was ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest'} wearing? Describe the shirt, jacket, hat, or any other distinctive clothing.`},
-  {key:'guestFeatures', ask:()=>`Any distinguishing features for ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest'}? Select all that apply.`, isAppearanceFeatures:true},
+  {key:'guestSeat', ask:()=>`What is ${guestPoss()} seat location? Please provide Section, Row, and Seat number.`, isGuestSeat:true},
+  {key:'guestGender', ask:()=>`Let's document ${guestPoss()} physical description for identification purposes. First — what is their gender?`, isAppearanceGender:true},
+  {key:'guestAgeRange', ask:()=>`What is ${guestPoss()} approximate age range?`, isAppearanceAge:true},
+  {key:'guestHeight', ask:()=>`How would you describe ${guestPoss()} height?`, isAppearanceHeight:true},
+  {key:'guestBuild', ask:()=>`How would you describe ${guestPoss()} build?`, isAppearanceBuild:true},
+  {key:'guestHair', ask:()=>`What is ${guestPoss()} hair color?`, isAppearanceHair:true},
+  {key:'guestHairStyle', ask:()=>`How would you describe ${guestPoss()} hair style?`, isAppearanceHairStyle:true},
+  {key:'guestClothing', ask:()=>`What was ${guestRef()} wearing? Describe the shirt, jacket, hat, or any other distinctive clothing.`},
+  {key:'guestFeatures', ask:()=>`Any distinguishing features for ${guestRef()}? Select all that apply.`, isAppearanceFeatures:true},
   {key:'guestPhotos', ask:()=>`Do you have any photos of ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest or subject'}? Upload up to 3 photos.`, isPhotoUpload:true, photoType:'guest'},
   {key:'incidentDescription', editorProfile:'incidentReport', mountRecorder:true, ask:()=>`${formData.supervisorFirstName||'Officer'}, describe what happened in your own words — what you saw, what was said, what actions were taken. Don't worry about how it sounds; I'll clean it up.`},
   {key:'scenePhotos', ask:"Do you have any photos of the scene, location, or evidence? Upload up to 3 photos.", isPhotoUpload:true, photoType:'scene'},
-  {key:'guestStatement', ask:()=>`What did ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest'} say about the incident? This becomes part of the official record.`, isGuestStatement:true},
+  {key:'guestStatement', ask:()=>`What did ${guestRef()} say about the incident? This becomes part of the official record.`, isGuestStatement:true},
   {key:'witnesses', ask:"Were there any witnesses — staff, security, or guests? If yes, share their names or descriptions.", isWitnesses:true},
   {key:'actionTaken', ask:"What action was taken?", quickReplies:['Verbal Warning','Written Warning','Ejection from Venue','Referred to Guest Services','Suspension','Termination','EMS Called','Detroit PD Called','No Action Taken','Other — specify'],isActionTaken:true},
   {key:'emsPolice', ask:"Was EMS or Detroit PD involved? If yes, provide any report number or officer name if available.", isEmsPolice:true},
@@ -961,7 +976,7 @@ async function cleanWithAI(rawText, context, fieldType, fieldKey, editorProfile)
       body:JSON.stringify({
         model:"claude-sonnet-4-6",
         max_tokens:300,
-        system: _profile ? _profile.system : "You are a professional HR and security report writer for S.A.F.E. Management. Rewrite field entries into polished AP style suitable for HR, legal, and management review. For clothing: start with 'The subject was wearing...'. For names/witnesses: format as 'Witnesses included [name] ([role])'. Never start with 'Witnesses included' for clothing fields. Preserve all facts exactly; invent nothing. Return ONLY the rewritten text.",
+        system: _profile ? _profile.system : "You are a professional HR and security report writer for S.A.F.E. Management. Rewrite field entries into polished AP style suitable for HR, legal, and management review. For clothing: rewrite as 'The subject was wearing <items>'. Strip any leading first-person or narrative verb from the input (e.g. 'She wore', 'He wore', 'They wore', 'I saw') and never duplicate the input's wording; clean nonstandard phrasing into professional language without overstating. For names/witnesses: format as 'Witnesses included [name] ([role])'. Never start with 'Witnesses included' for clothing fields. Preserve all facts exactly; invent nothing. Return ONLY the rewritten text.",
         messages:[{role:"user",content:
           _profile ? _profile.instruction(rawText) : (fieldInstruction + ' Keep all facts exactly as stated. Return ONLY the rewritten text. No preamble, no labels, no quotation marks.\n\nInput: ' + rawText)
         }]
@@ -2345,6 +2360,27 @@ async function runRecognitionSynthesis(){
   });
 }
 
+// ── GUEST REFERENCE + SEAT PARSING (v1.9.3) ──────────────────────────────────
+function guestRef(){
+  return (formData.guestNameStatus==='Known' && formData.guestLastName) ? formData.guestLastName : 'the guest';
+}
+function guestPoss(){
+  const r=guestRef();
+  return r==='the guest' ? "the guest's" : (r+"'s");
+}
+function parseSeat(raw){
+  const t=(raw||'').trim();
+  const sec=(t.match(/section\s+([A-Za-z0-9]+)/i)||[])[1]||'';
+  const row=(t.match(/row\s+([A-Za-z0-9]+)/i)||[])[1]||'';
+  let seat=(t.match(/seat\s+(?:number\s+)?(\d+[A-Za-z]?)/i)||[])[1]||'';
+  if(!seat && /don'?t know|unknown|not sure|no seat|didn'?t|couldn'?t/i.test(t)) seat='Unknown';
+  return { section:sec, row:row, number:(seat||'Unknown'), raw:t };
+}
+function guestSeatDisplay(fd){
+  if(!fd.guestSeatRaw && !fd.guestSeatSection) return fd.guestSeat||'Unknown';
+  return [fd.guestSeatSection?('Section '+fd.guestSeatSection):'', fd.guestSeatRow?('Row '+fd.guestSeatRow):'', 'Seat '+(fd.guestSeatNumber||'Unknown')].filter(Boolean).join(', ');
+}
+
 async function askNextQuestion(){
   while(flowIndex<activeFlow.length){
     const step=activeFlow[flowIndex];
@@ -2592,38 +2628,65 @@ async function askNextQuestion(){
   }
 
   if(step.isGuestName){
-    showInlineOptions(['Unknown / Guest Refused'], async(val)=>{
-      addBubble(val,'user');
-      // Even if first name unknown, still ask for last name
-      showTyping(); await delay(500); removeTyping();
-      addBubble("Do you have a last name for the guest?",'ai');
-      showInlineOptions(['No last name known'], async()=>{
-        addBubble('No last name known','user');
-        formData.guestName='Unknown';
-        flowIndex++; await askNextQuestion();
+    inputArea.style.display='none'; awaitingInput=false;
+    function askGuestFullName(reprompt){
+      showTyping(); delay(reprompt?300:200).then(function(){ removeTyping();
+        addBubble(reprompt?"No problem — type the guest's full name again.":"What is the guest's full name?",'ai');
+        inputArea.style.display='flex'; awaitingInput=true; document.getElementById('inputHint').style.display='block'; userInput.focus();
+        sendInterceptor=async(rawName)=>{
+          const parsed=parseName(rawName);
+          if(!parsed.first){ showTyping(); await delay(300); removeTyping(); addBubble("I didn't catch a name — please type the guest's full name.",'ai'); return; }
+          inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
+          showTyping(); await delay(400); removeTyping();
+          addBubble('I found:<br>First: <strong>'+parsed.first+'</strong><br>Middle: <strong>'+(parsed.middle||'None')+'</strong><br>Last: <strong>'+(parsed.last||'None')+'</strong><br>Suffix: <strong>'+(parsed.suffix||'None')+'</strong><br><br>Use this?','ai');
+          addQuickReplies(['✅ Yes','✏️ Edit'], async(ans)=>{
+            clearQuickReplies(); addBubble(ans,'user');
+            if(ans.includes('Yes')){
+              formData.guestFirstName=parsed.first; formData.guestLastName=parsed.last; formData.guestNameStatus='Known'; formData.guestName=parsed.displayName;
+              flowIndex++; await askNextQuestion();
+            } else { askGuestFullName(true); }
+          });
+        };
       });
-      inputArea.style.display='flex'; awaitingInput=true;
-      document.getElementById('inputHint').style.display='block';
-      sendInterceptor=async(lastName)=>{
-        
-        formData.guestName = lastName.trim();
-        inputArea.style.display='none'; awaitingInput=false;
-        sendInterceptor=null;
-        flowIndex++; await askNextQuestion();
-      };
+    }
+    showInlineOptions(['Full name known','Only last name known','Unknown','Guest refused'], async(choice)=>{
+      addBubble(choice,'user');
+      if(choice==='Unknown'){ formData.guestNameStatus='Unknown'; formData.guestName='Unknown'; formData.guestFirstName=''; formData.guestLastName=''; flowIndex++; await askNextQuestion(); return; }
+      if(choice==='Guest refused'){ formData.guestNameStatus='Guest refused'; formData.guestName='Guest refused'; formData.guestFirstName=''; formData.guestLastName=''; flowIndex++; await askNextQuestion(); return; }
+      if(choice==='Only last name known'){
+        showTyping(); await delay(300); removeTyping();
+        addBubble("What is the guest's last name?",'ai');
+        inputArea.style.display='flex'; awaitingInput=true; document.getElementById('inputHint').style.display='block'; userInput.focus();
+        sendInterceptor=async(ln)=>{
+          inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
+          formData.guestLastName=(ln||'').trim(); formData.guestFirstName=''; formData.guestNameStatus='Last name only'; formData.guestName=(ln||'').trim();
+          flowIndex++; await askNextQuestion();
+        };
+        return;
+      }
+      askGuestFullName(false);
     });
-    inputArea.style.display='flex'; awaitingInput=true;
-    document.getElementById('inputHint').style.display='block';
-    userInput.focus();
     return;
   }
 
   if(step.isGuestSeat){
-    showInlineOptions(['Unknown'], async(val)=>{
-      addBubble(val,'user'); formData.guestSeat=val; flowIndex++; await askNextQuestion();
+    showInlineOptions(['Seat unknown'], async(val)=>{
+      addBubble(val,'user'); sendInterceptor=null;
+      inputArea.style.display='none'; awaitingInput=false;
+      formData.guestSeatSection=''; formData.guestSeatRow=''; formData.guestSeatNumber='Unknown'; formData.guestSeatRaw='Unknown';
+      formData.guestSeat='Unknown';
+      flowIndex++; await askNextQuestion();
     });
     inputArea.style.display='flex'; awaitingInput=true;
-    document.getElementById('inputHint').style.display='block';
+    document.getElementById('inputHint').style.display='block'; userInput.focus();
+    sendInterceptor=async(raw)=>{
+      inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
+      const sp=parseSeat(raw);
+      formData.guestSeatSection=sp.section; formData.guestSeatRow=sp.row; formData.guestSeatNumber=sp.number; formData.guestSeatRaw=sp.raw;
+      formData.guestSeat=guestSeatDisplay(formData);
+      addBubble(formData.guestSeat,'user');
+      flowIndex++; await askNextQuestion();
+    };
     return;
   }
 
@@ -3103,35 +3166,7 @@ async function processAnswer(raw){
     return;
   }
 
-  // Guest name special handling
-  if(key==='guestName'){
-    const firstName = raw;
-    showTyping(); await delay(400); removeTyping();
-    addBubble("And the guest's last name? If you don't have it or the guest refused, tap below.","ai");
-
-    const finishName = async(lastName) => {
-      sendInterceptor = null;
-      formData.guestName = lastName ? `${firstName} ${lastName}`.trim() : firstName;
-      flowIndex++; await askNextQuestion();
-    };
-
-    showInlineOptions(['Unknown / Guest Refused'], async()=>{
-      inputArea.style.display='none'; awaitingInput=false;
-      sendInterceptor = null;
-      addBubble('Unknown / Guest Refused','user');
-      await finishName('');
-    });
-
-    inputArea.style.display='flex'; awaitingInput=true;
-    document.getElementById('inputHint').style.display='block';
-    userInput.focus();
-
-    sendInterceptor = async(ln) => {
-      inputArea.style.display='none'; awaitingInput=false;
-      await finishName(ln);
-    };
-    return;
-  }
+  // (guest name is fully handled by the isGuestName step handler; branch removed v1.9.3)
 
   // Pre-defined tap selections — skip AI cleanup entirely
   const preDefinedValues = [
@@ -3216,7 +3251,7 @@ async function processAnswer(raw){
   }
 
   // Auto-correct guest name spelling in raw text before AI cleanup
-  if(formData.guestName && formData.guestName !== 'Unknown' && raw.length > 0){
+  if(formData.guestNameStatus==='Known' && formData.guestName && formData.guestName !== 'Unknown' && raw.length > 0){
     const guestNameParts = formData.guestName.trim().split(' ').filter(p=>p.length>2);
     guestNameParts.forEach(namePart => {
       // Fix double-letter variations (Chartell → Chartel, Perrry → Perry)
