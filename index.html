@@ -4,13 +4,23 @@
   S.A.F.E. MANAGEMENT — AI-POWERED INCIDENT REPORTING SYSTEM
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
-  APPLICATION VERSION: 1.6.0   (Editorial Engine: modular writing profiles)
+  APPLICATION VERSION: 1.7.0   (Recognition values selector + value-weaving synthesis)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
 
   CHANGELOG
   ----------------------------------------------------------------------------
+  v1.7.0 — Editorial Engine Increment 2: recognition values + weaving.
+           - recognitionImpact free-text replaced by expanded 10-category
+             color-coded selector ("How did their actions reflect S.A.F.E. values?").
+           - New optional "Additional observations" step.
+           - Synthesis: rewritten description + selected values + observations
+             are woven into a final HR narrative (employeeRecognition profile),
+             stored as recognitionNarrative and shown for confirmation.
+           - Reports render the woven narrative + values + observations.
+           - Locked baseline (proxy/transport/auth, recorder, parser, diagnostics,
+             deployment, api-config) untouched. No API key.
   v1.6.0 — Editorial Engine (Increment 1: modular profiles, behavior-preserving).
            - EDITOR_PROFILES registry + resolveEditorProfile(); no if/else chain.
            - Recognition & incident prompts relocated verbatim into profiles;
@@ -419,7 +429,7 @@
     <div class="season-motto">Stronger Together</div>
   </div>
   <div class="header-right">
-    <div class="header-badge">v1.6.0</div>
+    <div class="header-badge">v1.7.0</div>
   </div>
 </header>
 
@@ -497,7 +507,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.7.0';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -750,8 +760,8 @@ const recognitionFlow = [
   {key:'employeeName', ask:"Tell me the employee's name.", isEmployeeName:true},
   {key:'employeeRole', ask:"What is their role or position?"},
   {key:'recognitionDescription', editorProfile:'employeeRecognition', ask:"Tell me what this employee did — I'll write it up professionally."},
-  {key:'recognitionImpact', editorProfile:'employeeRecognition', ask:"How did their actions reflect S.A.F.E. values or help the team?"},
-  {key:'recognitionValues', ask:"Which S.A.F.E. values did they demonstrate? Select all that apply.", isRecognitionValues:true},
+  {key:'recognitionValues', ask:"How did their actions reflect S.A.F.E. values? Tap all that apply.", isRecognitionValues:true},
+  {key:'recognitionObservations', ask:"Any additional observations to add? (optional)", isRecognitionObservations:true},
   {key:'additionalComments', ask:"Anything else to add to this recognition?", isAdditionalComments:true},
 ];
 
@@ -929,8 +939,8 @@ function sendViaMailto(isIncident){
     const empName=fd.employeeDisplayName||`${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim();
     body += `RECOGNITION DETAILS\n-------------------\n`;
     body += `Employee: ${empName}\nRole: ${fd.employeeRole||'N/A'}\n\n`;
-    body += `Description:\n${fd.recognitionDescription||'N/A'}\n\n`;
-    body += `Impact & S.A.F.E. Values:\n${fd.recognitionImpact||'N/A'}\n\n`;
+    body += `Description:\n${fd.recognitionNarrative||fd.recognitionDescription||'N/A'}\n\n`;
+    body += `Additional Observations:\n${fd.recognitionObservations||'None'}\n\n`;
     body += `S.A.F.E. Values Demonstrated: ${fd.recognitionValues||'N/A'}\n\n`;
   }
   body += `Additional Comments: ${fd.additionalComments||'None'}\n\n`;
@@ -991,6 +1001,9 @@ async function submitToSheets(isIncident) {
         employeeRole: fd.employeeRole || '',
         recognitionDescription: fd.recognitionDescription || '',
         recognitionImpact: fd.recognitionImpact || '',
+        recognitionNarrative: fd.recognitionNarrative || '',
+        recognitionValues: fd.recognitionValues || '',
+        recognitionObservations: fd.recognitionObservations || '',
         additionalComments: fd.additionalComments || ''
       });
 
@@ -2109,6 +2122,31 @@ function applyEmployeeName(p){
   formData.employeeSuffix=p.suffix;
 }
 
+async function runRecognitionSynthesis(){
+  inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
+  const parts=[];
+  if(formData.recognitionDescription) parts.push(formData.recognitionDescription);
+  if(formData.recognitionValues) parts.push('S.A.F.E. values demonstrated (weave in naturally, do not list): '+formData.recognitionValues);
+  if(formData.recognitionObservations && formData.recognitionObservations!=='None') parts.push('Additional observations: '+formData.recognitionObservations);
+  const composed=parts.join('\n');
+  showTyping(); speak('Putting the recognition together'); addBubble('Putting your recognition together...','ai');
+  const ctx='This is an employee recognition report for '+formData.venue+'.';
+  const woven=await cleanWithAI(composed, ctx, 'description', 'recognitionNarrative', 'employeeRecognition');
+  formData.recognitionNarrative=woven;
+  removeTyping(); showTyping(); await delay(400); removeTyping();
+  addBubble('Here is the final recognition writeup:<br><br><em>"'+woven+'"</em><br><br>Look good?','ai');
+  addQuickReplies(['Yes, perfect','✏️ Edit'], async(ans)=>{
+    clearQuickReplies(); addBubble(ans,'user');
+    if(ans.startsWith('Yes')){ flowIndex++; await askNextQuestion(); }
+    else {
+      addBubble('Edit it directly, then tap send:','ai');
+      userInput.value=woven; userInput.style.height='auto'; userInput.style.height=Math.min(userInput.scrollHeight,110)+'px';
+      inputArea.style.display='flex'; awaitingInput=true;
+      sendInterceptor=async(edited)=>{ formData.recognitionNarrative=(edited||'').trim(); inputArea.style.display='none'; awaitingInput=false; flowIndex++; await askNextQuestion(); };
+    }
+  });
+}
+
 async function askNextQuestion(){
   while(flowIndex<activeFlow.length){
     const step=activeFlow[flowIndex];
@@ -2450,15 +2488,15 @@ async function askNextQuestion(){
     inputArea.style.display='none';
     document.getElementById('inputHint').style.display='none';
     awaitingInput=false;
-    const cats={'Customer Service':'#1B4B8A','Teamwork':'#E8192C','Initiative':'#2F6FB0','Professionalism':'#4A5568','Leadership':'#B5121F','Safety':'#2C5282','Communication':'#6B7280','Reliability':'#7A2530'};
+    const cats=[{n:'Guest Service',c:'#E8192C',e:'🟥'},{n:'Teamwork',c:'#1B4B8A',e:'🟦'},{n:'Initiative',c:'#2E7D46',e:'🟩'},{n:'Leadership',c:'#B58A00',e:'🟨'},{n:'Professionalism',c:'#6B4C9A',e:'🟪'},{n:'Communication',c:'#C2632B',e:'🟧'},{n:'Reliability',c:'#7A5230',e:'🟫'},{n:'Safety',c:'#37475A',e:'⬜'},{n:'Problem Solving',c:'#23272E',e:'⬛'},{n:'Adaptability',c:'#0F6E6E',e:'🟩'}];
     const wrap=document.createElement('div'); wrap.className='recval-wrap';
     const grid=document.createElement('div'); grid.className='recval-grid';
     const selected=new Set();
-    Object.keys(cats).forEach(c=>{
-      const b=document.createElement('button'); b.type='button'; b.className='recval-btn'; b.textContent=c;
+    cats.forEach(cat=>{
+      const b=document.createElement('button'); b.type='button'; b.className='recval-btn'; b.textContent=cat.e+' '+cat.n;
       b.onclick=()=>{
-        if(selected.has(c)){ selected.delete(c); b.classList.remove('sel'); b.style.background=''; b.style.color=''; b.style.borderColor=''; }
-        else { selected.add(c); b.classList.add('sel'); b.style.background=cats[c]; b.style.color='#fff'; b.style.borderColor=cats[c]; }
+        if(selected.has(cat.n)){ selected.delete(cat.n); b.classList.remove('sel'); b.style.background=''; b.style.color=''; b.style.borderColor=''; }
+        else { selected.add(cat.n); b.classList.add('sel'); b.style.background=cat.c; b.style.color='#fff'; b.style.borderColor=cat.c; }
         done.disabled=selected.size===0;
       };
       grid.appendChild(b);
@@ -2473,6 +2511,24 @@ async function askNextQuestion(){
     };
     wrap.appendChild(grid); wrap.appendChild(done);
     chatWindow.appendChild(wrap); scrollBottom();
+    return;
+  }
+
+  if(step.isRecognitionObservations){
+    inputArea.style.display='flex'; awaitingInput=true;
+    document.getElementById('inputHint').style.display='block';
+    userInput.focus();
+    addQuickReplies(['Skip — none to add'], async(ans)=>{
+      clearQuickReplies(); addBubble(ans,'user'); sendInterceptor=null;
+      inputArea.style.display='none'; awaitingInput=false;
+      formData.recognitionObservations='None';
+      await runRecognitionSynthesis();
+    });
+    sendInterceptor=async(raw)=>{
+      clearQuickReplies();
+      formData.recognitionObservations=(raw||'').trim();
+      await runRecognitionSynthesis();
+    };
     return;
   }
 
@@ -2761,13 +2817,13 @@ async function processAnswer(raw){
   }
 
   // Long text AI cleanup
-  const longFields=['incidentDescription','guestStatement','guestClothing','guestFeatures','guestStatementDetail','witnesses','actionTaken','emsPolice','additionalComments','followUpDetails','cameraZone','safeOpsWho','environmentalConditions','recognitionDescription','recognitionImpact'];
+  const longFields=['incidentDescription','guestStatement','guestClothing','guestFeatures','guestStatementDetail','witnesses','actionTaken','emsPolice','additionalComments','followUpDetails','cameraZone','safeOpsWho','environmentalConditions','recognitionDescription'];
   if(longFields.includes(key)&&raw.length>5&&!isSkip){
     console.log('🔄 cleanWithAI triggered for key:', key, 'raw length:', raw.length);
     showTyping(); await delay(300);
     speak("Writing that up in professional language"); addBubble("Writing that up in professional language...","ai");
     const ctx=`This is a ${incidentType==='incident'?formData.incidentCategory+' incident':'employee recognition'} report for ${formData.venue}.`;
-    const fieldType = ['incidentDescription','guestStatement','guestStatementDetail','recognitionDescription','recognitionImpact'].includes(key) ? 'description' : 'field';
+    const fieldType = ['incidentDescription','guestStatement','guestStatementDetail','recognitionDescription'].includes(key) ? 'description' : 'field';
     const _step=(activeFlow||[]).find(function(st){return st&&st.key===key;})||{};
     const cleaned=await cleanWithAI(raw,ctx,fieldType,key,_step.editorProfile);
     removeTyping(); showTyping(); await delay(500); removeTyping();
@@ -3130,8 +3186,8 @@ function generatePDF(isIncident) {
     body += fv('Employee Name', empName);
     body += fv('Employee Role', fd.employeeRole);
     body += `</div>`;
-    body += `<div class="field"><div class="field-label">Description of Good Deed</div><div class="field-value narrative">${fd.recognitionDescription || 'Not provided'}</div></div>`;
-    body += `<div class="field" style="margin-top:10px;"><div class="field-label">Impact & S.A.F.E. Values</div><div class="field-value narrative">${fd.recognitionImpact || 'Not provided'}</div></div>`;
+    body += `<div class="field"><div class="field-label">Description of Good Deed</div><div class="field-value narrative">${fd.recognitionNarrative || fd.recognitionDescription || 'Not provided'}</div></div>`;
+    body += `<div class="field" style="margin-top:10px;"><div class="field-label">Additional Observations</div><div class="field-value narrative">${fd.recognitionObservations || 'None'}</div></div>`;
     body += `<div class="field"><div class="field-label">S.A.F.E. Values Demonstrated</div><div class="field-value">${fd.recognitionValues || 'Not provided'}</div></div>`;
   }
 
@@ -3254,8 +3310,8 @@ function generateWord(isIncident) {
     const empName=fd.employeeDisplayName||`${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim();
     content += `RECOGNITION DETAILS\n${'-'.repeat(30)}\n`;
     content += `Employee: ${empName}\nRole: ${fd.employeeRole||'N/A'}\n\n`;
-    content += `Description:\n${fd.recognitionDescription||'N/A'}\n\n`;
-    content += `Impact & S.A.F.E. Values:\n${fd.recognitionImpact||'N/A'}\n\n`;
+    content += `Description:\n${fd.recognitionNarrative||fd.recognitionDescription||'N/A'}\n\n`;
+    content += `Additional Observations:\n${fd.recognitionObservations||'None'}\n\n`;
     content += `S.A.F.E. Values Demonstrated: ${fd.recognitionValues||'N/A'}\n\n`;
   }
   content += `Additional Comments: ${fd.additionalComments||'None'}\n\n`;
@@ -3366,8 +3422,8 @@ function buildFormHTML(isIncident,supName,empName){
   } else {
     h+=`<div class="form-section-title">Recognition Details</div>`;
     h+=ff('Employee Name',empName); h+=ff('Employee Role',fd.employeeRole,'employeeRole');
-    h+=ff('Description of Good Deed',fd.recognitionDescription,'recognitionDescription');
-    h+=ff('Impact & S.A.F.E. Values',fd.recognitionImpact,'recognitionImpact');
+    h+=ff('Description of Good Deed',fd.recognitionNarrative||fd.recognitionDescription,'recognitionDescription');
+    h+=ff('Additional Observations',fd.recognitionObservations);
     h+=ff('S.A.F.E. Values Demonstrated',fd.recognitionValues);
   }
 
