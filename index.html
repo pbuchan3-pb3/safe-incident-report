@@ -4,13 +4,23 @@
   S.A.F.E. MANAGEMENT — AI-POWERED INCIDENT REPORTING SYSTEM
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
-  APPLICATION VERSION: 1.9.8   (Interview 3.0 batch 1: narrative-first order, actions multi-select)
+  APPLICATION VERSION: 1.9.9   (Recorder 3.0 Phase A: live browser speech-to-text)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
 
   CHANGELOG
   ----------------------------------------------------------------------------
+  v1.9.9 — Recorder 3.0 Phase A: live browser speech recognition.
+           - Record captures audio AND live Web Speech transcription (where
+             supported); transcript shows live. Stop preserves audio + raw
+             transcript, then "Send Transcript" routes it through the mounted
+             field's editorial profile and shows the rewrite for Looks Correct /
+             Edit — no retyping.
+           - Unsupported/failed: honest fallback, audio + partial transcript kept;
+             Pause/Resume stop/restart recognition without erasing text.
+           - Preserved: audio blob, transcriptRaw, transcriptEdited, <field>Raw.
+             Diagnostics under ?debug=1. No keys, no backend, Worker unchanged.
   v1.9.8 — Interview Experience 3.0, batch 1 (safe, contained).
            - Narrative-first order: incident description + AI rewrite now come
              right after incident type; severity moved to AFTER the narrative.
@@ -516,6 +526,8 @@
   .q-help{display:block;font-size:12px;color:var(--text-muted);margin-top:5px;font-weight:400;line-height:1.4;}
 
   .recval-grid{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 10px;}
+
+  .rec-transcript{max-height:120px;overflow:auto;background:#f4f7fb;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin:6px 0;font-size:13px;line-height:1.5;color:var(--safe-navy);white-space:pre-wrap;}
 </style>
 </head>
 <body>
@@ -581,7 +593,7 @@
     <div class="season-motto">Stronger Together</div>
   </div>
   <div class="header-right">
-    <div class="header-badge">v1.9.8</div>
+    <div class="header-badge">v1.9.9</div>
   </div>
 </header>
 
@@ -659,7 +671,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '1.9.8';
+const APP_VERSION = '1.9.9';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -2135,7 +2147,7 @@ function showInlineOptions(options, onSelect) {
 // IndexedDB, and offers playback / delete / re-record. No upload, no API key,
 // no report auto-fill (Build Report is deferred to v1.2.0).
 const REC_DB_NAME='safe_recordings', REC_STORE='drafts', REC_LAST_LS='safe_last_recording_id';
-const recState={status:'idle',mediaRecorder:null,stream:null,chunks:[],blob:null,blobUrl:null,audioEl:null,draftId:null,startedAt:0,elapsedBeforePause:0,timerInt:null,mimeType:''};
+const recState={status:'idle',mediaRecorder:null,stream:null,chunks:[],blob:null,blobUrl:null,audioEl:null,draftId:null,startedAt:0,elapsedBeforePause:0,timerInt:null,mimeType:'',sr:null,srWantActive:false,srSupported:false,srStarted:false,srEnded:false,srError:'',transcriptRaw:'',transcriptFinal:'',transcriptEdited:'',fieldKey:'incidentDescription',editorProfile:null,onTranscriptComplete:null,rewrite:''};
 
 function recSupported(){return !!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.MediaRecorder);}
 function recOpenDB(){return new Promise((res,rej)=>{const r=indexedDB.open(REC_DB_NAME,1);r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains(REC_STORE))db.createObjectStore(REC_STORE,{keyPath:'id'});};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
@@ -2165,23 +2177,23 @@ async function recStart(){
   recState.mediaRecorder.onstop=recFinalize;
   recState.mediaRecorder.start();
   recState.status='recording';recState.elapsedBeforePause=0;recState.startedAt=Date.now();recState.draftId='rec_'+Date.now();
-  recTickStart();recDotLive(true);recSetStatus('Recording...');recRenderControls();
+  recTickStart();recDotLive(true);recSetStatus('Recording...');recState.transcriptFinal='';recState.transcriptRaw='';recStartSpeech();if(!recState.srSupported)recSetStatus('Recording... (live transcription not available in this browser)');recRenderControls();
 }
 function recPause(){
   if(recState.status!=='recording'||!recState.mediaRecorder)return;
   try{recState.mediaRecorder.pause();}catch(_){}
   recState.elapsedBeforePause=recElapsed();recState.status='paused';
-  recTickStop();recSetTimer();recDotLive(false);recSetStatus('Paused');recRenderControls();
+  recTickStop();recSetTimer();recDotLive(false);recStopSpeech();recSetStatus('Paused');recRenderControls();
 }
 function recResume(){
   if(recState.status!=='paused'||!recState.mediaRecorder)return;
   try{recState.mediaRecorder.resume();}catch(_){}
   recState.startedAt=Date.now();recState.status='recording';
-  recTickStart();recDotLive(true);recSetStatus('Recording...');recRenderControls();
+  recTickStart();recDotLive(true);recStartSpeech();recSetStatus('Recording...');recRenderControls();
 }
 function recEnd(){
   if(recState.status!=='recording'&&recState.status!=='paused')return;
-  recTickStop();recDotLive(false);
+  recTickStop();recDotLive(false);recStopSpeech();
   try{recState.mediaRecorder.stop();}catch(_){recFinalize();}
 }
 async function recFinalize(){
@@ -2214,6 +2226,55 @@ async function recDeleteRecording(){
 async function recReRecord(){await recDeleteRecording();recSetStatus('Ready to record again.');recRenderControls();}
 
 function recBtn(label,fn,cls){return '<button type="button" class="rec-btn '+(cls||'')+'" onclick="'+fn+'">'+label+'</button>';}
+
+function recSupportsSpeech(){ return !!(window.SpeechRecognition||window.webkitSpeechRecognition); }
+function recUpdateTranscriptPanel(t){ const el=document.getElementById('recTranscript'); if(el){ el.style.display='block'; el.textContent=t||'\u2026'; el.scrollTop=el.scrollHeight; } }
+function recStartSpeech(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  recState.srSupported=!!SR;
+  if(!SR){ safeDiag({phase:'speech',speechRecognitionSupported:false}); return; }
+  try{
+    const r=new SR(); r.continuous=true; r.interimResults=true; r.lang='en-US';
+    r.onresult=function(ev){ let interim=''; for(let i=ev.resultIndex;i<ev.results.length;i++){ const res=ev.results[i]; if(res.isFinal){ recState.transcriptFinal+=res[0].transcript+' '; } else { interim+=res[0].transcript; } } recState.transcriptRaw=(recState.transcriptFinal+interim).replace(/\s+/g,' ').trim(); recUpdateTranscriptPanel(recState.transcriptRaw); };
+    r.onerror=function(e){ recState.srError=(e&&e.error)||'error'; safeDiag({phase:'speech',speechRecognitionError:recState.srError,partialTranscriptCaptured:!!recState.transcriptRaw,fallback:true}); };
+    r.onend=function(){ recState.srEnded=true; if(recState.status==='recording'&&recState.srWantActive){ try{r.start();}catch(_e){} } };
+    recState.sr=r; recState.srWantActive=true; r.start(); recState.srStarted=true;
+    safeDiag({phase:'speech',speechRecognitionSupported:true,speechRecognitionStarted:true});
+  }catch(e){ recState.srError=String(e); recState.srStarted=false; safeDiag({phase:'speech',speechRecognitionError:String(e),fallback:true}); }
+}
+function recStopSpeech(){ recState.srWantActive=false; if(recState.sr){ try{recState.sr.stop();}catch(_e){} } safeDiag({phase:'speech',speechRecognitionEnded:true}); }
+async function recAdvanceAfterTranscript(){ inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; if(typeof recState.onTranscriptComplete==='function'){ const cb=recState.onTranscriptComplete; recState.onTranscriptComplete=null; await cb(); } else { flowIndex++; await askNextQuestion(); } }
+async function recProcessTranscript(){
+  const raw=(recState.transcriptRaw||recState.transcriptFinal||'').trim();
+  const key=recState.fieldKey||'incidentDescription'; const prof=recState.editorProfile||null;
+  if(!raw){
+    recCollapse();
+    showTyping(); await delay(300); removeTyping();
+    addBubble("Live transcription is not available in this browser. Your recording has been preserved \u2014 you may type or dictate the statement below, or review the recording.",'ai');
+    inputArea.style.display='flex'; awaitingInput=true; const h0=document.getElementById('inputHint'); if(h0) h0.style.display='block'; userInput.focus();
+    return;
+  }
+  recState.status='processing'; recSetStatus('Processing Transcript...'); recRenderControls();
+  formData[key+'Raw']=raw; formData.transcriptRaw=raw;
+  let rewrite;
+  try{ rewrite=await cleanWithAI(raw, 'Voice narrative for '+(formData.venue||'the venue')+'.', 'description', key, prof); }
+  catch(e){ rewrite=raw; }
+  safeDiag({phase:'speech',finalTranscriptCaptured:true,editorProfileUsed:prof||'(field default)'});
+  recState.rewrite=rewrite; recCollapse();
+  showTyping(); await delay(300); removeTyping();
+  addBubble('Here is the write-up from your recording:<br><br><em>"'+rewrite+'"</em><br><br>Does this accurately capture what happened?','ai');
+  addQuickReplies(['\u2705 Looks Correct','\u270f\ufe0f Edit'], async function(ans){
+    clearQuickReplies(); addBubble(ans,'user');
+    if(ans.indexOf('Looks Correct')!==-1){ formData[key]=rewrite; formData.transcriptEdited=rewrite; recAdvanceAfterTranscript(); }
+    else {
+      addBubble('Edit it directly, then tap send:','ai');
+      userInput.value=rewrite; userInput.style.height='auto'; userInput.style.height=Math.min(userInput.scrollHeight,220)+'px';
+      inputArea.style.display='flex'; awaitingInput=true;
+      sendInterceptor=async function(edited){ const val=(edited||'').trim(); inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; formData[key]=val; formData.transcriptEdited=val; recAdvanceAfterTranscript(); };
+    }
+  });
+}
+
 function recCollapse(){
   const card=document.getElementById('recCard'); if(!card) return;
   const dur=recFmt(recState.elapsedBeforePause||recElapsed());
@@ -2224,14 +2285,7 @@ function recCollapse(){
   recState.audioEl=card.querySelector('#recAudio');
   recState.status='attached';
 }
-function recSendToAI(){
-  if(recState.status!=='saved'){ return; }
-  recCollapse();
-  showTyping(); delay(300).then(function(){ removeTyping();
-    addBubble("Your recording is attached (automatic transcription isn't available yet). Please type or dictate the statement below and I'll process it automatically.",'ai');
-    inputArea.style.display='flex'; awaitingInput=true; var h=document.getElementById('inputHint'); if(h) h.style.display='block'; userInput.focus();
-  });
-}
+function recSendToAI(){ if(recState.status!=='saved'){ return; } recProcessTranscript(); }
 function recTypeInstead(){ recSetStatus('Type or dictate your statement below.'); inputArea.style.display='flex'; awaitingInput=true; var h=document.getElementById('inputHint'); if(h) h.style.display='block'; userInput.focus(); }
 function recRenderControls(){
   const c=document.getElementById('recControls');if(!c)return;
@@ -2239,7 +2293,8 @@ function recRenderControls(){
   if(recState.status==='idle'){html=recBtn('🎤 Record','recStart()','primary')+recBtn('⌨ Type Instead','recTypeInstead()');}
   else if(recState.status==='recording'){html=recBtn('⏸ Pause','recPause()')+recBtn('■ Stop','recEnd()','danger');}
   else if(recState.status==='paused'){html=recBtn('▶ Resume','recResume()','primary')+recBtn('■ Stop','recEnd()','danger');}
-  else if(recState.status==='saved'){html=recBtn('➡ Send Recording','recSendToAI()','primary')+recBtn('▶ Review','recPlayToggle()')+recBtn('↻ Record Again','recReRecord()')+recBtn('🗑 Delete','recDeleteRecording()','danger');}
+  else if(recState.status==='processing'){html='';}
+  else if(recState.status==='saved'){const hasT=!!(recState.transcriptRaw||recState.transcriptFinal);html=recBtn(hasT?'➡ Send Transcript':'➡ Send Recording','recSendToAI()','primary')+recBtn('▶ Review Recording','recPlayToggle()')+recBtn('↻ Record Again','recReRecord()')+recBtn('🗑 Delete','recDeleteRecording()','danger');}
   c.innerHTML=html;
 }
 async function recRestore(){
@@ -2250,17 +2305,23 @@ async function recRestore(){
   recState.blobUrl=URL.createObjectURL(rec.blob);recState.status='saved';
   recSetTimer();recSetStatus('A saved recording was restored from this device.');recRenderControls();
 }
-function mountRecorderCard(){
+function mountRecorderCard(storeKeyArg,profileArg,onCompleteArg){
   const existing=document.getElementById('recCard');if(existing)existing.remove();
+  const _rs=(activeFlow&&activeFlow[flowIndex])||{};
+  recState.fieldKey=storeKeyArg||_rs.key||'incidentDescription';
+  recState.editorProfile=(profileArg!==undefined&&profileArg!==null)?profileArg:(_rs.editorProfile||null);
+  recState.onTranscriptComplete=onCompleteArg||null;
+  recState.transcriptRaw='';recState.transcriptFinal='';recState.transcriptEdited='';recState.srError='';
   const card=document.createElement('div');card.className='rec-card';card.id='recCard';
   card.innerHTML=
     '<div class="rec-head"><span class="rec-dot" id="recDot"></span>'+
     '<span class="rec-title">Incident voice recorder</span>'+
     '<span class="rec-timer" id="recTimer">00:00</span></div>'+
     '<div class="rec-status" id="recStatus">Ready</div>'+
+    '<div class="rec-transcript" id="recTranscript" style="display:none"></div>'+
     '<div class="rec-controls" id="recControls"></div>'+
     '<audio id="recAudio" style="display:none"></audio>'+
-    '<div class="rec-note">Tap Record to capture your statement, or Type Instead. Saved locally only.</div>';
+    '<div class="rec-note">Tap Record to speak your statement — Atlas transcribes live where supported — or Type Instead. Saved locally only.</div>';
   chatWindow.appendChild(card);scrollBottom();
   recState.audioEl=card.querySelector('#recAudio');
   if(recState.audioEl){
@@ -3066,7 +3127,7 @@ async function askNextQuestion(){
   }
 
     if(step.isRecognitionObservations){
-    if(typeof mountRecorderCard==='function' && typeof enableVoiceIncidentCapture!=='undefined' && enableVoiceIncidentCapture){ mountRecorderCard(); }
+    if(typeof mountRecorderCard==='function' && typeof enableVoiceIncidentCapture!=='undefined' && enableVoiceIncidentCapture){ mountRecorderCard('recognitionObservations','employeeRecognition',function(){return showRecognitionSummary();}); }
     inputArea.style.display='flex'; awaitingInput=true;
     document.getElementById('inputHint').style.display='block';
     userInput.focus();
@@ -3154,7 +3215,7 @@ async function askNextQuestion(){
       if(choice==='Verbal statement'||choice==='Written statement'){
         showTyping(); await delay(300); removeTyping();
         addBubble('What did '+guestRef()+" say? You can record it or type it below — I'll keep it in their own words and only fix grammar and spelling.",'ai');
-        if(choice==='Verbal statement' && typeof mountRecorderCard==='function' && typeof enableVoiceIncidentCapture!=='undefined' && enableVoiceIncidentCapture){ mountRecorderCard(); }
+        if(choice==='Verbal statement' && typeof mountRecorderCard==='function' && typeof enableVoiceIncidentCapture!=='undefined' && enableVoiceIncidentCapture){ mountRecorderCard('guestStatementDetail','witnessStatement'); }
         inputArea.style.display='flex'; awaitingInput=true; document.getElementById('inputHint').style.display='block'; userInput.focus();
         sendInterceptor=async(raw)=>{
           if(looksLikeAppFeedback(raw)){
