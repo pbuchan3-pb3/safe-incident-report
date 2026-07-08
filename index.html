@@ -4,13 +4,18 @@
   S.A.F.E. MANAGEMENT — AI-POWERED INCIDENT REPORTING SYSTEM
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
-  APPLICATION VERSION: 1.9.6   (Recorder 2.2 final polish: review flow, collapse, motion)
+  APPLICATION VERSION: 1.9.7   (Audit remediation G1-G7)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
 
   CHANGELOG
   ----------------------------------------------------------------------------
+  v1.9.7 — Audit remediation (G1-G7): shared recorder on all narrative fields;
+           raw narrative preserved (<field>Raw); Operational Context in review/
+           PDF/Word/email/text/Sheets + attachment note; unified confirmation
+           cards; incident narrative routed to Incident Writer; venue from config;
+           helper text on key questions.
   v1.9.6 — Recorder 2.2 final polish.
            - Fixed playback bug: reviewing no longer overwrites the "Send
              Recording" label (Review button toggles its own label now).
@@ -500,6 +505,8 @@
   .op-btn{width:100%;min-height:48px;border:1.5px solid var(--border);background:#fff;color:var(--safe-navy);border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;padding:10px 12px;transition:background .12s,border-color .12s;}
   .op-btn:active{transform:scale(.98);}
   .op-btn:hover{border-color:var(--safe-navy);}
+
+  .q-help{display:block;font-size:12px;color:var(--text-muted);margin-top:5px;font-weight:400;line-height:1.4;}
 </style>
 </head>
 <body>
@@ -565,7 +572,7 @@
     <div class="season-motto">Stronger Together</div>
   </div>
   <div class="header-right">
-    <div class="header-badge">v1.9.6</div>
+    <div class="header-badge">v1.9.7</div>
   </div>
 </header>
 
@@ -643,7 +650,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '1.9.6';
+const APP_VERSION = '1.9.7';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -851,7 +858,7 @@ const savedEmail = localStorage.getItem('safe_supervisor_email') || '';
 
 // ── FLOWS ──────────────────────────────────────────────────────────────────
 const baseFlow = [
-  {key:'venue', ask:()=>`This report is being filed for <strong>Ford Field, Detroit, Michigan</strong>. Tap to confirm.`, quickReplies:['✅ Confirmed — Ford Field, Detroit']},
+  {key:'venue', ask:()=>`This report is being filed for <strong>${activeVenueConfig().name}</strong>. Tap to confirm.`, quickReplies:['✅ Confirmed — Ford Field, Detroit']},
   {key:'positionHeld', isPositionHeld:true, ask:"What position did you hold during today's event?"},
   {key:'assignmentsWorked', isAssignments:true, ask:"Which assignment(s) did you work during today's event?"},
   {key:'assignmentTimeline', isAssignmentTimeline:true, ask:"Did you remain in these assignment(s) for your entire shift?"},
@@ -878,29 +885,29 @@ const incidentFlow = [
   {key:'guestBuild', ask:()=>`How would you describe ${guestPoss()} build?`, isAppearanceBuild:true},
   {key:'guestHair', ask:()=>`What is ${guestPoss()} hair color?`, isAppearanceHair:true},
   {key:'guestHairStyle', ask:()=>`How would you describe ${guestPoss()} hair style?`, isAppearanceHairStyle:true},
-  {key:'guestClothing', ask:()=>`What was ${guestRef()} wearing? Describe the shirt, jacket, hat, or any other distinctive clothing.`, isGuestClothing:true},
+  {key:'guestClothing', ask:()=>`What was ${guestRef()} wearing? Describe the shirt, jacket, hat, or any other distinctive clothing.<br><span class="q-help">This helps identify the guest if follow-up is needed.</span>`, isGuestClothing:true},
   {key:'guestFeatures', ask:()=>`Any distinguishing features for ${guestRef()}? Select all that apply.`, isAppearanceFeatures:true},
   {key:'guestPhotos', ask:()=>`Do you have any photos of ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest or subject'}? Upload up to 3 photos.`, isPhotoUpload:true, photoType:'guest'},
   {key:'incidentDescription', editorProfile:'incidentReport', mountRecorder:true, ask:()=>`${formData.supervisorFirstName||'Officer'}, describe what happened in your own words — what you saw, what was said, what actions were taken. Don't worry about how it sounds; I'll clean it up.`},
   {key:'scenePhotos', ask:"Do you have any photos of the scene, location, or evidence? Upload up to 3 photos.", isPhotoUpload:true, photoType:'scene'},
-  {key:'guestStatement', ask:()=>`Did ${guestRef()} provide a statement about the incident?`, isGuestStatement:true},
+  {key:'guestStatement', ask:()=>`Did ${guestRef()} provide a statement about the incident?<br><span class="q-help">Statements become part of the official incident record.</span>`, isGuestStatement:true},
   {key:'witnesses', ask:"Were there any witnesses — staff, security, or guests? If yes, share their names or descriptions.", isWitnesses:true},
   {key:'actionTaken', ask:"What action was taken?", quickReplies:['Verbal Warning','Written Warning','Ejection from Venue','Referred to Guest Services','Suspension','Termination','EMS Called','Detroit PD Called','No Action Taken','Other — specify'],isActionTaken:true},
-  {key:'emsPolice', ask:"Was EMS or Detroit PD involved? If yes, provide any report number or officer name if available.", isEmsPolice:true},
+  {key:'emsPolice', editorProfile:'incidentReport', ask:"Was EMS or Detroit PD involved? If yes, provide any report number or officer name if available.", isEmsPolice:true},
   {key:'guestTransported', ask:"Was the guest or any person transported from the venue?", quickReplies:['Yes — transported by EMS','Yes — left on their own','No — remained on site','Not applicable'], skipIf:(fd)=>!fd.actionTaken||!fd.actionTaken.includes('EMS')},
   {key:'followUp', ask:"Is any follow-up required?", quickReplies:['Yes — follow-up needed','No — incident resolved']},
-  {key:'followUpDetails', ask:"What follow-up is needed, and who is responsible for it?", skipIf:(fd)=>fd.followUp&&fd.followUp.startsWith('No')},
-  {key:'additionalComments', ask:()=>`Almost done, ${formData.supervisorFirstName||'Officer'}. Any additional comments or context for this report?`, isAdditionalComments:true},
+  {key:'followUpDetails', editorProfile:'incidentReport', mountRecorder:true, ask:"What follow-up is needed, and who is responsible for it?", skipIf:(fd)=>fd.followUp&&fd.followUp.startsWith('No')},
+  {key:'additionalComments', editorProfile:'incidentReport', mountRecorder:true, ask:()=>`Almost done, ${formData.supervisorFirstName||'Officer'}. Any additional comments or context for this report?`, isAdditionalComments:true},
 ];
 
 const recognitionFlow = [
   {key:'supervisorEmail', ask:()=>savedEmail ? `What is your email address? We have <strong>${savedEmail}</strong> on file — tap to use it, or type a new one.` : 'What is your email address? A copy of this recognition will be sent to you automatically.', isEmail:true, savedEmailChip:true},
   {key:'employeeName', ask:"Tell me the employee's name.", isEmployeeName:true},
   {key:'employeeRole', ask:"What is their role or position?", quickReplies:['Event Security','Guest Services','Usher','Parking','SAFE Ops','Supervisor','Manager','Other — specify']},
-  {key:'recognitionDescription', editorProfile:'employeeRecognition', ask:"Tell me what this employee did — I'll write it up professionally."},
+  {key:'recognitionDescription', editorProfile:'employeeRecognition', mountRecorder:true, ask:"Tell me what this employee did — I'll write it up professionally."},
   {key:'recognitionValues', ask:"How did their actions reflect S.A.F.E. values? Tap all that apply.", isRecognitionValues:true},
   {key:'recognitionObservations', ask:"Any additional observations to add? (optional)", isRecognitionObservations:true},
-  {key:'additionalComments', ask:"Anything else to add to this recognition?", isAdditionalComments:true},
+  {key:'additionalComments', editorProfile:'employeeRecognition', mountRecorder:true, ask:"Anything else to add to this recognition?", isAdditionalComments:true},
 ];
 
 // ── DOM ────────────────────────────────────────────────────────────────────
@@ -1051,6 +1058,7 @@ function sendViaMailto(isIncident){
   body += `Incident Date: ${fd.incidentDate||fd.date}\nIncident Time: ${fd.incidentTime||fd.time}\n`;
   body += `Report Filed: ${fd.date} at ${fd.time} (Auto-Captured)\nVenue: ${fd.venue}\nReport Type: ${fd.formType}\n`;
   body += `Prepared By: ${supName}\nSupervisor Position: ${fd.positionHeld||'N/A'}\nSupervisor Email: ${supEmail}\n\n`;
+  { const _oc=operationalContextText(fd); if(_oc) body += `OPERATIONAL CONTEXT\n-------------------\n${_oc}\n\n`; }
 
   if(isIncident){
     body += `INCIDENT DETAILS\n----------------\n`;
@@ -1117,6 +1125,9 @@ async function submitToSheets(isIncident) {
         supervisorFirstName: fd.supervisorFirstName || '',
         supervisorLastName: fd.supervisorLastName || '',
         supervisorTitle: fd.positionHeld || fd.supervisorTitle || '',
+        positionHeld: fd.positionHeld || '',
+        assignmentsWorked: (fd.assignmentsWorked||[]).join(', '),
+        assignmentTimeline: fd.assignmentTimeline || '',
         supervisorEmail: fd.supervisorEmail || '',
         guestName: fd.guestName || '',
         guestSeat: fd.guestSeat || '',
@@ -2392,9 +2403,9 @@ function openRecognitionEditor(text){
     formData.recognitionNarrative=val;
     showTyping(); await delay(300); removeTyping();
     addBubble('Updated:<br><br><em>"'+val+'"</em>','ai');
-    addQuickReplies(['✓ Looks Great','✎ Continue Editing'], async(ans)=>{
+    addQuickReplies(['✅ Looks Correct','✏️ Continue Editing'], async(ans)=>{
       clearQuickReplies(); addBubble(ans,'user');
-      if(ans.indexOf('Looks Great')!==-1){ flowIndex++; await askNextQuestion(); }
+      if(ans.indexOf('Looks Correct')!==-1){ flowIndex++; await askNextQuestion(); }
       else { openRecognitionEditor(formData.recognitionNarrative); }
     });
   };
@@ -2415,9 +2426,9 @@ async function runRecognitionSynthesis(){
   formData.recognitionNarrative=woven;
   removeTyping(); showTyping(); await delay(400); removeTyping();
   addBubble('Here is the final recognition writeup:<br><br><em>"'+woven+'"</em><br><br>Look good?','ai');
-  addQuickReplies(['Yes, perfect','✏️ Edit'], async(ans)=>{
+  addQuickReplies(['✅ Looks Correct','✏️ Edit'], async(ans)=>{
     clearQuickReplies(); addBubble(ans,'user');
-    if(ans.startsWith('Yes')){ flowIndex++; await askNextQuestion(); }
+    if(ans.indexOf('Looks Correct')!==-1){ flowIndex++; await askNextQuestion(); }
     else { openRecognitionEditor(woven); }
   });
 }
@@ -2704,9 +2715,9 @@ async function askNextQuestion(){
           inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
           showTyping(); await delay(400); removeTyping();
           addBubble('I found:<br>First: <strong>'+parsed.first+'</strong><br>Middle: <strong>'+(parsed.middle||'None')+'</strong><br>Last: <strong>'+(parsed.last||'None')+'</strong><br>Suffix: <strong>'+(parsed.suffix||'None')+'</strong><br><br>Use this?','ai');
-          addQuickReplies(['✅ Yes','✏️ Edit'], async(ans)=>{
+          addQuickReplies(['✅ Looks Correct','✏️ Edit'], async(ans)=>{
             clearQuickReplies(); addBubble(ans,'user');
-            if(ans.includes('Yes')){
+            if(ans.includes('Looks Correct')){
               formData.guestFirstName=parsed.first; formData.guestLastName=parsed.last; formData.guestNameStatus='Known'; formData.guestName=parsed.displayName;
               flowIndex++; await askNextQuestion();
             } else { askGuestFullName(true); }
@@ -2799,9 +2810,9 @@ async function askNextQuestion(){
       inputArea.style.display='none'; awaitingInput=false;
       showTyping(); await delay(500); removeTyping();
       addBubble(`I found:<br>First: <strong>${parsed.first}</strong><br>Middle: <strong>${parsed.middle||'None'}</strong><br>Last: <strong>${parsed.last||'None'}</strong><br>Suffix: <strong>${parsed.suffix||'None'}</strong><br><br>Use this?`,'ai');
-      addQuickReplies(['✅ Yes','✏️ Edit'], async(ans)=>{
+      addQuickReplies(['✅ Looks Correct','✏️ Edit'], async(ans)=>{
         clearQuickReplies(); addBubble(ans,'user');
-        if(ans.includes('Yes')){ applyEmployeeName(parsed); flowIndex++; await askNextQuestion(); }
+        if(ans.includes('Looks Correct')){ applyEmployeeName(parsed); flowIndex++; await askNextQuestion(); }
         else {
           showTyping(); await delay(300); removeTyping();
           addBubble("No problem — type the name again and I'll re-check it.",'ai');
@@ -2930,7 +2941,7 @@ async function askNextQuestion(){
     html+='<b>Assignments Worked</b><br>'+((formData.assignmentsWorked&&formData.assignmentsWorked.length)?formData.assignmentsWorked.map(function(a){return '\u2713 '+a;}).join('<br>'):'None')+'<br><br>';
     html+='<b>Assignment Timeline</b><br>'+(formData.assignmentTimeline||'—');
     addBubble(html,'ai');
-    addQuickReplies(['✅ Looks Correct','✏ Edit'], async function(ans){
+    addQuickReplies(['✅ Looks Correct','✏️ Edit'], async function(ans){
       clearQuickReplies(); addBubble(ans,'user');
       if(ans.indexOf('Looks Correct')!==-1){ flowIndex++; await askNextQuestion(); }
       else { flowIndex=activeFlow.findIndex(function(s){return s.key==='positionHeld';}); await askNextQuestion(); }
@@ -3046,6 +3057,7 @@ async function askNextQuestion(){
   }
 
     if(step.isRecognitionObservations){
+    if(typeof mountRecorderCard==='function' && typeof enableVoiceIncidentCapture!=='undefined' && enableVoiceIncidentCapture){ mountRecorderCard(); }
     inputArea.style.display='flex'; awaitingInput=true;
     document.getElementById('inputHint').style.display='block';
     userInput.focus();
@@ -3373,6 +3385,7 @@ async function processAnswer(raw){
     const ctx=`This is a ${incidentType==='incident'?formData.incidentCategory+' incident':'employee recognition'} report for ${formData.venue}.`;
     const fieldType = ['incidentDescription','guestStatement','guestStatementDetail','recognitionDescription'].includes(key) ? 'description' : 'field';
     const _step=(activeFlow||[]).find(function(st){return st&&st.key===key;})||{};
+    formData[key+'Raw']=raw;
     const cleaned=await cleanWithAI(raw,ctx,fieldType,key,_step.editorProfile);
     removeTyping(); showTyping(); await delay(500); removeTyping();
     addBubble(`Here's how it will read on the report:<br><br><em>"${cleaned}"</em><br><br>Does this accurately capture what happened?`,'ai');
@@ -3427,7 +3440,7 @@ Event: ${formData.eventName||'N/A'}
 Location: ${formData.incidentLocation||'N/A'}
 Incident Type: ${formData.incidentCategory||'N/A'}
 Severity: ${formData.incidentSeverity||'N/A'}
-Reporting Officer: ${supName}, ${formData.positionHeld||''}
+Reporting Officer: ${supName}, ${formData.positionHeld||''}${operationalContextText(formData)?('\nOperational Context:\n'+operationalContextText(formData)):''}
 Guest Name: ${formData.guestName||'Unknown'}
 Guest Description: ${formData.guestGender||''} ${formData.guestAgeRange||''} ${formData.guestHeight||''} ${formData.guestBuild||''} Hair: ${formData.guestHair||''} ${formData.guestHairStyle||''} Clothing: ${formData.guestClothing||''} Features: ${formData.guestFeatures||''}
 Incident Description: ${formData.incidentDescription||'N/A'}
@@ -3534,7 +3547,7 @@ Return ONLY the narrative text. No preamble, no labels, no markdown.`;
       const submitWrap = document.createElement('div');
       submitWrap.style.cssText='padding:0 0 8px;';
       submitWrap.innerHTML=`
-        <div style="font-size:12px;color:var(--text-muted);text-align:center;margin:12px 0 8px;font-style:italic;">Report signed and locked. Download or submit below.</div>
+        <div style="font-size:12px;color:var(--text-muted);text-align:center;margin:12px 0 8px;font-style:italic;">Report signed and locked. Download or submit below.</div>\n        <div style="font-size:11px;color:var(--text-muted);text-align:center;margin:0 0 8px;">The email opens with the full report text. To include files, download the PDF and Word documents above and attach them before sending.</div>
         <button class="download-pdf-btn" style="margin-top:6px;">⬇ Download Professional PDF</button>
         <button class="download-word-btn" style="margin-top:6px;">⬇ Download Word Document</button>
         <button class="submit-btn" style="margin-top:6px;">📧 Submit Report — Send to HR & Myself</button>
@@ -3665,6 +3678,7 @@ function generatePDF(isIncident) {
   body += fv('Prepared By', supName);
   body += fv('Supervisor Position', fd.positionHeld);
   body += fv('Supervisor Email', fd.supervisorEmail);
+  if(operationalContextText(fd)) body += fv('Operational Context', operationalContextText(fd).replace(/\n/g,' • '));
   body += fv('Report Type', fd.formType);
   body += `</div>`;
 
@@ -3830,6 +3844,7 @@ function generateWord(isIncident) {
   content += `Incident Date: ${fd.incidentDate||fd.date}\nIncident Time: ${fd.incidentTime||fd.time}\n`;
   content += `Venue: ${fd.venue}\nReport Type: ${fd.formType}\n`;
   content += `Prepared By: ${supName}\nSupervisor Position: ${fd.positionHeld||'N/A'}\nEmail: ${fd.supervisorEmail||'N/A'}\n\n`;
+  { const _oc=operationalContextText(fd); if(_oc) content += `OPERATIONAL CONTEXT\n-------------------\n${_oc}\n\n`; }
 
   if(isIncident){
     content += `INCIDENT DETAILS\n${'-'.repeat(30)}\n`;
@@ -4237,9 +4252,9 @@ function armSupervisorName(){
     inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
     showTyping(); await delay(500); removeTyping();
     addBubble(`I found:<br>First: <strong>${parsed.first}</strong><br>Middle: <strong>${parsed.middle||'None'}</strong><br>Last: <strong>${parsed.last||'None'}</strong><br>Suffix: <strong>${parsed.suffix||'None'}</strong><br><br>Use this?`,'ai');
-    addQuickReplies(['✅ Yes','✏️ Edit'], async(ans)=>{
+    addQuickReplies(['✅ Looks Correct','✏️ Edit'], async(ans)=>{
       clearQuickReplies(); addBubble(ans,'user');
-      if(ans.includes('Yes')){
+      if(ans.includes('Looks Correct')){
         formData.supervisorFirstName=parsed.first;
         formData.supervisorMiddle=parsed.middle;
         formData.supervisorLastName=parsed.last;
