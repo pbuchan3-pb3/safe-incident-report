@@ -1,7 +1,13 @@
-# Atlas Design Constitution v1.0
+# Atlas Design Constitution
 
-> **Status:** Internal project reference · **Applies to:** Atlas v1.9.7 and forward
-> **Scope:** Design philosophy and architecture. This document does not change application behavior.
+| | |
+|---|---|
+| **Current version** | 1.0 |
+| **Approved architecture** | v1.9.7 |
+| **Last updated** | July 2026 |
+| **Status** | Living Document |
+
+> **Scope:** Design philosophy and architecture. This document does not change application behavior. As a living document it is expected to evolve — update the version and last-updated fields above when it changes.
 
 ---
 
