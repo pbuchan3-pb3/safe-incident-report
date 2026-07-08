@@ -4,13 +4,20 @@
   S.A.F.E. MANAGEMENT — AI-POWERED INCIDENT REPORTING SYSTEM
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
-  APPLICATION VERSION: 1.9.7   (Audit remediation G1-G7)
+  APPLICATION VERSION: 1.9.8   (Interview 3.0 batch 1: narrative-first order, actions multi-select)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
 
   CHANGELOG
   ----------------------------------------------------------------------------
+  v1.9.8 — Interview Experience 3.0, batch 1 (safe, contained).
+           - Narrative-first order: incident description + AI rewrite now come
+             right after incident type; severity moved to AFTER the narrative.
+           - Actions Taken is now multi-select with AP-cleaned Other; stored as
+             actionTaken (joined) + actionsTakenList.
+           - Deferred with design: People Engine (data-model rebuild) and
+             Recorder 3.0 speech-to-text (needs backend transcription).
   v1.9.7 — Audit remediation (G1-G7): shared recorder on all narrative fields;
            raw narrative preserved (<field>Raw); Operational Context in review/
            PDF/Word/email/text/Sheets + attachment note; unified confirmation
@@ -507,6 +514,8 @@
   .op-btn:hover{border-color:var(--safe-navy);}
 
   .q-help{display:block;font-size:12px;color:var(--text-muted);margin-top:5px;font-weight:400;line-height:1.4;}
+
+  .recval-grid{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 10px;}
 </style>
 </head>
 <body>
@@ -572,7 +581,7 @@
     <div class="season-motto">Stronger Together</div>
   </div>
   <div class="header-right">
-    <div class="header-badge">v1.9.7</div>
+    <div class="header-badge">v1.9.8</div>
   </div>
 </header>
 
@@ -650,7 +659,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '1.9.7';
+const APP_VERSION = '1.9.8';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -869,6 +878,7 @@ const baseFlow = [
 const incidentFlow = [
   {key:'eventName', ask:"What event was taking place at the time of this incident?", isEventPicker:true},
   {key:'incidentCategory', ask:"What type of incident occurred?", quickReplies:['Slip / Fall / Medical','Intoxication / Ejection','Guest Altercation','Employee Misconduct','Unauthorized Access','Theft / Property Damage','Lost Person / Child','Other']},
+  {key:'incidentDescription', editorProfile:'incidentReport', mountRecorder:true, ask:()=>`${formData.supervisorFirstName||'Officer'}, describe what happened in your own words — what you saw, what was said, what actions were taken. Don't worry about how it sounds; I'll clean it up.`},
   {key:'incidentSeverity', ask:"How would you rate the severity of this incident?", quickReplies:['Minor — Resolved on scene','Moderate — Required additional response','Serious — EMS / Police / Management involved']},
   {key:'supervisorEmail', ask:()=>savedEmail ? `What is your email address? We have <strong>${savedEmail}</strong> on file — tap to use it, or type a new one.` : 'What is your email address? A copy of this report will be sent to you automatically.', isEmail:true, savedEmailChip:true},
   {key:'incidentLocation', ask:()=>`Got it, ${formData.supervisorFirstName||'Officer'}. Where did the incident occur?`, isLocationPicker:true},
@@ -888,11 +898,10 @@ const incidentFlow = [
   {key:'guestClothing', ask:()=>`What was ${guestRef()} wearing? Describe the shirt, jacket, hat, or any other distinctive clothing.<br><span class="q-help">This helps identify the guest if follow-up is needed.</span>`, isGuestClothing:true},
   {key:'guestFeatures', ask:()=>`Any distinguishing features for ${guestRef()}? Select all that apply.`, isAppearanceFeatures:true},
   {key:'guestPhotos', ask:()=>`Do you have any photos of ${formData.guestName&&formData.guestName!=='Unknown'?formData.guestName:'the guest or subject'}? Upload up to 3 photos.`, isPhotoUpload:true, photoType:'guest'},
-  {key:'incidentDescription', editorProfile:'incidentReport', mountRecorder:true, ask:()=>`${formData.supervisorFirstName||'Officer'}, describe what happened in your own words — what you saw, what was said, what actions were taken. Don't worry about how it sounds; I'll clean it up.`},
   {key:'scenePhotos', ask:"Do you have any photos of the scene, location, or evidence? Upload up to 3 photos.", isPhotoUpload:true, photoType:'scene'},
   {key:'guestStatement', ask:()=>`Did ${guestRef()} provide a statement about the incident?<br><span class="q-help">Statements become part of the official incident record.</span>`, isGuestStatement:true},
   {key:'witnesses', ask:"Were there any witnesses — staff, security, or guests? If yes, share their names or descriptions.", isWitnesses:true},
-  {key:'actionTaken', ask:"What action was taken?", quickReplies:['Verbal Warning','Written Warning','Ejection from Venue','Referred to Guest Services','Suspension','Termination','EMS Called','Detroit PD Called','No Action Taken','Other — specify'],isActionTaken:true},
+  {key:'actionTaken', ask:"What action did you take? Select all that apply.", isActionsMulti:true},
   {key:'emsPolice', editorProfile:'incidentReport', ask:"Was EMS or Detroit PD involved? If yes, provide any report number or officer name if available.", isEmsPolice:true},
   {key:'guestTransported', ask:"Was the guest or any person transported from the venue?", quickReplies:['Yes — transported by EMS','Yes — left on their own','No — remained on site','Not applicable'], skipIf:(fd)=>!fd.actionTaken||!fd.actionTaken.includes('EMS')},
   {key:'followUp', ask:"Is any follow-up required?", quickReplies:['Yes — follow-up needed','No — incident resolved']},
@@ -3081,6 +3090,49 @@ async function askNextQuestion(){
 
 
 
+
+  if(step.isActionsMulti){
+    inputArea.style.display='none'; awaitingInput=false;
+    const opts=['Verified Ticket','Separated Guests','Relocated Guest','Verbal Warning','Written Warning','Contacted SAFE Ops','Contacted Police','Contacted EMS','Requested Supervisor','Completed Report','Other'];
+    const selected=new Set(); let otherVal='';
+    const wrap=document.createElement('div'); wrap.className='recval-wrap';
+    const grid=document.createElement('div'); grid.className='recval-grid'; wrap.appendChild(grid);
+    let otherBox=null;
+    const controls=document.createElement('div'); controls.className='recval-controls';
+    const done=document.createElement('button'); done.type='button'; done.className='recval-done'; done.textContent='Done'; done.disabled=true;
+    opts.forEach(function(o){
+      const b=document.createElement('button'); b.type='button'; b.className='recval-chip'; b.textContent=o;
+      b.onclick=function(){
+        if(o==='Other'){
+          if(b.classList.contains('sel')){ b.classList.remove('sel'); selected.delete('Other'); if(otherBox){otherBox.remove();otherBox=null;} otherVal=''; done.disabled=selected.size===0; return; }
+          b.classList.add('sel'); selected.add('Other');
+          if(!otherBox){
+            otherBox=document.createElement('div'); otherBox.className='recval-other';
+            const ta=document.createElement('input'); ta.type='text'; ta.className='recval-other-input'; ta.placeholder='Describe the action...';
+            const sv=document.createElement('button'); sv.type='button'; sv.className='recval-other-save'; sv.textContent='Add';
+            sv.onclick=async function(){ const t=ta.value.trim(); if(!t) return; sv.disabled=true; sv.textContent='...'; const r=await standardizeOther(t,'action'); otherVal=r.label; ta.disabled=true; sv.textContent='Added \u2713'; };
+            ta.addEventListener('keydown',function(e){ if(e.key==='Enter'){e.preventDefault();sv.onclick();} });
+            otherBox.appendChild(ta); otherBox.appendChild(sv); wrap.insertBefore(otherBox, controls); ta.focus();
+          }
+          done.disabled=selected.size===0; return;
+        }
+        if(selected.has(o)){ selected.delete(o); b.classList.remove('sel'); } else { selected.add(o); b.classList.add('sel'); }
+        done.disabled=selected.size===0;
+      };
+      grid.appendChild(b);
+    });
+    done.onclick=async function(){
+      const arr=[...selected].filter(function(x){return x!=='Other';});
+      if(selected.has('Other') && otherVal) arr.push(otherVal);
+      wrap.remove();
+      formData.actionsTakenList=arr; formData.actionTaken=arr.join(', ');
+      addBubble(arr.length?arr.join(', '):'None','user');
+      flowIndex++; await askNextQuestion();
+    };
+    controls.appendChild(done); wrap.appendChild(controls);
+    chatWindow.appendChild(wrap); scrollBottom();
+    return;
+  }
 
   if(step.isGuestClothing){
     showInlineOptions(["I don't recall"], async(val)=>{
