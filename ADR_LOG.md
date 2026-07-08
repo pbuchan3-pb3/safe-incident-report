@@ -1,6 +1,12 @@
 # Atlas — Architectural Decision Records (ADR Log)
 
-> **Status:** Internal project reference · **Applies to:** Atlas v1.9.7 and forward
+| | |
+|---|---|
+| **Current version** | 1.1 |
+| **Approved architecture** | v1.9.7 |
+| **Last updated** | July 2026 |
+| **Status** | Living Document |
+
 > **Companion document:** `ATLAS_DESIGN_CONSTITUTION.md`
 > **Scope:** Records the significant architectural decisions behind Atlas and why they were made. This log is documentation only; it does not change application behavior.
 
@@ -65,6 +71,30 @@ An ADR captures a single decision, the reason for it, and its status. Accepted A
 **Status:** Accepted
 
 **In the code (v1.9.7):** Position, assignments worked, and reassignment timeline are collected once in `baseFlow` (shared across workflows) and rendered by `operationalContextText()` in every deliverable — on-screen review card, PDF, Word, email body, text export, and the Sheets payload (added in the v1.9.7 audit remediation, gap G3). See Constitution Principle 7.
+
+---
+
+## ADR-006 — Every workflow runs on the shared Interview Engine
+
+**Decision:** Every workflow shall execute through the shared Interview Engine rather than implementing workflow-specific interview logic.
+
+**Reason:** Ensures consistent behavior while minimizing duplicate code.
+
+**Status:** Accepted
+
+**In the code (v1.9.7):** Incident and Recognition both run through the same flow engine (`askNextQuestion()`, shared `baseFlow`, and shared step handlers), with only their step definitions and editorial profiles differing. New workflows (Corrective Action, Michigan Post Event Summary) are expected to add step/config definitions, not a parallel interview engine. See Constitution Principle 1 and the Litmus Test.
+
+---
+
+## ADR-007 — AI narratives require supervisor review
+
+**Decision:** All AI-generated narratives require supervisor review before final submission.
+
+**Reason:** Atlas assists supervisors but does not replace their judgment.
+
+**Status:** Accepted
+
+**In the code (v1.9.7):** Every AI rewrite is presented for confirmation with a unified "✅ Looks Correct / ✏️ Edit" control, and the final report is reviewed and signed before submission; the supervisor can edit or reject any suggested wording. See Constitution Principle 11.
 
 ---
 

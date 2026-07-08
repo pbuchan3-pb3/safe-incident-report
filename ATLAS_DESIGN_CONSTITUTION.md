@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Current version** | 1.0 |
+| **Current version** | 1.1 |
 | **Approved architecture** | v1.9.7 |
 | **Last updated** | July 2026 |
 | **Status** | Living Document |
@@ -162,6 +162,53 @@ If yes, build it once and let all workflows inherit it.
 
 ---
 
+## Principle 11 — Human Judgment Prevails
+
+Atlas is an operational decision-support platform.
+
+Atlas assists supervisors by:
+
+- collecting information
+- organizing facts
+- identifying missing details
+- improving clarity
+- generating professional documentation
+
+Atlas does not replace the supervisor's judgment.
+
+The reporting supervisor always has the ability to:
+
+- edit AI-generated narratives
+- reject suggested wording
+- correct factual errors
+- approve the final report
+
+The reporting supervisor remains responsible for the factual accuracy of the submitted report.
+
+---
+
+# The Atlas Litmus Test
+
+Before implementing a new feature, ask:
+
+> **"Does this strengthen Atlas as a shared interview platform, or does it only solve one workflow?"**
+
+If the answer is the latter, reconsider the implementation.
+
+---
+
+# Current Project Phase
+
+| Phase | Focus | Status |
+|---|---|---|
+| Phase 1 | Foundation | ✓ Complete |
+| Phase 2 | Interview Experience | ✓ Complete |
+| **Current phase** | **Interview Platform** | **In progress** |
+| Next phase | Knowledge Engine | Planned |
+| Future phase | Analytics Engine | Planned |
+
+---
+
 # Atlas Architecture Diagram
 
 ```text
@@ -208,6 +255,19 @@ If yes, build it once and let all workflows inherit it.
                                   │
                          Analytics Engine (Future)
 ```
+
+---
+
+# Appendix — Security Architecture
+
+This appendix documents the current (v1.9.7) security implementation. It describes what exists today rather than proposing future changes.
+
+- **No AI keys in the browser.** No Anthropic API key is present in `index.html`, `api-config.js`, or any committed or browser-side code.
+- **All AI requests flow through the Cloudflare Worker.** `cleanWithAI()` posts only to `SAFE_AI_PROXY_URL`; the Worker (`safe-ai-proxy-worker.js`) forwards the request to Anthropic.
+- **Anthropic keys remain server-side.** The key exists solely as a Cloudflare Worker secret (`ANTHROPIC_API_KEY`) and is never sent to the client.
+- **The browser communicates only with `SAFE_AI_PROXY_URL`.** It never calls the Anthropic API directly.
+- **Graceful fallback.** A failed AI request — network error, non-200 response, or an unconfigured proxy — falls back to the supervisor's raw text, so input is never lost, while diagnostics record the reason.
+- **Developer-only diagnostics.** The `safeDiag` panel (AI attempted / HTTP status / fallback used / output source) is gated behind `?debug=1` and is never shown to supervisors.
 
 ---
 
