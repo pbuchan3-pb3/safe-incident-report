@@ -566,6 +566,122 @@
   .recval-grid{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 10px;}
 
   .rec-transcript{max-height:120px;overflow:auto;background:#f4f7fb;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin:6px 0;font-size:13px;line-height:1.5;color:var(--safe-navy);white-space:pre-wrap;}
+
+  /* ===================================================================
+     ATLAS v2.0 VISUAL SYSTEM — enhancement layer (CSS only, additive).
+     Enhances existing classes; introduces reusable design tokens.
+     No workflow, logic, or DOM changes.
+     =================================================================== */
+  :root{
+    /* spacing scale */
+    --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:32px;
+    /* corner radius scale */
+    --r-sm:8px; --r-md:12px; --r-lg:16px; --r-xl:22px; --r-pill:999px;
+    /* elevation (soft, enterprise) */
+    --sh-1:0 1px 2px rgba(16,32,58,.06), 0 1px 3px rgba(16,32,58,.05);
+    --sh-2:0 2px 6px rgba(16,32,58,.07), 0 4px 12px rgba(16,32,58,.06);
+    --sh-3:0 8px 24px rgba(16,32,58,.10), 0 2px 8px rgba(16,32,58,.06);
+    --sh-focus:0 0 0 3px rgba(27,75,138,.32);
+    /* motion */
+    --ease:cubic-bezier(.2,.7,.2,1); --dur-1:120ms; --dur-2:200ms; --dur-3:320ms;
+    --grad-brand:linear-gradient(90deg,var(--safe-red),#ff4d5e);
+  }
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:.001ms !important;transition-duration:.001ms !important;}
+  }
+
+  /* 1. Typography — hierarchy + rhythm */
+  body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;}
+  .bubble{letter-spacing:.002em;}
+  .bubble.ai strong{color:var(--safe-navy);font-weight:700;}
+  .q-help{letter-spacing:.005em;}
+
+  /* 2/3/4. Modern cards — soft elevation on existing panels/cards */
+  .bubble.ai{box-shadow:var(--sh-1);border-radius:var(--r-lg);border-bottom-left-radius:6px;
+    transition:box-shadow var(--dur-2) var(--ease), transform var(--dur-2) var(--ease);}
+  .bubble.user{border-radius:var(--r-lg);border-bottom-right-radius:6px;
+    box-shadow:0 2px 8px rgba(26,46,74,.18);}
+  .recval-wrap, .op-wrap{border-radius:var(--r-md);}
+  .rec-transcript{box-shadow:inset 0 1px 2px rgba(16,32,58,.05);border-radius:var(--r-md);}
+
+  /* 5/7. Smoother buttons + micro-interactions (hover lift, smooth press) */
+  .recval-chip, .op-btn, .recval-cat, .recval-done, .recval-clear,
+  .quick-reply, .event-search-btn, .cal-nav, .time-select{
+    transition:background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease),
+      color var(--dur-1) var(--ease), box-shadow var(--dur-2) var(--ease),
+      transform var(--dur-1) var(--ease);
+  }
+  .recval-chip:hover, .op-btn:hover, .recval-cat:hover, .quick-reply:hover{
+    transform:translateY(-1px); box-shadow:var(--sh-2);
+  }
+  .recval-chip:active, .op-btn:active, .recval-cat:active, .quick-reply:active,
+  .recval-done:active, .recval-clear:active{ transform:translateY(0) scale(.985); }
+  .recval-chip.sel{ box-shadow:var(--sh-1); }
+
+  /* 6. Progress bar — smoother, soft gradient + subtle glow */
+  .progress-track{height:5px;border-radius:var(--r-pill);background:rgba(200,205,212,.18);}
+  .progress-fill{border-radius:var(--r-pill);background:var(--grad-brand);
+    background-size:200% 100%;
+    box-shadow:0 0 8px rgba(232,25,44,.45);
+    transition:width var(--dur-3) var(--ease);
+    animation:atlasSheen 3.2s linear infinite;}
+  @keyframes atlasSheen{0%{background-position:0% 0;}100%{background-position:-200% 0;}}
+
+  /* 4. Hero header — extremely subtle ambient lighting (no DOM change) */
+  .hero-strip-bg::after{content:'';position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(120% 90% at 78% 0%, rgba(232,25,44,.10), transparent 60%);
+    animation:atlasGlow 14s ease-in-out infinite alternate;}
+  @keyframes atlasGlow{0%{opacity:.55;transform:translateX(-1.5%);}100%{opacity:.9;transform:translateX(1.5%);}}
+  .hero-badge{box-shadow:var(--sh-1);}
+
+  /* 8. Mobile touch targets + spacing */
+  @media (max-width:640px){
+    .recval-chip{min-height:48px;padding:12px 16px;}
+    .op-btn, .recval-cat{min-height:56px;}
+    .quick-reply{min-height:46px;padding:11px 16px;}
+    .bubble{max-width:88%;}
+    .chat-window, #chatWindow{scroll-behavior:smooth;-webkit-overflow-scrolling:touch;}
+  }
+
+  /* 10. Accessible focus states — visible, consistent, non-intrusive */
+  a:focus-visible, button:focus-visible, textarea:focus-visible, input:focus-visible,
+  [tabindex]:focus-visible, .recval-chip:focus-visible, .op-btn:focus-visible,
+  .recval-cat:focus-visible, .quick-reply:focus-visible{
+    outline:none; box-shadow:var(--sh-focus); border-radius:var(--r-sm);
+  }
+
+  /* 8/9. Interview emphasis — newest bubble gently settles in (motion only) */
+  .bubble{will-change:transform,opacity;}
+
+  /* ---- Dashboard component styles (PREPARED, not yet used in markup) ---- */
+  .atlas-metric-card{background:#fff;border:1px solid var(--border);border-radius:var(--r-lg);
+    padding:var(--sp-5);box-shadow:var(--sh-2);display:flex;flex-direction:column;gap:var(--sp-2);}
+  .atlas-metric-card .metric-value{font-family:'Barlow Condensed',sans-serif;font-size:32px;font-weight:800;color:var(--safe-navy);line-height:1;}
+  .atlas-metric-card .metric-label{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);}
+  .atlas-summary-card{background:#fff;border:1px solid var(--border);border-left:4px solid var(--safe-blue);
+    border-radius:var(--r-md);padding:var(--sp-4);box-shadow:var(--sh-1);}
+  .atlas-status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;
+    padding:4px 10px;border-radius:var(--r-pill);}
+  .atlas-status::before{content:'';width:8px;height:8px;border-radius:50%;background:currentColor;}
+  .atlas-status.ok{color:var(--success);background:rgba(16,185,129,.10);}
+  .atlas-status.warn{color:#b45309;background:rgba(245,158,11,.12);}
+  .atlas-status.alert{color:var(--danger);background:rgba(239,68,68,.10);}
+  .atlas-chart-placeholder{height:160px;border:1px dashed var(--border);border-radius:var(--r-md);
+    display:flex;align-items:center;justify-content:center;color:var(--text-muted);
+    font-size:12px;letter-spacing:.08em;text-transform:uppercase;background:
+    repeating-linear-gradient(135deg,rgba(27,75,138,.03) 0 10px,transparent 10px 20px);}
+  .atlas-alert{display:flex;gap:var(--sp-3);align-items:flex-start;background:rgba(232,25,44,.05);
+    border:1px solid rgba(232,25,44,.20);border-radius:var(--r-md);padding:var(--sp-3) var(--sp-4);}
+
+  /* ---- 11. Dynamic event branding (PREPARED hook, no active change) ----
+     Future: set data-event on a hero container to swap ambient imagery.
+     Readability is preserved via the overlay gradient above. */
+  [data-event="lions"] .hero-strip-bg::before{filter:saturate(1.05);}
+  [data-event="concert"] .hero-strip-bg::before{filter:hue-rotate(-8deg) saturate(1.05);}
+  [data-event="monsterjam"] .hero-strip-bg::before{filter:contrast(1.05);}
+  [data-event="soccer"] .hero-strip-bg::before{filter:saturate(1.08);}
+  [data-event="cfb"] .hero-strip-bg::before{filter:saturate(1.03);}
+
 </style>
 </head>
 <body>
