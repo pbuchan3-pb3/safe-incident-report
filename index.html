@@ -682,6 +682,31 @@
   [data-event="soccer"] .hero-strip-bg::before{filter:saturate(1.08);}
   [data-event="cfb"] .hero-strip-bg::before{filter:saturate(1.03);}
 
+
+  /* ===================================================================
+     ATLAS v2.1 — Hero Experience (CSS only; static hero markup only).
+     Builds on the v2.0 visual system. Script block untouched.
+     =================================================================== */
+  .hero-strip{height:152px;}
+  .hero-strip-bg{transform:scale(1.02);animation:atlasZoom 36s ease-in-out infinite alternate;will-change:transform;}
+  @keyframes atlasZoom{0%{transform:scale(1.02);}100%{transform:scale(1.075);}}
+  .hero-strip::after{content:'';position:absolute;inset:0;pointer-events:none;z-index:2;
+    background:linear-gradient(180deg, rgba(10,20,38,.12) 0%, rgba(10,20,38,.30) 48%, rgba(10,20,38,.80) 100%);}
+  .hero-strip-content{position:relative;z-index:3;animation:atlasHeroFade .5s var(--ease,ease) both;}
+  @keyframes atlasHeroFade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+  .hero-venue{font-size:27px;letter-spacing:.05em;text-shadow:0 2px 14px rgba(0,0,0,.5);}
+  .hero-season{font-size:11px;letter-spacing:.1em;text-shadow:0 1px 7px rgba(0,0,0,.55);}
+  .hero-tagline{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;
+    letter-spacing:.16em;text-transform:uppercase;color:var(--safe-silver);margin-top:4px;
+    text-shadow:0 1px 7px rgba(0,0,0,.55);opacity:.92;}
+  .hero-badge{align-self:flex-start;box-shadow:0 2px 10px rgba(0,0,0,.32);letter-spacing:.12em;}
+  @media (max-width:640px){
+    .hero-strip{height:134px;}
+    .hero-venue{font-size:23px;}
+    .hero-tagline{font-size:11px;letter-spacing:.13em;}
+  }
+  #chatWindow, .chat-window{scroll-behavior:smooth;}
+
 </style>
 </head>
 <body>
@@ -760,6 +785,7 @@
     <div>
       <div class="hero-venue">Ford <span>Field</span></div>
       <div class="hero-season">Detroit, Michigan · 2026 Season</div>
+      <div class="hero-tagline">Incident Reporting System</div>
     </div>
     <div class="hero-badge">S.A.F.E. Secure</div>
   </div>
