@@ -4,13 +4,26 @@
   S.A.F.E. MANAGEMENT — AI-POWERED INCIDENT REPORTING SYSTEM
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
-  APPLICATION VERSION: 1.9.11   (Re-clean after edit + PDF script removal)
+  APPLICATION VERSION: 1.9.12   (Mobile readiness: transcription messaging, touch, counts)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
 
   CHANGELOG
   ----------------------------------------------------------------------------
+  v1.9.12 — Mobile readiness sprint (batch 1).
+           - Speech: specific unavailable/error messages (Samsung Internet, Firefox,
+             iOS Safari, HTTPS, mic-permission) instead of one generic line; Try
+             Again / Type Instead with the recording preserved.
+           - Reduced speech-recognition restart frequency (debounce) to cut the
+             Android restart beep; Atlas itself emits no tone.
+           - Softer TTS tone (rate/pitch); voice picker already prefers quality
+             voices and is not hardcoded.
+           - Guest-assisted count accepts exact values (1 / 2-5 / 6-10 / 11-20 /
+             20+ / Other -> numeric).
+           - Larger touch targets on accordion headers and chips (mobile).
+           - Deferred (flagged): reassignment via assignment picker (#4) and the
+             desktop/mobile audit (#7). No desktop/recorder-core/exports/Worker change.
   v1.9.11 — Final polish: re-clean after edit + clean PDF.
            - After editing any AI-written response: "Would you like Atlas to clean
              this up again?" -> Yes, clean it up / Use my edit as written /
@@ -521,11 +534,11 @@
   /* ── RECOGNITION VALUE ACCORDION (v1.8.0) ── */
   .recval-help{font-size:12px;color:var(--text-muted);margin-bottom:10px;line-height:1.4;}
   .recval-row{margin-bottom:8px;}
-  .recval-cat{width:100%;min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:8px;border:1.5px solid var(--border);background:#fff;color:var(--safe-navy);border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;padding:10px 12px;transition:background .12s,border-color .12s,color .12s;}
+  .recval-cat{width:100%;min-height:54px;touch-action:manipulation;display:flex;align-items:center;justify-content:space-between;gap:8px;border:1.5px solid var(--border);background:#fff;color:var(--safe-navy);border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;padding:10px 12px;transition:background .12s,border-color .12s,color .12s;}
   .recval-cat.sel{color:#fff;}
   .recval-caret{font-size:12px;opacity:.7;}
   .recval-panel{display:flex;flex-wrap:wrap;gap:6px;padding:8px 4px 2px;}
-  .recval-chip{border:1px solid var(--border);background:#f4f7fb;color:var(--safe-navy);border-radius:999px;font-size:12px;font-weight:600;padding:9px 13px;min-height:40px;cursor:pointer;transition:background .12s,color .12s,border-color .12s;}
+  .recval-chip{border:1px solid var(--border);background:#f4f7fb;color:var(--safe-navy);border-radius:999px;font-size:13px;font-weight:600;padding:11px 15px;min-height:46px;touch-action:manipulation;cursor:pointer;transition:background .12s,color .12s,border-color .12s;}
   .recval-chip.sel{background:var(--safe-navy);color:#fff;border-color:var(--safe-navy);}
   .recval-summary{background:#f4f7fb;border-radius:10px;padding:10px 12px;font-size:12px;color:var(--safe-navy);margin:10px 0;line-height:1.5;}
   .recval-summary .recval-sum-empty{color:var(--text-muted);}
@@ -544,7 +557,7 @@
 
   /* ── OPERATIONAL CONTEXT (v1.9.2) ── */
   .op-wrap{margin:10px 0;display:flex;flex-direction:column;gap:8px;}
-  .op-btn{width:100%;min-height:48px;border:1.5px solid var(--border);background:#fff;color:var(--safe-navy);border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;padding:10px 12px;transition:background .12s,border-color .12s;}
+  .op-btn{width:100%;min-height:54px;touch-action:manipulation;border:1.5px solid var(--border);background:#fff;color:var(--safe-navy);border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;padding:10px 12px;transition:background .12s,border-color .12s;}
   .op-btn:active{transform:scale(.98);}
   .op-btn:hover{border-color:var(--safe-navy);}
 
@@ -618,7 +631,7 @@
     <div class="season-motto">Stronger Together</div>
   </div>
   <div class="header-right">
-    <div class="header-badge">v1.9.11</div>
+    <div class="header-badge">v1.9.12</div>
   </div>
 </header>
 
@@ -696,7 +709,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '1.9.11';
+const APP_VERSION = '1.9.12';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -874,8 +887,8 @@ function speak(text) {
   synth.cancel();
   const plain = text.replace(/<[^>]+>/g, '').replace(/&nbsp;/g,' ');
   const utt = new SpeechSynthesisUtterance(plain);
-  utt.rate = 0.92;
-  utt.pitch = 1.05;
+  utt.rate = 0.95;
+  utt.pitch = 1.0;
   utt.volume = 1;
   if (selectedVoice) {
     utt.voice = selectedVoice;
@@ -2254,6 +2267,22 @@ function recBtn(label,fn,cls){return '<button type="button" class="rec-btn '+(cl
 
 function recSupportsSpeech(){ return !!(window.SpeechRecognition||window.webkitSpeechRecognition); }
 function recUpdateTranscriptPanel(t){ const el=document.getElementById('recTranscript'); if(el){ el.style.display='block'; el.textContent=t||'\u2026'; el.scrollTop=el.scrollHeight; } }
+function speechUnavailableReason(){
+  const ua=navigator.userAgent||'';
+  if(location.protocol!=='https:' && location.hostname!=='localhost') return 'Live transcription needs a secure (HTTPS) connection, which this page is not using.';
+  if(/SamsungBrowser/i.test(ua)) return "Live transcription isn't supported by Samsung Internet. Open Atlas in Chrome on Android for voice-to-text.";
+  if(/Firefox|FxiOS/i.test(ua)) return "This browser (Firefox) doesn't currently support speech recognition. Chrome supports voice-to-text.";
+  if(/(iPhone|iPad|iPod)/i.test(ua) && !/CriOS/i.test(ua)) return "iOS Safari doesn't currently support live speech recognition.";
+  return "This browser doesn't currently support speech recognition. Chrome (desktop or Android) supports voice-to-text.";
+}
+function speechErrorMessage(err){
+  if(err==='not-allowed'||err==='service-not-allowed') return 'Microphone access was blocked. Please allow microphone permission for this site, then try again.';
+  if(err==='no-speech') return "I didn't catch any speech.";
+  if(err==='network') return 'A network issue interrupted transcription.';
+  if(err==='audio-capture') return 'No microphone was detected.';
+  return 'Live transcription stopped unexpectedly.';
+}
+
 function recStartSpeech(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   recState.srSupported=!!SR;
@@ -2262,8 +2291,8 @@ function recStartSpeech(){
     const r=new SR(); r.continuous=true; r.interimResults=true; r.lang='en-US';
     r.onresult=function(ev){ let interim=''; for(let i=ev.resultIndex;i<ev.results.length;i++){ const res=ev.results[i]; if(res.isFinal){ recState.transcriptFinal+=res[0].transcript+' '; } else { interim+=res[0].transcript; } } recState.transcriptRaw=(recState.transcriptFinal+interim).replace(/\s+/g,' ').trim(); recUpdateTranscriptPanel(recState.transcriptRaw); };
     r.onerror=function(e){ recState.srError=(e&&e.error)||'error'; safeDiag({phase:'speech',speechRecognitionError:recState.srError,partialTranscriptCaptured:!!recState.transcriptRaw,fallback:true}); };
-    r.onend=function(){ recState.srEnded=true; if(recState.status==='recording'&&recState.srWantActive){ try{r.start();}catch(_e){} } };
-    recState.sr=r; recState.srWantActive=true; r.start(); recState.srStarted=true;
+    r.onend=function(){ recState.srEnded=true; if(recState.status==='recording'&&recState.srWantActive){ const gap=Date.now()-(recState._lastStart||0); if(gap>1200){ try{r.start(); recState._lastStart=Date.now();}catch(_e){} } else { setTimeout(function(){ if(recState.status==='recording'&&recState.srWantActive){ try{r.start(); recState._lastStart=Date.now();}catch(_e){} } }, 1200-gap); } } };
+    recState.sr=r; recState.srWantActive=true; r.start(); recState._lastStart=Date.now(); recState.srStarted=true;
     safeDiag({phase:'speech',speechRecognitionSupported:true,speechRecognitionStarted:true});
   }catch(e){ recState.srError=String(e); recState.srStarted=false; safeDiag({phase:'speech',speechRecognitionError:String(e),fallback:true}); }
 }
@@ -2275,8 +2304,16 @@ async function recProcessTranscript(){
   if(!raw){
     recCollapse();
     showTyping(); await delay(300); removeTyping();
-    addBubble("Live transcription is not available in this browser. Your recording has been preserved \u2014 you may type or dictate the statement below, or review the recording.",'ai');
-    inputArea.style.display='flex'; awaitingInput=true; const h0=document.getElementById('inputHint'); if(h0) h0.style.display='block'; userInput.focus();
+    let reason;
+    if(!recState.srSupported) reason=speechUnavailableReason();
+    else if(recState.srError) reason=speechErrorMessage(recState.srError);
+    else reason="I didn't catch any speech.";
+    addBubble(reason+' Your recording has been preserved \u2014 you can try again or type your statement below.','ai');
+    addQuickReplies(['\u21ba Try Again','\u2328 Type Instead'], async function(a){
+      clearQuickReplies(); addBubble(a,'user');
+      if(a.indexOf('Try Again')!==-1){ mountRecorderCard(recState.fieldKey, recState.editorProfile, recState.onTranscriptComplete); }
+      else { inputArea.style.display='flex'; awaitingInput=true; const h0=document.getElementById('inputHint'); if(h0) h0.style.display='block'; userInput.focus(); }
+    });
     return;
   }
   recState.status='processing'; recSetStatus('Processing Transcript...'); recRenderControls();
@@ -2451,7 +2488,7 @@ function observedBehaviorsText(fd){
 }
 
 const ADAPTIVE_QUESTIONS = {
-  'Guest Service': { q:'Approximately how many guests were assisted?', options:['A few','Several','Many','Dozens or more'] },
+  'Guest Service': { q:'How many guests were assisted?', options:['1','2\u20135','6\u201310','11\u201320','20+','Other'], numericOther:true },
   'Teamwork':      { q:'Did the employee volunteer, or were they asked?', options:['Volunteered','Was asked'] },
   'Leadership':    { q:'Did the employee assist or guide newer staff?', options:['Yes','No'] },
   'Initiative':    { q:'Did the employee take action before being directed?', options:['Yes','No'] }
@@ -2470,6 +2507,13 @@ async function runAdaptiveQuestions(vals){
     addBubble(cfg.q,'ai');
     addQuickReplies(cfg.options, async function(ans){
       clearQuickReplies(); addBubble(ans,'user');
+      if(ans==='Other' && cfg.numericOther){
+        showTyping(); await delay(200); removeTyping();
+        addBubble('Enter the number of guests assisted.','ai');
+        inputArea.style.display='flex'; awaitingInput=true; document.getElementById('inputHint').style.display='block'; userInput.focus();
+        sendInterceptor=async function(n){ const val=(n||'').trim(); inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; formData.recognitionAdaptive.push(cfg.q+' '+val); await askOne(i+1); };
+        return;
+      }
       formData.recognitionAdaptive.push(cfg.q+' '+ans);
       await askOne(i+1);
     });
