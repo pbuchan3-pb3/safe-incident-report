@@ -4,13 +4,27 @@
   S.A.F.E. MANAGEMENT — AI-POWERED INCIDENT REPORTING SYSTEM
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
-  APPLICATION VERSION: 1.9.9   (Recorder 3.0 Phase A: live browser speech-to-text)
+  APPLICATION VERSION: 1.9.10   (Incident polish sprint)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
 
   CHANGELOG
   ----------------------------------------------------------------------------
+  v1.9.10 — Incident workflow polish sprint.
+           - Structured witness mini-flow: multi-select types, per-witness name
+             (parser + confirm) and statement (record/type/skip, witness editor).
+           - Editorial: "guest" replaces "subject" for standard incidents (subject
+             reserved for law-enforcement contexts); active voice preferred.
+           - PDF now force-downloads (html2pdf) with a timestamped name; falls back
+             to Print->Save as PDF with clear guidance. Word unchanged.
+           - Seat: no second "parsed" bubble — only "Got it — ...".
+           - Recorder collapsed card shows the real duration; added Re-record after
+             the AI rewrite (prior transcript kept until a new one is accepted).
+           - Opening timestamp wording updated; Prepared By includes suffix and no
+             stray trailing comma.
+           - No regressions: Recorder 3.0, narrative-before-severity, actions
+             multi-select, Operational Context exports, parsers, proxy, no keys.
   v1.9.9 — Recorder 3.0 Phase A: live browser speech recognition.
            - Record captures audio AND live Web Speech transcription (where
              supported); transcript shows live. Stop preserves audio + raw
@@ -593,7 +607,7 @@
     <div class="season-motto">Stronger Together</div>
   </div>
   <div class="header-right">
-    <div class="header-badge">v1.9.9</div>
+    <div class="header-badge">v1.9.10</div>
   </div>
 </header>
 
@@ -671,7 +685,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '1.9.9';
+const APP_VERSION = '1.9.10';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -993,8 +1007,8 @@ const EDITOR_PROFILES = {
     instruction: function(rawText){ return 'Employee being recognized: ' + (formData.employeeDisplayName||'the employee') + (formData.employeeLastName ? (' Use the last name ' + formData.employeeLastName + ' after the first full-name reference.') : '.') + ' Rewrite these recognition notes as a warm, professional HR recognition narrative per the instructions. Keep all facts exactly; invent nothing. Return only the rewritten text. Input: ' + rawText; }
   },
   incidentReport: {
-    system: "You are a professional HR and security report writer for S.A.F.E. Management. Rewrite the supervisor's rough notes into polished, professional AP-style prose suitable for Human Resources, legal, and management review. Third person, past tense. Never use I, we, he, she, they; refer to people as 'the subject', 'a male subject', 'a female subject', or by name. Preserve every fact exactly; never invent, add, exaggerate, or omit facts. Return ONLY the rewritten text.",
-    instruction: function(rawText){ return 'Rewrite in professional AP Style past tense third person. Replace: girl=female subject, guy=male subject, slap=strike, fight=physical altercation, went their own ways=departed the area separately. Keep all facts. Return only rewritten text.\n\nInput: ' + rawText; }
+    system: "You are a professional HR and security report writer for S.A.F.E. Management. Rewrite the supervisor's rough notes into polished, professional AP-style prose suitable for Human Resources, legal, and management review. Third person, past tense. Never use I, we, he, she, they. For standard venue incidents refer to people as 'the guest', 'a male guest', 'a female guest', 'the individual', or by name; use 'subject' ONLY for law-enforcement, arrest, criminal-trespass, assault-investigation, or police-involved contexts. Prefer active voice (e.g. 'The supervisor assisted the guest') over passive ('Assistance was provided'). Preserve every fact exactly; never invent, add, exaggerate, or omit facts. Return ONLY the rewritten text.",
+    instruction: function(rawText){ return 'Rewrite in professional AP Style past tense third person. Replace: girl=female guest, guy=male guest, slap=strike, fight=physical altercation, went their own ways=departed the area separately. Use \"guest\" rather than \"subject\" unless this is a law-enforcement/arrest/trespass/assault context. Prefer active voice over passive. Keep all facts. Return only rewritten text.\n\nInput: ' + rawText; }
   },
   discipline: {
     system: "You are an HR corrective-documentation writer for S.A.F.E. Management. Rewrite the supervisor's notes into neutral, policy-based, precise corrective documentation appropriate for HR review. Describe behavior factually; never attack character; avoid emotional or inflammatory language; reference policy where the notes indicate one. Preserve every fact; never invent, exaggerate, or speculate. Return ONLY the rewritten text.",
@@ -1072,7 +1086,7 @@ function sendViaMailto(isIncident){
   const hrEmail='safeeventmi@safemanagement.net';
   const supEmail=fd.supervisorEmail||'';
   const title=isIncident?'S.A.F.E. Incident Report':'S.A.F.E. Employee Recognition';
-  const supName=`${fd.supervisorFirstName||''} ${fd.supervisorLastName||''}`.trim();
+  const supName=`${fd.supervisorFirstName||''} ${fd.supervisorLastName||''} ${fd.supervisorSuffix||''}`.replace(/\s+/g,' ').trim();
 
   let body = `${title}\n`;
   body += `================================\n`;
@@ -2147,7 +2161,7 @@ function showInlineOptions(options, onSelect) {
 // IndexedDB, and offers playback / delete / re-record. No upload, no API key,
 // no report auto-fill (Build Report is deferred to v1.2.0).
 const REC_DB_NAME='safe_recordings', REC_STORE='drafts', REC_LAST_LS='safe_last_recording_id';
-const recState={status:'idle',mediaRecorder:null,stream:null,chunks:[],blob:null,blobUrl:null,audioEl:null,draftId:null,startedAt:0,elapsedBeforePause:0,timerInt:null,mimeType:'',sr:null,srWantActive:false,srSupported:false,srStarted:false,srEnded:false,srError:'',transcriptRaw:'',transcriptFinal:'',transcriptEdited:'',fieldKey:'incidentDescription',editorProfile:null,onTranscriptComplete:null,rewrite:''};
+const recState={status:'idle',mediaRecorder:null,stream:null,chunks:[],blob:null,blobUrl:null,audioEl:null,draftId:null,startedAt:0,elapsedBeforePause:0,timerInt:null,mimeType:'',sr:null,srWantActive:false,srSupported:false,srStarted:false,srEnded:false,srError:'',transcriptRaw:'',transcriptFinal:'',transcriptEdited:'',finalDurationMs:0,fieldKey:'incidentDescription',editorProfile:null,onTranscriptComplete:null,rewrite:''};
 
 function recSupported(){return !!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.MediaRecorder);}
 function recOpenDB(){return new Promise((res,rej)=>{const r=indexedDB.open(REC_DB_NAME,1);r.onupgradeneeded=()=>{const db=r.result;if(!db.objectStoreNames.contains(REC_STORE))db.createObjectStore(REC_STORE,{keyPath:'id'});};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
@@ -2204,7 +2218,7 @@ async function recFinalize(){
   if(recState.blob){
     recState.blobUrl=URL.createObjectURL(recState.blob);
     recState.status='saved';
-    const dur=recElapsed();recState.elapsedBeforePause=dur;
+    const dur=recElapsed();recState.elapsedBeforePause=dur;recState.finalDurationMs=dur;
     const ok=await recDbSave(recState.draftId,recState.blob,dur);
     recSetStatus(ok?'✓ Recording Complete':'Recording captured (storage unavailable)');
   }else{recState.status='idle';recSetStatus('No audio was captured. Try again.');}
@@ -2255,7 +2269,6 @@ async function recProcessTranscript(){
     return;
   }
   recState.status='processing'; recSetStatus('Processing Transcript...'); recRenderControls();
-  formData[key+'Raw']=raw; formData.transcriptRaw=raw;
   let rewrite;
   try{ rewrite=await cleanWithAI(raw, 'Voice narrative for '+(formData.venue||'the venue')+'.', 'description', key, prof); }
   catch(e){ rewrite=raw; }
@@ -2263,21 +2276,27 @@ async function recProcessTranscript(){
   recState.rewrite=rewrite; recCollapse();
   showTyping(); await delay(300); removeTyping();
   addBubble('Here is the write-up from your recording:<br><br><em>"'+rewrite+'"</em><br><br>Does this accurately capture what happened?','ai');
-  addQuickReplies(['\u2705 Looks Correct','\u270f\ufe0f Edit'], async function(ans){
+  addQuickReplies(['\u2705 Looks Correct','\u270f\ufe0f Edit','\ud83c\udf99 Re-record'], async function(ans){
     clearQuickReplies(); addBubble(ans,'user');
-    if(ans.indexOf('Looks Correct')!==-1){ formData[key]=rewrite; formData.transcriptEdited=rewrite; recAdvanceAfterTranscript(); }
+    if(ans.indexOf('Re-record')!==-1){
+      showTyping(); await delay(200); removeTyping();
+      addBubble('No problem — record it again. Your previous version is kept until you accept a new one.','ai');
+      mountRecorderCard(recState.fieldKey, recState.editorProfile, recState.onTranscriptComplete);
+      return;
+    }
+    if(ans.indexOf('Looks Correct')!==-1){ formData[key]=rewrite; formData[key+'Raw']=raw; formData.transcriptRaw=raw; formData.transcriptEdited=rewrite; recAdvanceAfterTranscript(); }
     else {
       addBubble('Edit it directly, then tap send:','ai');
       userInput.value=rewrite; userInput.style.height='auto'; userInput.style.height=Math.min(userInput.scrollHeight,220)+'px';
       inputArea.style.display='flex'; awaitingInput=true;
-      sendInterceptor=async function(edited){ const val=(edited||'').trim(); inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; formData[key]=val; formData.transcriptEdited=val; recAdvanceAfterTranscript(); };
+      sendInterceptor=async function(edited){ const val=(edited||'').trim(); inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; formData[key]=val; formData[key+'Raw']=raw; formData.transcriptRaw=raw; formData.transcriptEdited=val; recAdvanceAfterTranscript(); };
     }
   });
 }
 
 function recCollapse(){
   const card=document.getElementById('recCard'); if(!card) return;
-  const dur=recFmt(recState.elapsedBeforePause||recElapsed());
+  const dur=recFmt(recState.finalDurationMs||recState.elapsedBeforePause||recElapsed());
   card.classList.add('rec-collapsed');
   card.innerHTML='<div class="rec-head"><span class="rec-dot"></span><span class="rec-title">\u2713 Recording Attached</span><span class="rec-timer">'+dur+'</span></div>'+
     '<div class="rec-controls" id="recControls">'+recBtn('\u25b6 Review','recPlayToggle()')+recBtn('\u21bb Replace','recReRecord()')+'</div>'+
@@ -2525,6 +2544,81 @@ function parseSeat(raw){
 function guestSeatDisplay(fd){
   if(!fd.guestSeatRaw && !fd.guestSeatSection) return fd.guestSeat||'Unknown';
   return [fd.guestSeatSection?('Section '+fd.guestSeatSection):'', fd.guestSeatRow?('Row '+fd.guestSeatRow):'', 'Seat '+(fd.guestSeatNumber||'Unknown')].filter(Boolean).join(', ');
+}
+
+function witnessSummary(w){
+  const nm = w.name || 'Name unknown';
+  const st = (w.statement && w.statement.trim()) ? ('Statement: "'+w.statement.trim()+'"') : 'No statement provided.';
+  return w.type+' witness: '+nm+'. '+st;
+}
+function witnessesReportText(fd){
+  if(fd.witnesses==='None') return 'None';
+  if(fd.witnessList && fd.witnessList.length) return fd.witnessList.map(witnessSummary).join(' | ');
+  return fd.witnesses || 'None';
+}
+async function runWitnessInterviews(typesArr, i){
+  if(i>=typesArr.length){
+    formData.witnesses = (formData.witnessList && formData.witnessList.length) ? formData.witnessList.map(witnessSummary).join(' | ') : 'None';
+    flowIndex++; await askNextQuestion(); return;
+  }
+  const type=typesArr[i];
+  showTyping(); await delay(300); removeTyping();
+  addBubble('For the <strong>'+type+'</strong> witness — do you know their name?','ai');
+  addQuickReplies(['Full name','First name only','Last name only','Unknown'], async function(ns){
+    clearQuickReplies(); addBubble(ns,'user');
+    if(ns==='Unknown'){ await witnessStatementStep(type,{type:type,name:'Name unknown',statement:''},typesArr,i); return; }
+    showTyping(); await delay(200); removeTyping();
+    addBubble('What is the '+type+" witness's name?",'ai');
+    inputArea.style.display='flex'; awaitingInput=true; document.getElementById('inputHint').style.display='block'; userInput.focus();
+    sendInterceptor=async function(raw){
+      const parsed=parseName(raw);
+      if(!parsed.first){ showTyping(); await delay(200); removeTyping(); addBubble("I didn't catch a name — please type it again.",'ai'); return; }
+      inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
+      let nm;
+      if(ns==='First name only') nm=parsed.first;
+      else if(ns==='Last name only') nm=(parsed.last||parsed.first);
+      else nm=parsed.displayName;
+      showTyping(); await delay(300); removeTyping();
+      addBubble('I found:<br>First: <strong>'+(parsed.first||'None')+'</strong><br>Middle: <strong>'+(parsed.middle||'None')+'</strong><br>Last: <strong>'+(parsed.last||'None')+'</strong><br>Suffix: <strong>'+(parsed.suffix||'None')+'</strong><br><br>Use this?','ai');
+      addQuickReplies(['\u2705 Looks Correct','\u270f\ufe0f Edit'], async function(ans){
+        clearQuickReplies(); addBubble(ans,'user');
+        if(ans.indexOf('Looks Correct')!==-1){ await witnessStatementStep(type,{type:type,name:nm,statement:''},typesArr,i); }
+        else { showTyping(); await delay(200); removeTyping(); addBubble('No problem — type the name again.','ai'); inputArea.style.display='flex'; awaitingInput=true; userInput.focus(); sendInterceptor=arguments.callee; }
+      });
+    };
+  });
+}
+async function witnessStatementStep(type, w, typesArr, i){
+  showTyping(); await delay(250); removeTyping();
+  addBubble('Would you like to document what the '+type+' witness observed?','ai');
+  addQuickReplies(['Record Statement','Type Statement','Skip'], async function(ss){
+    clearQuickReplies(); addBubble(ss,'user');
+    const cont=async function(){ formData.witnessList.push(w); await runWitnessInterviews(typesArr, i+1); };
+    if(ss==='Skip'){ w.statement=''; await cont(); return; }
+    if(ss==='Record Statement' && typeof mountRecorderCard==='function' && typeof enableVoiceIncidentCapture!=='undefined' && enableVoiceIncidentCapture){
+      showTyping(); await delay(200); removeTyping();
+      addBubble('Record the '+type+" witness's statement, or type it below. I'll keep their own words and only fix grammar.",'ai');
+      mountRecorderCard('__witnessStatement','witnessStatement', async function(){ w.statement=formData.__witnessStatement||''; await cont(); });
+      inputArea.style.display='flex'; awaitingInput=true; document.getElementById('inputHint').style.display='block'; userInput.focus();
+      sendInterceptor=async function(raw){
+        inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
+        showTyping(); await delay(300); removeTyping();
+        const cleaned=await cleanWithAI((raw||'').trim(), 'Witness statement for an incident at '+(formData.venue||'the venue')+'.', 'description', '__witnessStatement', 'witnessStatement');
+        w.statement=cleaned||(raw||'').trim(); await cont();
+      };
+      return;
+    }
+    // Type Statement (or record unsupported)
+    showTyping(); await delay(200); removeTyping();
+    addBubble('What did the '+type+' witness observe?','ai');
+    inputArea.style.display='flex'; awaitingInput=true; document.getElementById('inputHint').style.display='block'; userInput.focus();
+    sendInterceptor=async function(raw){
+      inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
+      showTyping(); await delay(300); removeTyping();
+      const cleaned=await cleanWithAI((raw||'').trim(), 'Witness statement for an incident at '+(formData.venue||'the venue')+'.', 'description', '__witnessStatement', 'witnessStatement');
+      w.statement=cleaned||(raw||'').trim(); await cont();
+    };
+  });
 }
 
 async function askNextQuestion(){
@@ -2830,7 +2924,6 @@ async function askNextQuestion(){
       const sp=parseSeat(raw);
       formData.guestSeatSection=sp.section; formData.guestSeatRow=sp.row; formData.guestSeatNumber=sp.number; formData.guestSeatRaw=sp.raw;
       formData.guestSeat=guestSeatDisplay(formData);
-      addBubble(formData.guestSeat,'user');
       showTyping(); await delay(300); removeTyping();
       addBubble('Got it — '+formData.guestSeat+'.','ai');
       flowIndex++; await askNextQuestion();
@@ -2839,11 +2932,26 @@ async function askNextQuestion(){
   }
 
   if(step.isWitnesses){
-    showInlineOptions(['None'], async(val)=>{
-      clearQuickReplies(); addBubble(val,'user'); formData.witnesses='None'; flowIndex++; await askNextQuestion();
+    inputArea.style.display='none'; awaitingInput=false;
+    const types=['Staff','Event Security','Guest','Detroit Police','EMS','Vendor','Stadium Employee','Other'];
+    const selected=new Set();
+    const wrap=document.createElement('div'); wrap.className='recval-wrap';
+    const grid=document.createElement('div'); grid.className='recval-grid'; wrap.appendChild(grid);
+    const controls=document.createElement('div'); controls.className='recval-controls';
+    const done=document.createElement('button'); done.type='button'; done.className='recval-done'; done.textContent='Done'; done.disabled=true;
+    types.forEach(function(t){
+      const b=document.createElement('button'); b.type='button'; b.className='recval-chip'; b.textContent=t;
+      b.onclick=function(){ if(selected.has(t)){selected.delete(t);b.classList.remove('sel');}else{selected.add(t);b.classList.add('sel');} done.disabled=selected.size===0; };
+      grid.appendChild(b);
     });
-    inputArea.style.display='flex'; awaitingInput=true;
-    document.getElementById('inputHint').style.display='block';
+    const noneBtn=document.createElement('button'); noneBtn.type='button'; noneBtn.className='recval-clear'; noneBtn.textContent='None';
+    noneBtn.onclick=async function(){ wrap.remove(); addBubble('None','user'); formData.witnessList=[]; formData.witnesses='None'; flowIndex++; await askNextQuestion(); };
+    done.onclick=async function(){
+      const arr=[...selected]; wrap.remove(); addBubble(arr.join(', '),'user');
+      formData.witnessList=[]; await runWitnessInterviews(arr,0);
+    };
+    controls.appendChild(noneBtn); controls.appendChild(done); wrap.appendChild(controls);
+    chatWindow.appendChild(wrap); scrollBottom();
     return;
   }
 
@@ -3533,7 +3641,7 @@ async function processAnswer(raw){
 async function showFinalForm(){
   showTyping(); await delay(900); removeTyping();
   const isIncident=incidentType==='incident';
-  const supName=`${formData.supervisorFirstName||''} ${formData.supervisorLastName||''}`.trim();
+  const supName=`${formData.supervisorFirstName||''} ${formData.supervisorLastName||''} ${formData.supervisorSuffix||''}`.replace(/\s+/g,' ').trim();
   formData.supervisorName=supName;
   const empName=formData.employeeDisplayName||`${formData.employeeFirstName||''} ${formData.employeeLastName||''}`.trim();
   formData.employeeName=empName;
@@ -3553,7 +3661,7 @@ Event: ${formData.eventName||'N/A'}
 Location: ${formData.incidentLocation||'N/A'}
 Incident Type: ${formData.incidentCategory||'N/A'}
 Severity: ${formData.incidentSeverity||'N/A'}
-Reporting Officer: ${supName}, ${formData.positionHeld||''}${operationalContextText(formData)?('\nOperational Context:\n'+operationalContextText(formData)):''}
+Reporting Officer: ${supName}${formData.positionHeld?(', '+formData.positionHeld):''}${operationalContextText(formData)?('\nOperational Context:\n'+operationalContextText(formData)):''}
 Guest Name: ${formData.guestName||'Unknown'}
 Guest Description: ${formData.guestGender||''} ${formData.guestAgeRange||''} ${formData.guestHeight||''} ${formData.guestBuild||''} Hair: ${formData.guestHair||''} ${formData.guestHairStyle||''} Clothing: ${formData.guestClothing||''} Features: ${formData.guestFeatures||''}
 Incident Description: ${formData.incidentDescription||'N/A'}
@@ -3692,9 +3800,20 @@ Return ONLY the narrative text. No preamble, no labels, no markdown.`;
 }
 
 // ── PDF GENERATION ─────────────────────────────────────────────────────────
+function _safeTs(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'_'+p(d.getHours())+p(d.getMinutes()); }
+function _loadHtml2Pdf(){ return new Promise(function(res,rej){ if(window.html2pdf) return res(window.html2pdf); const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'; s.onload=function(){ window.html2pdf?res(window.html2pdf):rej(new Error('nolib')); }; s.onerror=function(){ rej(new Error('cdn')); }; document.head.appendChild(s); }); }
+async function forcePdfDownload(html, filename){
+  try{
+    const lib=await _loadHtml2Pdf();
+    const clean=html.replace(/<script>[\s\S]*?<\/script>/g,'');
+    await lib().set({margin:0,filename:filename,image:{type:'jpeg',quality:0.96},html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff'},jsPDF:{unit:'pt',format:'letter',orientation:'portrait'},pagebreak:{mode:['css','legacy']}}).from(clean,'string').save();
+    return true;
+  }catch(e){ return false; }
+}
+
 function generatePDF(isIncident) {
   const fd = formData;
-  const supName = `${fd.supervisorFirstName||''} ${fd.supervisorLastName||''}`.trim();
+  const supName = `${fd.supervisorFirstName||''} ${fd.supervisorLastName||''} ${fd.supervisorSuffix||''}`.replace(/\s+/g,' ').trim();
   const empName = fd.employeeDisplayName||`${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim();
   const title = isIncident ? 'Incident Report' : 'Employee Recognition Report';
   const submissionId = 'SAFE-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(Math.random()*9000+1000);
@@ -3933,18 +4052,18 @@ function generatePDF(isIncident) {
 </body>
 </html>`;
 
-  const win = window.open('', '_blank');
-  if (win) {
-    win.document.write(html);
-    win.document.close();
-  } else {
-    alert('Please allow pop-ups for this site to download the PDF.');
-  }
+  const _fname='SAFE_'+(isIncident?'Incident_Report':'Employee_Recognition')+'_'+_safeTs()+'.pdf';
+  forcePdfDownload(html,_fname).then(function(ok){
+    if(ok) return;
+    const win=window.open('','_blank');
+    if(win){ win.document.write(html); win.document.close(); addBubble("If the PDF opened in a tab instead of downloading, use your browser's Print \u2192 Save as PDF. The Word version downloads directly.",'ai'); }
+    else { addBubble("Please allow pop-ups, then use Print \u2192 Save as PDF \u2014 or download the Word version, which saves directly.",'ai'); }
+  });
 }
 
 function generateWord(isIncident) {
   const fd = formData;
-  const supName = `${fd.supervisorFirstName||''} ${fd.supervisorLastName||''}`.trim();
+  const supName = `${fd.supervisorFirstName||''} ${fd.supervisorLastName||''} ${fd.supervisorSuffix||''}`.replace(/\s+/g,' ').trim();
   const title = isIncident ? 'Incident Report' : 'Employee Recognition Report';
   const submissionId = 'SAFE-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(Math.random()*9000+1000);
 
@@ -4347,7 +4466,7 @@ async function startFlow(){
   showVoiceFloat();
   activeFlow=baseFlow; flowIndex=0;
   showTyping(); await delay(700); removeTyping();
-  addBubble(`Good ${getTimeOfDay()}. I've recorded right now as the <strong>report filing time: ${formData.date} at ${formData.time}</strong>. This timestamp is locked for HR records.<br><br>To get started — what is your full name?`,'ai');
+  addBubble(`Good ${getTimeOfDay()}. I've recorded the report filing time as <strong>${formData.date} at ${formData.time}</strong>. This timestamp has been locked for the official record.<br><br>To get started — what is your full name?`,'ai');
   armSupervisorName();
 }
 
