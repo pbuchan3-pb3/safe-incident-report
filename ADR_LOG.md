@@ -98,6 +98,18 @@ An ADR captures a single decision, the reason for it, and its status. Accepted A
 
 ---
 
+## ADR-008 — Backend transcription is a shared Worker service; browser recognition is optional
+
+**Decision:** Backend transcription is a shared Atlas service accessed only through the Cloudflare Worker. Browser SpeechRecognition is an optional enhancement and is not the authoritative mobile transcription pathway.
+
+**Reason:** Browser SpeechRecognition is unreliable on Android (microphone contention with MediaRecorder, restart-driven system beeps) and unavailable in several mobile browsers. A server-side Whisper pathway gives every device the same dependable "record once → transcript" behavior, while keeping the key/model server-side.
+
+**Status:** Accepted
+
+**In the code (v2.0.2):** The Worker exposes `POST /transcribe` (multipart audio → `env.AI.run("@cf/openai/whisper-large-v3-turbo")`), preserving the unchanged Anthropic text route at `/`. The browser calls it via `transcribeAudio()`; `TRANSCRIPTION_PROVIDER` is `cloudflare-workers-ai` when configured. On mobile, live browser recognition is off (silent recording); desktop keeps live transcript as a preview with backend as fallback. Audio is not persisted by the Worker; the transcript routes through the mounted field's editorial profile.
+
+---
+
 ## Decision status legend
 
 | Status | Meaning |

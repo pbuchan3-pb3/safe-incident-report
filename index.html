@@ -878,6 +878,34 @@
 // NEVER hardcode a key here or in any committed file. See api-config.example.js.
 const ANTHROPIC_API_KEY = window.ANTHROPIC_API_KEY || '';  // No key in committed code.
 const SAFE_AI_PROXY_URL = (window.SAFE_AI_PROXY_URL||'').trim();  // set via gitignored api-config.js; proxy holds the key
+const SAFE_TRANSCRIBE_URL = SAFE_AI_PROXY_URL ? (SAFE_AI_PROXY_URL.replace(/\/+$/,'')+'/transcribe') : '';
+// 'cloudflare-workers-ai' | 'browser' | 'none' — backend is the reliable path when configured.
+const TRANSCRIPTION_PROVIDER = SAFE_TRANSCRIBE_URL ? 'cloudflare-workers-ai' : 'none';
+function venueVocabulary(){
+  const base=['S.A.F.E. Management','S.A.F.E. Ops','Ford Field','Guest Services','Event Security','Detroit Police','EMS','Hall of Legends','Comerica Gridiron Club','Gate A','Gate B','Gate C','Gate D','Gate E','Gate F','Gate G','Section','Row','Seat'];
+  try{ if(formData.eventName) base.push(formData.eventName); }catch(_e){}
+  return ('Operational context for Ford Field event security. Likely terms: '+base.join(', ')+'.').slice(0,880);
+}
+async function transcribeAudio(opts){
+  opts=opts||{};
+  const out={ok:false,transcript:'',provider:'cloudflare-workers-ai',model:'',confidence:null,errorCode:'',message:'',requestId:''};
+  if(!SAFE_TRANSCRIBE_URL){ out.errorCode='NOT_CONFIGURED'; out.message='Transcription is not configured.'; return out; }
+  if(!opts.blob || !opts.blob.size){ out.errorCode='EMPTY_AUDIO'; out.message='No audio to transcribe.'; return out; }
+  try{
+    const fd=new FormData();
+    const ext=(opts.mimeType||'').indexOf('mp4')>=0?'mp4':(opts.mimeType||'').indexOf('ogg')>=0?'ogg':'webm';
+    fd.append('audio', new File([opts.blob], 'statement.'+ext, {type:opts.mimeType||opts.blob.type||'audio/webm'}));
+    fd.append('language', opts.language||'en');
+    fd.append('durationMs', String(opts.durationMs||0));
+    fd.append('fieldKey', opts.fieldKey||'');
+    fd.append('vocabulary', venueVocabulary());
+    const resp=await fetch(SAFE_TRANSCRIBE_URL, { method:'POST', body:fd }); // do NOT set Content-Type
+    let data={}; try{ data=await resp.json(); }catch(_e){}
+    if(resp.ok && data && data.ok && data.transcript){ out.ok=true; out.transcript=data.transcript; out.model=data.model||''; out.requestId=data.requestId||''; return out; }
+    out.errorCode=(data&&data.errorCode)||('HTTP_'+resp.status); out.message=(data&&data.message)||'Transcription failed.'; out.requestId=(data&&data.requestId)||''; return out;
+  }catch(e){ out.errorCode='NETWORK'; out.message='Could not reach the transcription service.'; return out; }
+}
+
 const SAFE_DEBUG = /[?&]debug=1/.test(location.search) || (function(){try{return localStorage.getItem('safe_debug')==='1';}catch(_e){return false;}})();
 const safeDiagLog=[];
 function srTestActive(){ return /[?&]srtest=1/.test(location.search); }
@@ -905,7 +933,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '2.0.1';
+const APP_VERSION = '2.0.2';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -2437,8 +2465,10 @@ async function recFinalize(){
   if(recState.blobUrl){URL.revokeObjectURL(recState.blobUrl);recState.blobUrl=null;}
   if(recState.blob){
     recState.blobUrl=URL.createObjectURL(recState.blob);
+    const dur=recElapsed();
     recState.status='saved';
-    const dur=recElapsed();recState.elapsedBeforePause=dur;recState.finalDurationMs=dur;
+    const durOk=(typeof dur==='number'&&isFinite(dur)&&dur>0)?dur:(recState.elapsedBeforePause||0);
+    recState.elapsedBeforePause=durOk;recState.finalDurationMs=durOk;
     const ok=await recDbSave(recState.draftId,recState.blob,dur);
     recSetStatus(ok?'✓ Recording Complete':'Recording captured (storage unavailable)');
   }else{recState.status='idle';recSetStatus('No audio was captured. Try again.');}
@@ -2570,7 +2600,36 @@ function recCollapse(){
   recState.audioEl=card.querySelector('#recAudio');
   recState.status='attached';
 }
-function recSendToAI(){ if(recState.status!=='saved'){ return; } recProcessTranscript(); }
+async function recSendToAI(){
+  if(recState.status!=='saved'){ return; }
+  const hasBrowserT=!!(recState.transcriptRaw||recState.transcriptFinal);
+  if(!hasBrowserT && recState.blob && TRANSCRIPTION_PROVIDER==='cloudflare-workers-ai'){
+    recState.status='processing'; recRenderControls();
+    recSetStatus('Uploading recording\u2026');
+    showTyping(); await delay(200);
+    recSetStatus('Transcribing recording\u2026');
+    const r=await transcribeAudio({blob:recState.blob, mimeType:recState.mimeType, language:'en', durationMs:recState.finalDurationMs, fieldKey:recState.fieldKey});
+    removeTyping();
+    if(r.ok && r.transcript){
+      recState.transcriptRaw=r.transcript; recSetStatus('Preparing professional write-up\u2026');
+      recProcessTranscript(); return;
+    }
+    // Failure: preserve audio, never imply the recording failed (Phase 9)
+    recState.status='saved'; recRenderControls();
+    recCollapse();
+    showTyping(); await delay(300); removeTyping();
+    const dur=recFmt(recState.finalDurationMs||0);
+    addBubble('\u2713 Audio saved \u2014 '+dur+'.<br>Atlas could not transcribe this recording right now. Your recording is safe.','ai');
+    addQuickReplies(['\u21ba Try Again','\u25b6 Review Recording','\u2328 Type Instead'], async function(a){
+      clearQuickReplies(); addBubble(a,'user');
+      if(a.indexOf('Try Again')!==-1){ mountRecorderCard(recState.fieldKey, recState.editorProfile, recState.onTranscriptComplete); }
+      else if(a.indexOf('Review Recording')!==-1){ if(typeof recPlayToggle==='function'){ recPlayToggle(); } inputArea.style.display='flex'; awaitingInput=true; const h=document.getElementById('inputHint'); if(h) h.style.display='block'; }
+      else { inputArea.style.display='flex'; awaitingInput=true; const h=document.getElementById('inputHint'); if(h) h.style.display='block'; userInput.focus(); }
+    });
+    return;
+  }
+  recProcessTranscript();
+}
 function recTypeInstead(){ recSetStatus('Type or dictate your statement below.'); inputArea.style.display='flex'; awaitingInput=true; var h=document.getElementById('inputHint'); if(h) h.style.display='block'; userInput.focus(); }
 function recRenderControls(){
   const c=document.getElementById('recControls');if(!c)return;
@@ -2606,7 +2665,7 @@ function mountRecorderCard(storeKeyArg,profileArg,onCompleteArg){
     '<div class="rec-transcript" id="recTranscript" style="display:none"></div>'+
     '<div class="rec-controls" id="recControls"></div>'+
     '<audio id="recAudio" style="display:none"></audio>'+
-    '<div class="rec-note">Tap Record to speak your statement — Atlas transcribes live where supported — or Type Instead. Saved locally only.</div>';
+    '<div class="rec-note">Your recording is saved on this device. When you tap Send Recording, Atlas will securely send it for transcription.</div>';
   chatWindow.appendChild(card);scrollBottom();
   recState.audioEl=card.querySelector('#recAudio');
   if(recState.audioEl){
