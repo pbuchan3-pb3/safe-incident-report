@@ -880,6 +880,7 @@ const ANTHROPIC_API_KEY = window.ANTHROPIC_API_KEY || '';  // No key in committe
 const SAFE_AI_PROXY_URL = (window.SAFE_AI_PROXY_URL||'').trim();  // set via gitignored api-config.js; proxy holds the key
 const SAFE_DEBUG = /[?&]debug=1/.test(location.search) || (function(){try{return localStorage.getItem('safe_debug')==='1';}catch(_e){return false;}})();
 const safeDiagLog=[];
+function srTestActive(){ return /[?&]srtest=1/.test(location.search); }
 function safeDiag(entry){
   entry.t=new Date().toISOString(); safeDiagLog.push(entry);
   try{ console[entry.fallback?'warn':'log']('[SAFE-AI]', JSON.stringify(entry)); }catch(_e){}
@@ -904,7 +905,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.0.1';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -2410,7 +2411,7 @@ async function recStart(){
   recState.mediaRecorder.onstop=recFinalize;
   recState.mediaRecorder.start();
   recState.status='recording';recState.elapsedBeforePause=0;recState.startedAt=Date.now();recState.draftId='rec_'+Date.now();
-  recTickStart();recDotLive(true);recSetStatus('Recording...');recState.transcriptFinal='';recState.transcriptRaw='';recStartSpeech();if(!recState.srSupported)recSetStatus('Recording... (live transcription not available in this browser)');recRenderControls();
+  recTickStart();recDotLive(true);recSetStatus('Recording...');recState.transcriptFinal='';recState.transcriptRaw='';recState._simultaneous=false; if(isMobileDevice()){ recState.srMobileOff=true; recState.srSupported=false; recSetStatus('Recording audio \u2014 live transcription is off on this device; your audio is being saved.'); } else { recState.srMobileOff=false; recState._simultaneous=true; recStartSpeech(); if(!recState.srSupported) recSetStatus('Recording... (live transcription not available in this browser)'); } recRenderControls();
 }
 function recPause(){
   if(recState.status!=='recording'||!recState.mediaRecorder)return;
@@ -2422,7 +2423,7 @@ function recResume(){
   if(recState.status!=='paused'||!recState.mediaRecorder)return;
   try{recState.mediaRecorder.resume();}catch(_){}
   recState.startedAt=Date.now();recState.status='recording';
-  recTickStart();recDotLive(true);recStartSpeech();recSetStatus('Recording...');recRenderControls();
+  recTickStart();recDotLive(true);if(!recState.srMobileOff){recStartSpeech();}recSetStatus('Recording...');recRenderControls();
 }
 function recEnd(){
   if(recState.status!=='recording'&&recState.status!=='paused')return;
@@ -2462,10 +2463,27 @@ function recBtn(label,fn,cls){return '<button type="button" class="rec-btn '+(cl
 
 function recSupportsSpeech(){ return !!(window.SpeechRecognition||window.webkitSpeechRecognition); }
 function recUpdateTranscriptPanel(t){ const el=document.getElementById('recTranscript'); if(el){ el.style.display='block'; el.textContent=t||'\u2026'; el.scrollTop=el.scrollHeight; } }
+function isAndroidDevice(){ return /Android/i.test(navigator.userAgent||''); }
+function isMobileDevice(){ return /Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent||''); }
+function recDiagSnapshot(){
+  try{ safeDiag({phase:'recDiag',
+    userAgent:(navigator.userAgent||'').slice(0,180),
+    android:isAndroidDevice(), mobile:isMobileDevice(),
+    protocol:location.protocol, https:(location.protocol==='https:'),
+    speechRecognitionSupported:!!(window.SpeechRecognition||window.webkitSpeechRecognition),
+    mediaRecorderSupported:(typeof MediaRecorder!=='undefined'),
+    srStartCount:recState._srStarts||0, srOnstartCount:recState._srOnstart||0,
+    srOnendCount:recState._srOnend||0, interimResults:recState._srInterim||0,
+    finalResults:recState._srFinal||0, lastError:recState.srError||'',
+    audioBlobBytes:(recState.blob?recState.blob.size:0),
+    durationMs:recState.finalDurationMs||0,
+    simultaneous:!!recState._simultaneous }); }catch(_e){}
+}
+
 function speechUnavailableReason(){
   const ua=navigator.userAgent||'';
   if(location.protocol!=='https:' && location.hostname!=='localhost') return 'Live transcription needs a secure (HTTPS) connection, which this page is not using.';
-  if(/SamsungBrowser/i.test(ua)) return "Live transcription isn't supported by Samsung Internet. Open Atlas in Chrome on Android for voice-to-text.";
+  if(/SamsungBrowser/i.test(ua)) return "Live transcription is not supported reliably in Samsung Internet. For live transcription, open Atlas in Google Chrome. Your recording remains available.";
   if(/Firefox|FxiOS/i.test(ua)) return "This browser (Firefox) doesn't currently support speech recognition. Chrome supports voice-to-text.";
   if(/(iPhone|iPad|iPod)/i.test(ua) && !/CriOS/i.test(ua)) return "iOS Safari doesn't currently support live speech recognition.";
   return "This browser doesn't currently support speech recognition. Chrome (desktop or Android) supports voice-to-text.";
@@ -2486,8 +2504,8 @@ function recStartSpeech(){
     const r=new SR(); r.continuous=true; r.interimResults=true; r.lang='en-US';
     r.onresult=function(ev){ let interim=''; for(let i=ev.resultIndex;i<ev.results.length;i++){ const res=ev.results[i]; if(res.isFinal){ recState.transcriptFinal+=res[0].transcript+' '; } else { interim+=res[0].transcript; } } recState.transcriptRaw=(recState.transcriptFinal+interim).replace(/\s+/g,' ').trim(); recUpdateTranscriptPanel(recState.transcriptRaw); };
     r.onerror=function(e){ recState.srError=(e&&e.error)||'error'; safeDiag({phase:'speech',speechRecognitionError:recState.srError,partialTranscriptCaptured:!!recState.transcriptRaw,fallback:true}); };
-    r.onend=function(){ recState.srEnded=true; if(recState.status==='recording'&&recState.srWantActive){ const gap=Date.now()-(recState._lastStart||0); if(gap>1200){ try{r.start(); recState._lastStart=Date.now();}catch(_e){} } else { setTimeout(function(){ if(recState.status==='recording'&&recState.srWantActive){ try{r.start(); recState._lastStart=Date.now();}catch(_e){} } }, 1200-gap); } } };
-    recState.sr=r; recState.srWantActive=true; r.start(); recState._lastStart=Date.now(); recState.srStarted=true;
+    r.onend=function(){ recState._srOnend=(recState._srOnend||0)+1; recState.srEnded=true; if(isAndroidDevice()){ return; } if(recState.status==='recording'&&recState.srWantActive){ const gap=Date.now()-(recState._lastStart||0); if(gap>1200){ try{r.start(); recState._lastStart=Date.now();}catch(_e){} } else { setTimeout(function(){ if(recState.status==='recording'&&recState.srWantActive){ try{r.start(); recState._lastStart=Date.now();}catch(_e){} } }, 1200-gap); } } };
+    r.onstart=function(){ recState._srOnstart=(recState._srOnstart||0)+1; }; recState.sr=r; recState.srWantActive=true; recState._srStarts=(recState._srStarts||0)+1; r.start(); recState._lastStart=Date.now(); recState.srStarted=true;
     safeDiag({phase:'speech',speechRecognitionSupported:true,speechRecognitionStarted:true});
   }catch(e){ recState.srError=String(e); recState.srStarted=false; safeDiag({phase:'speech',speechRecognitionError:String(e),fallback:true}); }
 }
@@ -2499,14 +2517,19 @@ async function recProcessTranscript(){
   if(!raw){
     recCollapse();
     showTyping(); await delay(300); removeTyping();
-    let reason;
-    if(!recState.srSupported) reason=speechUnavailableReason();
-    else if(recState.srError) reason=speechErrorMessage(recState.srError);
-    else reason="I didn't catch any speech.";
-    addBubble(reason+' Your recording has been preserved \u2014 you can try again or type your statement below.','ai');
-    addQuickReplies(['\u21ba Try Again','\u2328 Type Instead'], async function(a){
+    recDiagSnapshot();
+    const dur=recFmt(recState.finalDurationMs||0);
+    let line1, line2;
+    if(recState.srMobileOff){ line1='\u2713 Audio saved \u2014 '+dur+'.'; line2='Live transcription did not run on this device \u2014 your recording is safe. Type your statement below, or review the recording.'; }
+    else if(recState.srError==='not-allowed'||recState.srError==='service-not-allowed'){ line1='\u2713 Audio saved \u2014 '+dur+'.'; line2='Microphone access was blocked for live transcription. Allow the mic for this site to try live transcript, or type your statement below.'; }
+    else if(!recState.srSupported){ line1='\u2713 Audio saved \u2014 '+dur+'.'; line2=speechUnavailableReason(); }
+    else { line1='\u2713 Audio saved \u2014 '+dur+'.'; line2='I did not receive any speech for the live transcript. Your audio recording is safe \u2014 type your statement below, or review the recording.'; }
+    addBubble(line1+'<br>'+line2,'ai');
+    const opts = isMobileDevice() ? ['\u2328 Type Instead','\u25b6 Review Recording'] : ['\u21ba Try Live Transcript','\u2328 Type Instead','\u25b6 Review Recording'];
+    addQuickReplies(opts, async function(a){
       clearQuickReplies(); addBubble(a,'user');
-      if(a.indexOf('Try Again')!==-1){ mountRecorderCard(recState.fieldKey, recState.editorProfile, recState.onTranscriptComplete); }
+      if(a.indexOf('Try Live Transcript')!==-1){ mountRecorderCard(recState.fieldKey, recState.editorProfile, recState.onTranscriptComplete); }
+      else if(a.indexOf('Review Recording')!==-1){ if(typeof recPlayToggle==='function'){ recPlayToggle(); } inputArea.style.display='flex'; awaitingInput=true; const h0=document.getElementById('inputHint'); if(h0) h0.style.display='block'; }
       else { inputArea.style.display='flex'; awaitingInput=true; const h0=document.getElementById('inputHint'); if(h0) h0.style.display='block'; userInput.focus(); }
     });
     return;
