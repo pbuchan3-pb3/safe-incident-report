@@ -4,7 +4,8 @@
   S.A.F.E. MANAGEMENT — AI-POWERED INCIDENT REPORTING SYSTEM
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
-  APPLICATION VERSION: 1.9.12   (Mobile readiness: transcription messaging, touch, counts)
+  RELEASE: v2.0.0 — Atlas Visual System (functional core: 1.9.12 incident module).
+  APPLICATION VERSION: 2.0.0   (Atlas Visual System release — enterprise UI foundation)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
@@ -707,6 +708,58 @@
   }
   #chatWindow, .chat-window{scroll-behavior:smooth;}
 
+
+  /* ===================================================================
+     ATLAS v2.0 SPRINT 1 — Enterprise refinement (CSS only).
+     Motion on Change. Stillness at Rest. Script block untouched.
+     =================================================================== */
+  /* 1/12. Color roles: red reserved for destructive/alert ONLY.
+     Progress + primary emphasis -> navy/blue. */
+  .progress-fill{background:linear-gradient(90deg,var(--safe-navy),var(--safe-blue)) !important;
+    box-shadow:none !important; animation:none !important;
+    transition:width var(--dur-3,320ms) var(--ease,ease) !important;}
+  .progress-label{color:var(--safe-blue) !important;}
+  .progress-track{background:rgba(26,46,74,.10) !important;}
+
+  /* 7. Motion on Change / Stillness at Rest: kill ambient loops; keep ONE hero zoom. */
+  .hero-strip-bg::after{animation:none !important;}   /* freeze glow as static light */
+
+  /* 2. Typography hierarchy */
+  .progress-pct{font-variant-numeric:tabular-nums;letter-spacing:.01em;}
+  .q-help{opacity:.9;}
+  .bubble.ai{line-height:1.62;}
+  .timestamp-bar{letter-spacing:.02em;}
+
+  /* 3/10. Cards + hierarchy */
+  .bubble.ai{box-shadow:var(--sh-2);}
+  .recval-wrap,.op-wrap{box-shadow:var(--sh-1);padding:var(--sp-3);}
+
+  /* 8. Buttons: consistent radius, calm press, accessible focus */
+  .send-btn{border-radius:var(--r-md);transition:background var(--dur-2,200ms) var(--ease,ease),
+    box-shadow var(--dur-2,200ms) var(--ease,ease),transform var(--dur-1,120ms) var(--ease,ease);}
+  .send-btn:hover{box-shadow:var(--sh-2);}
+  .send-btn:active{transform:scale(.96);}
+  .send-btn:focus-visible{box-shadow:var(--sh-focus);outline:none;}
+
+  /* header badge -> muted neutral chip (was version tag) */
+  .header-badge--muted{background:rgba(255,255,255,.10);color:var(--safe-silver);
+    border:1px solid rgba(255,255,255,.16);font-weight:600;letter-spacing:.1em;}
+
+  /* 9. Mobile: input >=16px prevents iOS zoom-on-focus */
+  @media (max-width:640px){
+    #userInput, textarea, input[type="text"]{font-size:16px;}
+  }
+
+  /* 11. Dashboard-ready presentation components (inert; not yet in markup) */
+  .atlas-panel{background:#fff;border:1px solid var(--border);border-radius:var(--r-lg);
+    box-shadow:var(--sh-2);padding:var(--sp-5);}
+  .atlas-analytics-container{display:grid;gap:var(--sp-4);
+    grid-template-columns:repeat(auto-fit,minmax(200px,1fr));}
+  .atlas-kpi{display:flex;flex-direction:column;gap:var(--sp-1);}
+  .atlas-kpi .kpi-num{font-family:'Barlow Condensed',sans-serif;font-size:30px;font-weight:800;
+    color:var(--safe-navy);line-height:1;font-variant-numeric:tabular-nums;}
+  .atlas-kpi .kpi-cap{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--text-muted);}
+
 </style>
 </head>
 <body>
@@ -772,7 +825,7 @@
     <div class="season-motto">Stronger Together</div>
   </div>
   <div class="header-right">
-    <div class="header-badge">v1.9.12</div>
+    <div class="header-badge header-badge--muted">S.A.F.E. Ops</div>
   </div>
 </header>
 
@@ -851,7 +904,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '1.9.12';
+const APP_VERSION = '2.0.0';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────

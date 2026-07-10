@@ -187,6 +187,33 @@ The reporting supervisor remains responsible for the factual accuracy of the sub
 
 ---
 
+## Principle 12 — Motion on Change, Stillness at Rest
+
+Motion exists only to communicate a change of state.
+
+Animate transitions that carry meaning — progress updates, recorder state changes, expanding cards, confirmations, view transitions. If nothing has changed, nothing should move. Static screens stay still, ambient loops are avoided, and motion never competes with the supervisor's attention during report completion.
+
+---
+
+# The Atlas Visual System is the Inheritance Baseline
+
+As of the **v2.0.0 Atlas Visual System** release, the design tokens, color roles,
+typography scale, components, and motion rules defined in the application's visual
+layer are the mandatory baseline for every future module — People Engine,
+Knowledge Graph, Operational Intelligence Dashboard, Michigan Post-Event Summary,
+and the Training Academy.
+
+New modules **inherit** this system; they do not invent their own styles. A new
+surface should compose from existing tokens and components (`.atlas-metric-card`,
+`.atlas-summary-card`, `.atlas-status`, `.atlas-panel`, `.atlas-kpi`, the
+`[data-event]` hero hook, the shared button/card/progress patterns). If a genuinely
+new component is required, it is added to the system once and then reused — never
+styled one-off inside a single workflow. This is the visual expression of
+Principle 3 (Shared Services First) and Principle 10 (every enhancement should
+strengthen the platform).
+
+---
+
 # The Atlas Litmus Test
 
 Before implementing a new feature, ask:
