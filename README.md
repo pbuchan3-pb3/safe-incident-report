@@ -8,6 +8,7 @@ The application is a single self-contained `index.html` deployed to GitHub Pages
 
 The approved architecture is documented in these reference files:
 
+- **[ATLAS_PRODUCT_NORTH_STAR.md](ATLAS_PRODUCT_NORTH_STAR.md)** — the long-term product direction: one conversation produces one complete report ("Conversation first. Form last."), plus the Conversation-First Architecture Roadmap.
 - **[ATLAS_DESIGN_CONSTITUTION.md](ATLAS_DESIGN_CONSTITUTION.md)** — design philosophy, the guiding principles, the architecture diagram, the security architecture, and the implementation reference.
 - **[ADR_LOG.md](ADR_LOG.md)** — the Architectural Decision Records: the significant decisions behind Atlas and the reasoning for each.
 
