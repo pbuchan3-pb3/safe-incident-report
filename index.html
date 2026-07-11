@@ -5,7 +5,7 @@
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
   RELEASE: v2.0.2b — Mobile Field Experience Completion (functional core: 1.9.12 incident module).
-  APPLICATION VERSION: 2.0.4   (Structured Reassignment)
+  APPLICATION VERSION: 2.0.5   (Clothing recorder + clothingDescription profile)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
@@ -963,7 +963,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '2.0.4';
+const APP_VERSION = '2.0.5';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -1330,6 +1330,10 @@ const EDITOR_PROFILES = {
   witnessStatement: {
     system: "You are a witness-statement editor for S.A.F.E. Management. The text is a witness's own testimony and must remain legally attributable to them. Do NOT rewrite, summarize, rephrase, reorder, or add anything. Maintain the first-person voice and the original chronology. Correct ONLY spelling, punctuation, capitalization, and clear grammatical errors. Return ONLY the lightly corrected statement.",
     instruction: function(rawText){ return 'Correct ONLY spelling, punctuation, capitalization, and grammar. Do not rewrite, summarize, reorder, or add facts. Preserve first-person voice and chronology. Return only the corrected statement. Input: ' + rawText; }
+  },
+  clothingDescription: {
+    system: "You are a descriptive-field editor for S.A.F.E. Management incident reports. The text describes what a guest was wearing. Correct ONLY grammar, spelling, punctuation, garment terminology, and the ordering of garments, and remove conversational filler. Third person. NEVER add or infer brand, color, material, team, logo, footwear type, gender, or intent that the supervisor did not state. Preserve uncertainty exactly (e.g. 'I think', 'maybe' -> 'appeared to be'); never convert uncertainty into certainty. Preserve every stated fact; invent nothing. Return ONLY the corrected description.",
+    instruction: function(rawText){ return 'Clean up this guest clothing description: grammar, spelling, punctuation, standard garment terminology, sensible ordering, remove filler. Do NOT add brand, color, material, team, logo, footwear type, or any detail not stated. Preserve uncertainty. Return only the corrected description. Input: ' + rawText; }
   }
 };
 function resolveEditorProfile(name, isRecognition, fieldType){
@@ -3741,14 +3745,42 @@ async function askNextQuestion(){
   }
 
   if(step.isGuestClothing){
-    showInlineOptions(["I don't recall"], async(val)=>{
-      addBubble(val,'user'); sendInterceptor=null;
-      inputArea.style.display='none'; awaitingInput=false;
+    inputArea.style.display='none'; awaitingInput=false;
+    function clothingDontRecall(){
       formData.guestClothing="The reporting supervisor could not recall the guest's clothing.";
-      formData.guestClothingRaw=val;
-      flowIndex++; await askNextQuestion();
+      formData.guestClothingRaw="I don't recall"; formData.guestClothingStatus='not recalled';
+    }
+    const canRec=(typeof mountRecorderCard==='function' && typeof enableVoiceIncidentCapture!=='undefined' && enableVoiceIncidentCapture);
+    const opts=[]; if(canRec) opts.push('\ud83c\udf99 Record Full Description'); opts.push('\u2328 Type Instead'); opts.push("I don't recall");
+    addQuickReplies(opts, async(choice)=>{
+      clearQuickReplies(); addBubble(choice,'user');
+      if(choice.indexOf("recall")!==-1){ clothingDontRecall(); flowIndex++; await askNextQuestion(); return; }
+      if(choice.indexOf('Record')!==-1){
+        formData.guestClothingStatus='provided';
+        mountRecorderCard('guestClothing','clothingDescription', async function(){ if(!formData.guestClothingRaw){ formData.guestClothingRaw=formData.transcriptRaw||''; } flowIndex++; await askNextQuestion(); });
+        return;
+      }
+      // Type Instead
+      formData.guestClothingStatus='provided';
+      inputArea.style.display='flex'; awaitingInput=true; document.getElementById('inputHint').style.display='block'; userInput.focus();
+      sendInterceptor=async(raw)=>{
+        inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
+        formData.guestClothingRaw=(raw||'').trim();
+        showTyping(); await delay(400); removeTyping();
+        const cleaned=await cleanWithAI((raw||'').trim(), 'Guest clothing description for an incident at '+formData.venue+'.', 'field', 'guestClothing', 'clothingDescription');
+        formData.guestClothing=cleaned||(raw||'').trim();
+        addBubble('Here is the clothing description from your notes:<br><br>'+formData.guestClothing+'<br><br>Does this accurately describe what the guest was wearing?','ai');
+        addQuickReplies(['\u2705 Looks Correct','\u270f\ufe0f Edit','\ud83c\udf99 Re-record',"I don't recall"], async(a)=>{
+          clearQuickReplies(); addBubble(a,'user');
+          if(a.indexOf('Looks Correct')!==-1){ flowIndex++; await askNextQuestion(); }
+          else if(a.indexOf('recall')!==-1){ clothingDontRecall(); flowIndex++; await askNextQuestion(); }
+          else if(a.indexOf('Re-record')!==-1){ if(canRec){ mountRecorderCard('guestClothing','clothingDescription', async function(){ if(!formData.guestClothingRaw){ formData.guestClothingRaw=formData.transcriptRaw||''; } flowIndex++; await askNextQuestion(); }); } else { flowIndex++; await askNextQuestion(); } }
+          else { inputArea.style.display='flex'; awaitingInput=true; userInput.value=formData.guestClothing; document.getElementById('inputHint').style.display='block'; userInput.focus();
+            sendInterceptor=async(ed)=>{ inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; const v=(ed||'').trim(); formData.guestClothing=v; askRecleanAfterEdit(v,'guestClothing', async function(){ flowIndex++; await askNextQuestion(); }); };
+          }
+        });
+      };
     });
-    inputArea.style.display='flex'; awaitingInput=true; document.getElementById('inputHint').style.display='block'; userInput.focus();
     return;
   }
 

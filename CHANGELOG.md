@@ -7,6 +7,54 @@ Semantic versioning: MAJOR.MINOR.PATCH.
 - Dual-channel messaging: transcription failure never implies the audio failed.
 - Recorder diagnostics under ?debug=1; ?srtest=1 recognition-only probe.
 
+## [2.0.5] — Narrative Capture Expansion (clothing recorder)
+- Guest-clothing question now mounts the shared recorder (mountRecorderCard) with
+  three one-tap options: Record Full Description / Type Instead / I don't recall.
+  Reuses the existing backend transcription pathway; no second recorder; Android
+  no-beep and duration behavior inherited unchanged.
+- New narrowly-scoped clothingDescription editorial profile: grammar, spelling,
+  punctuation, garment terminology and ordering only. Never infers brand, color,
+  material, team, logo, footwear, gender, or intent; preserves uncertainty.
+- I don't recall stores the standard sentence with no AI call; guestClothingRaw /
+  guestClothing / guestClothingStatus (provided | not recalled) preserved.
+- Confirmation after typed/recorded input: Looks Correct / Edit / Re-record /
+  I don't recall; Edit routes through the existing re-clean prompt.
+- Name-aware prompt was already driven by guestRef() (the guest / last name /
+  full name; never "Unknown"/"Refused").
+- Deferred to v2.0.6 (documented): entity-aware narrative/witness/guest wording
+  (role-plus-name) and the hair color/style soft-confirmation. These are
+  fact-sensitive editorial changes and are sequenced as their own verified pass.
+- Worker unchanged; recorder, transcription, exports, reassignment, Field Mode,
+  name-card, Word repair all byte-identical.
+
+## [2.0.4] — Structured Reassignment
+- Reassignment now reuses the shared grouped assignment selector (new reusable
+  mountAssignmentSelector({mode/prompt/selectedValues/onConfirm})) instead of a
+  free-text box. Prompt: "Which assignment(s) were you reassigned to?"
+- Initial vs. reassigned assignments stored distinctly: assignmentsWorked /
+  initialAssignments (initial) and reassignmentAssignments (new); assignmentStatus
+  records "Remained..." or "Reassigned". No fabricated timeline text.
+- Operational Context, review screen, PDF/Word/email (via operationalContextText),
+  and the export payload now show "Initial Assignment(s)" and "Reassigned To"
+  separately; assignment values are never labeled "Assignment Timeline".
+- Legacy fallback: old assignmentTimeline free-text renders under "Reassignment
+  Details" (never relabeled as a timeline).
+- Incident location untouched (no cross-contamination). Worker unchanged;
+  recorder, transcription, Field Mode, name-card, Word encoding all byte-identical.
+
+## [2.0.2b part 2] — Word Export Repair
+- Word/RTF encoding fixed: non-ASCII (em/en dashes, curly quotes/apostrophes)
+  now emitted as RTF \uN? escapes — eliminates mojibake (no more "a-euro"
+  sequences). "C1-C8" and "Minor - Resolved on scene" render correctly.
+- Duplicate header fixed: the centered header now reads the Filed line (date/time)
+  instead of repeating "Submission ID:"; body no longer re-renders the title,
+  Submission ID, or Filed lines (each appears once).
+- Markdown artifacts (** and leading # headings) stripped from Word output.
+- generateWord only; generatePDF, recorder, transcription, and all other exports
+  byte-identical. Worker unchanged.
+- Still deferred (Part 2 remaining): native PDF/Word file sharing (#7/#8),
+  structured reassignment picker (#1), entity-aware name rendering (#2-6).
+
 ## [2.0.2b] — Mobile Field Experience Completion (partial)
 - Mobile Field Mode: after the first substantive answer (progress > 0%), the
   header, timestamp band, Ford Field hero, and progress block collapse on mobile
