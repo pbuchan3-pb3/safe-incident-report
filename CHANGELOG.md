@@ -7,6 +7,31 @@ Semantic versioning: MAJOR.MINOR.PATCH.
 - Dual-channel messaging: transcription failure never implies the audio failed.
 - Recorder diagnostics under ?debug=1; ?srtest=1 recognition-only probe.
 
+## [2.0.6] — Entity-Aware Reporting + Soft Data Consistency
+- Verified names now appear with role descriptors in generated report wording via
+  a shared, deterministic, quote-protected render layer (no AI synthesis, no fact
+  drift): confirmedGuestIdentity(), isConfirmedPersonName(), protectQuotedSegments(),
+  renderFirstReference(), finalNarrative(), guestStatementRendered().
+- Incident narrative: first non-quoted generic reference becomes e.g. "The female
+  guest, Chartel Ross, ..."; later references keep generic/last-name wording.
+  Idempotent (never double-inserts). Unknown/Refused never render as a name.
+- Quote protection: text inside straight or curly quotation marks is never
+  altered; names are never inserted into a direct quote.
+- Witness output: "The witness, <Name>, stated: <quote>" / "...did not provide a
+  statement." / unnamed -> "The <type> witness ...". witnessStatement grammar-only
+  profile unchanged; raw statements preserved.
+- Guest statement: "The guest, <Name>, stated: <their words>" lead-in; wording
+  preserved; status values pass through unchanged.
+- Consistent wording across review, PDF, Word, email, text, and Sheets (single
+  finalNarrative()/guestStatementRendered() source); raw + approved fields never
+  overwritten.
+- Hair color/style soft check: if color is Not Observed/Unknown but a concrete
+  style is chosen, a one-time non-blocking prompt (Yes, keep both / Change Hair
+  Color / Change Hair Style); never repeats, never clears values.
+- generatePDF/generateWord changed only at the narrative + guest-statement lines
+  (authorized); all recorder/transcription/parser/selector functions byte-identical.
+  Worker unchanged.
+
 ## [2.0.5] — Narrative Capture Expansion (clothing recorder)
 - Guest-clothing question now mounts the shared recorder (mountRecorderCard) with
   three one-tap options: Record Full Description / Type Instead / I don't recall.

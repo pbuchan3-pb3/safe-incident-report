@@ -5,7 +5,7 @@
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
   RELEASE: v2.0.2b — Mobile Field Experience Completion (functional core: 1.9.12 incident module).
-  APPLICATION VERSION: 2.0.5   (Clothing recorder + clothingDescription profile)
+  APPLICATION VERSION: 2.0.6   (Entity-aware reporting + hair soft-check)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
@@ -963,7 +963,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '2.0.5';
+const APP_VERSION = '2.0.6';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -1423,8 +1423,8 @@ function sendViaMailto(isIncident){
     body += `Height: ${fd.guestHeight||'Unknown'}\nBuild: ${fd.guestBuild||'Unknown'}\n`;
     body += `Hair Color: ${fd.guestHair||'Unknown'}\n`;
     body += `Clothing: ${fd.guestClothing||'Unknown'}\nDistinguishing Features: ${fd.guestFeatures||'Unknown'}\n\n`;
-    body += `INCIDENT NARRATIVE\n------------------\n${fd.incidentDescription||'N/A'}\n\n`;
-    body += `Guest Statement: ${guestStatementText(fd)}\n`;
+    body += `INCIDENT NARRATIVE\n------------------\n${finalNarrative(fd)}\n\n`;
+    body += `Guest Statement: ${guestStatementRendered(fd)}\n`;
     body += `Guest Statement Detail: ${fd.guestStatementDetail||'N/A'}\n`;
     body += `Witnesses: ${fd.witnesses||'None'}\nAction Taken: ${fd.actionTaken||'N/A'}\n`;
     body += `EMS/Police: ${fd.emsPolice||'N/A'}\nGuest Transported: ${fd.guestTransported||'N/A'}\n\n`;
@@ -1490,6 +1490,7 @@ async function submitToSheets(isIncident) {
         guestClothing: fd.guestClothing || '',
         guestFeatures: fd.guestFeatures || '',
         incidentDescription: fd.incidentDescription || '',
+        incidentDescriptionRendered: finalNarrative(fd),
         guestStatement: guestStatementText(fd), guestStatementStatus: fd.guestStatementStatus || '',
         guestStatementDetail: fd.guestStatementDetail || '',
         witnesses: fd.witnesses || '',
@@ -2999,10 +3000,64 @@ function guestSeatDisplay(fd){
   return [fd.guestSeatSection?('Section '+fd.guestSeatSection):'', fd.guestSeatRow?('Row '+fd.guestSeatRow):'', 'Seat '+(fd.guestSeatNumber||'Unknown')].filter(Boolean).join(', ');
 }
 
+function isConfirmedPersonName(value, status){
+  if(!value) return false;
+  var bad=['unknown','refused','guest refused','n/a','none','not provided','not observed','last name only','name unknown'];
+  if(bad.indexOf(String(value).trim().toLowerCase())!==-1) return false;
+  if(status && ['unknown','guest refused','refused','last name only'].indexOf(String(status).trim().toLowerCase())!==-1) return false;
+  return true;
+}
+function confirmedGuestIdentity(){
+  var fd=formData;
+  var g=(fd.guestGender||'').toLowerCase();
+  var genderDescriptor = (g.indexOf('female')!==-1)?'female guest':((g.indexOf('male')!==-1)?'male guest':'guest');
+  var confirmed = (fd.guestNameStatus==='Known') && isConfirmedPersonName(fd.guestName, fd.guestNameStatus);
+  return { isConfirmed:!!confirmed, fullName: confirmed?(fd.guestName||''):'', lastName: confirmed?(fd.guestLastName||''):'', role:'guest', genderDescriptor:genderDescriptor };
+}
+// Split text into quoted / non-quoted segments (straight and curly quotes).
+function protectQuotedSegments(text){
+  var parts=[]; var rx=/(\u201C[^\u201D]*\u201D|"[^"]*"|\u2018[^\u2019]*\u2019|'[^']*')/g;
+  var m, last=0;
+  while((m=rx.exec(text))){ if(m.index>last) parts.push({q:false,s:text.slice(last,m.index)}); parts.push({q:true,s:m[0]}); last=m.index+m[0].length; }
+  if(last<text.length) parts.push({q:false,s:text.slice(last)});
+  if(!parts.length) parts.push({q:false,s:text});
+  return parts;
+}
+// Insert "The <descriptor>, <FullName>," at the FIRST non-quoted generic reference. Idempotent.
+function renderFirstReference(text, id){
+  if(!text || !id || !id.isConfirmed || !id.fullName) return text||'';
+  if(text.indexOf(id.fullName)!==-1) return text;
+  var desc=id.genderDescriptor;
+  var parts=protectQuotedSegments(text); var done=false;
+  var rx=new RegExp('\\b([Aa]|[Tt]he)\\s+'+desc.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+  for(var k=0;k<parts.length;k++){
+    if(done||parts[k].q) continue;
+    var seg=parts[k].s; var mm=rx.exec(seg);
+    if(mm){ parts[k].s=seg.slice(0,mm.index)+'The '+desc+', '+id.fullName+','+seg.slice(mm.index+mm[0].length); done=true; }
+  }
+  return parts.map(function(x){return x.s;}).join('');
+}
+// Single shared source for the final incident narrative wording used by ALL surfaces.
+function finalNarrative(fd){
+  if(fd.incidentDescriptionRendered) return fd.incidentDescriptionRendered;
+  return renderFirstReference(fd.incidentDescription||'N/A', confirmedGuestIdentity());
+}
+// Guest-statement lead-in (role + verified name), preserving the guest's wording verbatim.
+function guestStatementRendered(fd){
+  var body=guestStatementText(fd);
+  if(!body || body==='N/A') return body;
+  var statuses=['Refused to speak','No statement provided','Unknown','Written statement','Verbal statement','Guest refused'];
+  if(statuses.indexOf(body)!==-1) return body;
+  var id=confirmedGuestIdentity();
+  return (id.isConfirmed ? ('The guest, '+id.fullName+', stated: ') : 'The guest stated: ') + body;
+}
 function witnessSummary(w){
-  const nm = w.name || 'Name unknown';
-  const st = (w.statement && w.statement.trim()) ? ('Statement: "'+w.statement.trim()+'"') : 'No statement provided.';
-  return w.type+' witness: '+nm+'. '+st;
+  const hasName = isConfirmedPersonName(w.name, '');
+  const who = hasName ? ('The witness, '+w.name+',') : ('The '+((w.type?w.type.toLowerCase()+' ':''))+'witness');
+  const st = (w.statement && w.statement.trim());
+  if(!st) return who+' did not provide a statement.';
+  const inner = st.trim().replace(/^[\u201C\u201D"']+|[\u201C\u201D"']+$/g,'').trim();
+  return who+' stated: \u201C'+inner+'\u201D';
 }
 function witnessesReportText(fd){
   if(fd.witnesses==='None') return 'None';
@@ -3322,7 +3377,22 @@ async function askNextQuestion(){
   if(step.isAppearanceHairStyle){
     inputArea.style.display='none';
     showHairStylePicker(async(val)=>{
-      addBubble(val,'user'); formData.guestHairStyle=val; flowIndex++; await askNextQuestion();
+      addBubble(val,'user'); formData.guestHairStyle=val;
+      const colorUnobserved = ['Not Observed','Unknown'].indexOf(formData.guestHair)!==-1;
+      const styleConcrete = val && ['Not Observed','Unknown','N/A',''].indexOf(val)===-1;
+      if(colorUnobserved && styleConcrete && !formData._hairChecked){
+        formData._hairChecked=true;
+        showTyping(); await delay(300); removeTyping();
+        addBubble('You indicated the hair color was '+String(formData.guestHair).toLowerCase()+', but selected a hairstyle. Is that correct?','ai');
+        addQuickReplies(['Yes, keep both','Change Hair Color','Change Hair Style'], async(a)=>{
+          clearQuickReplies(); addBubble(a,'user');
+          if(a.indexOf('Yes')!==-1){ flowIndex++; await askNextQuestion(); }
+          else if(a.indexOf('Color')!==-1){ const idx=activeFlow.findIndex(function(sx){return sx.key==='guestHair';}); if(idx>=0) flowIndex=idx; await askNextQuestion(); }
+          else { const idx=activeFlow.findIndex(function(sx){return sx.key==='guestHairStyle';}); if(idx>=0) flowIndex=idx; await askNextQuestion(); }
+        });
+        return;
+      }
+      flowIndex++; await askNextQuestion();
     });
     return;
   }
@@ -4135,8 +4205,8 @@ Severity: ${formData.incidentSeverity||'N/A'}
 Reporting Officer: ${supName}${formData.positionHeld?(', '+formData.positionHeld):''}${operationalContextText(formData)?('\nOperational Context:\n'+operationalContextText(formData)):''}
 Guest Name: ${formData.guestName||'Unknown'}
 Guest Description: ${formData.guestGender||''} ${formData.guestAgeRange||''} ${formData.guestHeight||''} ${formData.guestBuild||''} Hair: ${formData.guestHair||''} ${formData.guestHairStyle||''} Clothing: ${formData.guestClothing||''} Features: ${formData.guestFeatures||''}
-Incident Description: ${formData.incidentDescription||'N/A'}
-Guest Statement: ${guestStatementText(formData)}
+Incident Description: ${finalNarrative(formData)}
+Guest Statement: ${guestStatementRendered(formData)}
 Witnesses: ${formData.witnesses||'None'}
 Action Taken: ${formData.actionTaken||'N/A'}
 EMS/Police: ${formData.emsPolice||'N/A'}
@@ -4427,9 +4497,9 @@ function generatePDF(isIncident) {
     if(fd.professionalNarrative){
       body += `<div class="field"><div class="field-label">Professional Narrative</div><div class="field-value narrative">${fd.professionalNarrative}</div></div>`;
     }
-    body += `<div class="field"><div class="field-label">Officer's Description</div><div class="field-value narrative">${fd.incidentDescription || 'Not provided'}</div></div>`;
+    body += `<div class="field"><div class="field-label">Officer's Description</div><div class="field-value narrative">${finalNarrative(fd)}</div></div>`;
     body += `<div class="field-grid" style="margin-top:10px;">`;
-    body += fv('Guest Account of Incident', guestStatementText(fd));
+    body += fv('Guest Account of Incident', guestStatementRendered(fd));
     body += fv('Guest Statement Detail', fd.guestStatementDetail);
     body += fv('Witnesses', fd.witnesses);
     body += fv('Action Taken', fd.actionTaken);
@@ -4566,8 +4636,8 @@ function generateWord(isIncident) {
     if(fd.professionalNarrative){
       content += `PROFESSIONAL NARRATIVE\n${'-'.repeat(30)}\n${fd.professionalNarrative}\n\n`;
     }
-    content += `INCIDENT NARRATIVE\n${'-'.repeat(30)}\n${fd.incidentDescription||'N/A'}\n\n`;
-    content += `Guest Statement: ${guestStatementText(fd)}\n`;
+    content += `INCIDENT NARRATIVE\n${'-'.repeat(30)}\n${finalNarrative(fd)}\n\n`;
+    content += `Guest Statement: ${guestStatementRendered(fd)}\n`;
     content += `Witnesses: ${fd.witnesses||'None'}\nAction Taken: ${fd.actionTaken||'N/A'}\n`;
     content += `EMS/Police: ${fd.emsPolice||'N/A'}\nGuest Transported: ${fd.guestTransported||'N/A'}\n\n`;
     content += `FOLLOW-UP\n${'-'.repeat(30)}\n`;
