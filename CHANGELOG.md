@@ -1,6 +1,46 @@
 # S.A.F.E. Management — Incident Reporting System
 Semantic versioning: MAJOR.MINOR.PATCH.
 
+## [2.0.1] — Mobile Recorder Reliability
+- Android: no simultaneous SpeechRecognition (silent MediaRecorder-only capture);
+  no auto-restart loop (removed the recurring 5-7s system beep).
+- Dual-channel messaging: transcription failure never implies the audio failed.
+- Recorder diagnostics under ?debug=1; ?srtest=1 recognition-only probe.
+
+## [2.0.2b] — Mobile Field Experience Completion (partial)
+- Mobile Field Mode: after the first substantive answer (progress > 0%), the
+  header, timestamp band, Ford Field hero, and progress block collapse on mobile
+  (<=640px) into one 56px sticky bar showing "S.A.F.E. Atlas . Ford Field" and
+  "<section> . <pct>%" with a thin navy progress line. Fires once per session;
+  restored on a new report (startFlow). Desktop unchanged.
+- Name confirmation cards omit empty components (no more "Middle: None" /
+  "Suffix: None"); shared nameCardHtml() renderer across supervisor, guest,
+  employee, and witness cards. parseName() unchanged; status values (Unknown,
+  Refused) preserved because they are truthy.
+- Floating voice control relocated (mobile Field Mode) to top-right, clear of the
+  bottom answer controls (Edit / Looks Correct / Re-record / Send / recorder /
+  signature / export); respects safe-area insets.
+- No Worker, recorder, transcription, or export changes (all byte-identical).
+- Deferred within v2.0.2b: native PDF/Word file sharing (#2), structured
+  reassignment picker (#3), Word encoding + presentation (#6/#7). Sequenced as
+  export-path and flow increments to avoid regressing the working exports.
+
+## [2.0.2] — Mobile Workflow + Backend Transcription
+- Cloudflare Worker v2: added POST /transcribe (Cloudflare Workers AI,
+  @cf/openai/whisper-large-v3-turbo) alongside the UNCHANGED Anthropic text
+  route. Origin allowlist, MIME allowlist, 20 MB cap, request IDs, generic
+  client errors, no audio retention, no wildcard CORS. Backup:
+  safe-ai-proxy-worker.v1-backup.js.
+- Frontend: transcribeAudio() service (multipart, no manual Content-Type);
+  Send Recording uploads audio and routes the returned transcript through the
+  field's existing editorial profile; venue-vocabulary hint (initial_prompt).
+- Recording duration fix: finalDurationMs computed before the state flips to
+  saved (no more 00:00 on nonzero recordings).
+- Helper text updated: audio is uploaded for transcription on Send.
+- Deferred to v2.0.2b (documented): protected-name confirmation, quick-dictation
+  labeling, reassignment picker, floating-voice overlap, native file sharing,
+  Field Mode header collapse.
+
 ## [2.0.0] — Atlas Visual System (release)
 
 Milestone release. Establishes the enterprise visual foundation on top of the

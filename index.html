@@ -4,8 +4,8 @@
   S.A.F.E. MANAGEMENT — AI-POWERED INCIDENT REPORTING SYSTEM
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
-  RELEASE: v2.0.2 — Mobile Workflow + Backend Transcription (functional core: 1.9.12 incident module).
-  APPLICATION VERSION: 2.0.2   (Mobile Workflow + Backend Transcription)
+  RELEASE: v2.0.2b — Mobile Field Experience Completion (functional core: 1.9.12 incident module).
+  APPLICATION VERSION: 2.0.2b  (Mobile Field Mode, name-card, voice-control)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
@@ -760,6 +760,29 @@
     color:var(--safe-navy);line-height:1;font-variant-numeric:tabular-nums;}
   .atlas-kpi .kpi-cap{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--text-muted);}
 
+
+  /* ===== v2.0.2b Mobile Field Mode + voice-float relocation ===== */
+  #fieldBar{display:none;}
+  @media (max-width:640px){
+    body.field-mode header,
+    body.field-mode .timestamp-bar,
+    body.field-mode .hero-strip,
+    body.field-mode .progress-wrap{display:none !important;}
+    body.field-mode #fieldBar{
+      display:flex;flex-direction:column;justify-content:center;
+      position:sticky;top:0;z-index:900;
+      min-height:56px;
+      padding:calc(8px + env(safe-area-inset-top,0)) 14px 8px 14px;
+      background:var(--safe-navy,#0a1a3f);color:#fff;
+      border-bottom:1px solid rgba(255,255,255,.12);
+    }
+    #fieldBar .fb-brand{font-weight:800;font-size:13px;letter-spacing:.02em;}
+    #fieldBar .fb-section{font-size:12px;opacity:.85;margin-top:2px;}
+    #fieldBar .fb-line{position:absolute;left:0;bottom:0;height:2px;
+      background:var(--safe-blue,#2f6fed);width:0;transition:width .3s ease;}
+    body.field-mode .voice-float{top:calc(env(safe-area-inset-top,0) + 64px);bottom:auto;right:10px;
+      padding:6px 10px;font-size:11px;}
+  }
 </style>
 </head>
 <body>
@@ -851,6 +874,13 @@
   <span class="progress-pct" id="progressPct">0%</span>
 </div>
 
+<!-- v2.0.2b compact mobile Field Mode bar -->
+<div id="fieldBar" aria-hidden="true">
+  <div class="fb-brand">S.A.F.E. Atlas · Ford Field</div>
+  <div class="fb-section" id="fieldBarSection">Report · 0%</div>
+  <div class="fb-line" id="fieldBarLine"></div>
+</div>
+
 <div class="main">
   <div class="chat-window" id="chatWindow"></div>
   <div id="pickerPanel" style="background:#fff;border-top:2px solid var(--border);max-height:320px;overflow-y:auto;display:none;"></div>
@@ -933,7 +963,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '2.0.2';
+const APP_VERSION = '2.0.2b';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -1199,6 +1229,30 @@ const userInput  = document.getElementById('userInput');
 const inputArea  = document.getElementById('inputArea');
 const sendBtn    = document.getElementById('sendBtn');
 
+function sectionLabelFor(step){
+  const k=((step&&step.key)||'').toLowerCase();
+  if(/venue|position|assignment|reassign|timeline|opsummary|operational|formtype/.test(k)) return 'Operational Context';
+  if(/event|category|description|severity|narrative/.test(k)) return 'Incident Narrative';
+  if(/location|guest|seat|section/.test(k)) return 'Guest Details';
+  if(/camera|comm|radio/.test(k)) return 'Camera & Comms';
+  if(/witness/.test(k)) return 'Witnesses';
+  if(/action|follow/.test(k)) return 'Actions & Follow-Up';
+  if(/sign|review|email/.test(k)) return 'Review & Signature';
+  if(/recognition|nominee|value/.test(k)) return 'Recognition';
+  return 'Report';
+}
+let _fieldModeOn=false;
+function enterFieldMode(){ if(_fieldModeOn) return; _fieldModeOn=true; document.body.classList.add('field-mode'); }
+function exitFieldMode(){ _fieldModeOn=false; document.body.classList.remove('field-mode'); }
+function nameCardHtml(p){
+  p=p||{};
+  const rows=[];
+  if(p.first) rows.push('First: <strong>'+p.first+'</strong>');
+  if(p.middle) rows.push('Middle: <strong>'+p.middle+'</strong>');
+  if(p.last) rows.push('Last: <strong>'+p.last+'</strong>');
+  if(p.suffix) rows.push('Suffix: <strong>'+p.suffix+'</strong>');
+  return 'I found:<br>'+rows.join('<br>')+'<br><br>Use this?';
+}
 function updateProgress(){
   if(!activeFlow || activeFlow.length === 0) return;
   const pct = Math.round((flowIndex / activeFlow.length) * 100);
@@ -1208,6 +1262,13 @@ function updateProgress(){
   if(fill) fill.style.width = Math.min(pct, 100) + '%';
   if(pctEl) pctEl.textContent = Math.min(pct, 100) + '%';
   if(wrap) wrap.style.display = 'flex';
+  const step=activeFlow[flowIndex]||activeFlow[activeFlow.length-1];
+  const sec=sectionLabelFor(step);
+  const secEl=document.getElementById('fieldBarSection');
+  if(secEl) secEl.textContent = sec + ' · ' + Math.min(pct,100) + '%';
+  const lineEl=document.getElementById('fieldBarLine');
+  if(lineEl) lineEl.style.width = Math.min(pct,100) + '%';
+  if(pct>0) enterFieldMode();
 }
 
 function scrollBottom(){setTimeout(()=>chatWindow.scrollTop=chatWindow.scrollHeight,80);}
@@ -2911,7 +2972,7 @@ async function runWitnessInterviews(typesArr, i){
       else if(ns==='Last name only') nm=(parsed.last||parsed.first);
       else nm=parsed.displayName;
       showTyping(); await delay(300); removeTyping();
-      addBubble('I found:<br>First: <strong>'+(parsed.first||'None')+'</strong><br>Middle: <strong>'+(parsed.middle||'None')+'</strong><br>Last: <strong>'+(parsed.last||'None')+'</strong><br>Suffix: <strong>'+(parsed.suffix||'None')+'</strong><br><br>Use this?','ai');
+      addBubble(nameCardHtml(parsed),'ai');
       addQuickReplies(['\u2705 Looks Correct','\u270f\ufe0f Edit'], async function(ans){
         clearQuickReplies(); addBubble(ans,'user');
         if(ans.indexOf('Looks Correct')!==-1){ await witnessStatementStep(type,{type:type,name:nm,statement:''},typesArr,i); }
@@ -3248,7 +3309,7 @@ async function askNextQuestion(){
           if(!parsed.first){ showTyping(); await delay(300); removeTyping(); addBubble("I didn't catch a name — please type the guest's full name.",'ai'); return; }
           inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
           showTyping(); await delay(400); removeTyping();
-          addBubble('I found:<br>First: <strong>'+parsed.first+'</strong><br>Middle: <strong>'+(parsed.middle||'None')+'</strong><br>Last: <strong>'+(parsed.last||'None')+'</strong><br>Suffix: <strong>'+(parsed.suffix||'None')+'</strong><br><br>Use this?','ai');
+          addBubble(nameCardHtml(parsed),'ai');
           addQuickReplies(['✅ Looks Correct','✏️ Edit'], async(ans)=>{
             clearQuickReplies(); addBubble(ans,'user');
             if(ans.includes('Looks Correct')){
@@ -3357,7 +3418,7 @@ async function askNextQuestion(){
       }
       inputArea.style.display='none'; awaitingInput=false;
       showTyping(); await delay(500); removeTyping();
-      addBubble(`I found:<br>First: <strong>${parsed.first}</strong><br>Middle: <strong>${parsed.middle||'None'}</strong><br>Last: <strong>${parsed.last||'None'}</strong><br>Suffix: <strong>${parsed.suffix||'None'}</strong><br><br>Use this?`,'ai');
+      addBubble(nameCardHtml(parsed),'ai');
       addQuickReplies(['✅ Looks Correct','✏️ Edit'], async(ans)=>{
         clearQuickReplies(); addBubble(ans,'user');
         if(ans.includes('Looks Correct')){ applyEmployeeName(parsed); flowIndex++; await askNextQuestion(); }
@@ -4834,6 +4895,7 @@ function showDateTimePicker(defaultDate, onConfirm) {
 
 async function startFlow(){
   chatWindow.innerHTML='';
+  exitFieldMode();
   showVoiceFloat();
   activeFlow=baseFlow; flowIndex=0;
   showTyping(); await delay(700); removeTyping();
@@ -4854,7 +4916,7 @@ function armSupervisorName(){
     }
     inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
     showTyping(); await delay(500); removeTyping();
-    addBubble(`I found:<br>First: <strong>${parsed.first}</strong><br>Middle: <strong>${parsed.middle||'None'}</strong><br>Last: <strong>${parsed.last||'None'}</strong><br>Suffix: <strong>${parsed.suffix||'None'}</strong><br><br>Use this?`,'ai');
+    addBubble(nameCardHtml(parsed),'ai');
     addQuickReplies(['✅ Looks Correct','✏️ Edit'], async(ans)=>{
       clearQuickReplies(); addBubble(ans,'user');
       if(ans.includes('Looks Correct')){
