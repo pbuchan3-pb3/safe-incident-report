@@ -7,6 +7,24 @@ Semantic versioning: MAJOR.MINOR.PATCH.
 - Dual-channel messaging: transcription failure never implies the audio failed.
 - Recorder diagnostics under ?debug=1; ?srtest=1 recognition-only probe.
 
+## [2.0.7] — Native Report File Sharing
+- Share PDF File / Share Word File now share the ACTUAL generated file via the Web
+  Share API (navigator.share({files:[...]})) - Gmail and other apps receive the
+  real .pdf/.doc attachment, not an Acrobat/GitHub/blob link.
+- One generator, two destinations: forcePdfDownload and the new forcePdfBlob share
+  a single _pdfConfig(); generatePDF/generateWord gained a _mode==='share' branch
+  that returns the same html/rtf artifact instead of downloading. Content is
+  unchanged (byte-identical bodies aside from the share branch).
+- Real File objects: application/pdf and application/msword (current RTF-based .doc).
+- Graceful fallback when files can't be shared: auto-download + "Native file
+  sharing isn't supported on this device. Your report has been downloaded. Please
+  attach the downloaded file to your email." (never silent).
+- Professional timestamped filenames, no random IDs:
+  SAFE_Incident_Report_YYYY-MM-DD_HHMM.pdf/.doc (Word aligned to the PDF pattern).
+- All existing buttons retained (Download PDF/Word, Submit/Email). Desktop keeps
+  downloading. Recorder, transcription, entity-aware wording, reassignment,
+  clothing recorder, Word encoding, and the Worker all unchanged/byte-identical.
+
 ## [2.0.6] — Entity-Aware Reporting + Soft Data Consistency
 - Verified names now appear with role descriptors in generated report wording via
   a shared, deterministic, quote-protected render layer (no AI synthesis, no fact

@@ -5,7 +5,7 @@
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
   RELEASE: v2.0.2b — Mobile Field Experience Completion (functional core: 1.9.12 incident module).
-  APPLICATION VERSION: 2.0.6   (Entity-aware reporting + hair soft-check)
+  APPLICATION VERSION: 2.0.7   (Native PDF & Word file sharing)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
@@ -963,7 +963,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '2.0.6';
+const APP_VERSION = '2.0.7';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -4311,13 +4311,17 @@ Return ONLY the narrative text. No preamble, no labels, no markdown.`;
       submitWrap.innerHTML=`
         <div style="font-size:12px;color:var(--text-muted);text-align:center;margin:12px 0 8px;font-style:italic;">Report signed and locked. Download or submit below.</div>\n        <div style="font-size:11px;color:var(--text-muted);text-align:center;margin:0 0 8px;">The email opens with the full report text. To include files, download the PDF and Word documents above and attach them before sending.</div>
         <button class="download-pdf-btn" style="margin-top:6px;">⬇ Download Professional PDF</button>
+        <button class="share-pdf-btn" style="margin-top:6px;">📤 Share PDF File</button>
         <button class="download-word-btn" style="margin-top:6px;">⬇ Download Word Document</button>
+        <button class="share-word-btn" style="margin-top:6px;">📤 Share Word File</button>
         <button class="submit-btn" style="margin-top:6px;">📧 Submit Report — Send to HR & Myself</button>
         <div class="email-status"></div>
       `;
       card.appendChild(submitWrap);
       submitWrap.querySelector('.download-pdf-btn').onclick=()=>generatePDF(isIncident);
       submitWrap.querySelector('.download-word-btn').onclick=()=>generateWord(isIncident);
+      submitWrap.querySelector('.share-pdf-btn').onclick=()=>shareReportFile('pdf',isIncident);
+      submitWrap.querySelector('.share-word-btn').onclick=()=>shareReportFile('word',isIncident);
       const finalSubmitBtn = submitWrap.querySelector('.submit-btn');
       const finalStatusDiv = submitWrap.querySelector('.email-status');
       finalSubmitBtn.onclick=async()=>{
@@ -4343,16 +4347,44 @@ Return ONLY the narrative text. No preamble, no labels, no markdown.`;
 // ── PDF GENERATION ─────────────────────────────────────────────────────────
 function _safeTs(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'_'+p(d.getHours())+p(d.getMinutes()); }
 function _loadHtml2Pdf(){ return new Promise(function(res,rej){ if(window.html2pdf) return res(window.html2pdf); const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'; s.onload=function(){ window.html2pdf?res(window.html2pdf):rej(new Error('nolib')); }; s.onerror=function(){ rej(new Error('cdn')); }; document.head.appendChild(s); }); }
+function _pdfConfig(filename){ return {margin:0,filename:filename,image:{type:'jpeg',quality:0.96},html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff'},jsPDF:{unit:'pt',format:'letter',orientation:'portrait'},pagebreak:{mode:['css','legacy']}}; }
 async function forcePdfDownload(html, filename){
   try{
     const lib=await _loadHtml2Pdf();
     const clean=html.replace(/<script>[\s\S]*?<\/script>/g,'');
-    await lib().set({margin:0,filename:filename,image:{type:'jpeg',quality:0.96},html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff'},jsPDF:{unit:'pt',format:'letter',orientation:'portrait'},pagebreak:{mode:['css','legacy']}}).from(clean,'string').save();
+    await lib().set(_pdfConfig(filename)).from(clean,'string').save();
     return true;
   }catch(e){ return false; }
 }
+async function forcePdfBlob(html, filename){
+  const lib=await _loadHtml2Pdf();
+  const clean=html.replace(/<script>[\s\S]*?<\/script>/g,'');
+  return await lib().set(_pdfConfig(filename)).from(clean,'string').outputPdf('blob');
+}
+// Native file sharing (Web Share API level 2) with graceful download fallback.
+async function shareReportFile(kind, isIncident){
+  try{
+    let file, filename;
+    if(kind==='pdf'){
+      const built=generatePDF(isIncident,'share');
+      const blob=await forcePdfBlob(built.html, built.filename);
+      filename=built.filename; file=new File([blob], filename, {type:'application/pdf'});
+    } else {
+      const built=generateWord(isIncident,'share');
+      filename=built.filename; file=new File([built.blob], filename, {type:built.mimeType});
+    }
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      try{ await navigator.share({files:[file], title:'S.A.F.E. Incident Report', text:'S.A.F.E. Incident Report'}); return; }
+      catch(err){ if(err && err.name==='AbortError') return; /* fall through to download */ }
+    }
+    const url=URL.createObjectURL(file); const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url);
+    addBubble("Native file sharing isn't supported on this device. Your report has been downloaded. Please attach the downloaded file to your email.",'ai');
+  }catch(e){
+    addBubble("Atlas couldn't open the share sheet, so the report was downloaded instead. Please attach the downloaded file to your email.",'ai');
+  }
+}
 
-function generatePDF(isIncident) {
+function generatePDF(isIncident, _mode) {
   const fd = formData;
   const supName = `${fd.supervisorFirstName||''} ${fd.supervisorLastName||''} ${fd.supervisorSuffix||''}`.replace(/\s+/g,' ').trim();
   const empName = fd.employeeDisplayName||`${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim();
@@ -4593,6 +4625,7 @@ function generatePDF(isIncident) {
 </html>`;
 
   const _fname='SAFE_'+(isIncident?'Incident_Report':'Employee_Recognition')+'_'+_safeTs()+'.pdf';
+  if(_mode==='share'){ return {html:html, filename:_fname}; }
   forcePdfDownload(html,_fname).then(function(ok){
     if(ok) return;
     const win=window.open('','_blank');
@@ -4601,7 +4634,7 @@ function generatePDF(isIncident) {
   });
 }
 
-function generateWord(isIncident) {
+function generateWord(isIncident, _mode) {
   const fd = formData;
   const supName = `${fd.supervisorFirstName||''} ${fd.supervisorLastName||''} ${fd.supervisorSuffix||''}`.replace(/\s+/g,' ').trim();
   const title = isIncident ? 'Incident Report' : 'Employee Recognition Report';
@@ -4679,10 +4712,12 @@ function generateWord(isIncident) {
   rtf += '}';
 
   const blob = new Blob([rtf], {type:'application/rtf'});
+  const _wname='SAFE_'+(isIncident?'Incident_Report':'Recognition_Report')+'_'+_safeTs()+'.doc';
+  if(_mode==='share'){ return {blob:blob, filename:_wname, mimeType:'application/msword'}; }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'SAFE_'+(isIncident?'Incident':'Recognition')+'_Report_'+submissionId+'.doc';
+  a.download = _wname;
   a.click();
   URL.revokeObjectURL(url);
 }
