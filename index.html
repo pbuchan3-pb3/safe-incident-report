@@ -5,7 +5,7 @@
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
   RELEASE: v2.0.2b — Mobile Field Experience Completion (functional core: 1.9.12 incident module).
-  APPLICATION VERSION: 2.0.2b  (part 2: Word export encoding/header/markdown repair)
+  APPLICATION VERSION: 2.0.4   (Structured Reassignment)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
@@ -963,7 +963,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '2.0.2b';
+const APP_VERSION = '2.0.4';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -1472,6 +1472,9 @@ async function submitToSheets(isIncident) {
         positionHeld: fd.positionHeld || '',
         assignmentsWorked: (fd.assignmentsWorked||[]).join(', '),
         assignmentTimeline: fd.assignmentTimeline || '',
+        initialAssignments: (fd.assignmentsWorked||[]).join(', '),
+        reassignmentAssignments: (fd.reassignmentAssignments||[]).join(', '),
+        assignmentStatus: fd.assignmentStatus || '',
         supervisorEmail: fd.supervisorEmail || '',
         guestName: fd.guestName || '',
         guestSeat: fd.guestSeat || '',
@@ -2797,12 +2800,65 @@ async function standardizeOther(text, contextLabel){
   return { original:raw, label:(cleaned||raw).trim() };
 }
 
+function mountAssignmentSelector(opts){
+  opts=opts||{};
+    inputArea.style.display='none'; awaitingInput=false;
+    const groups=activeVenueConfig().assignmentGroups;
+    const selected=new Set(opts.selectedValues||[]);
+    const others={};
+    const wrap=document.createElement('div'); wrap.className='op-wrap';
+    const help=document.createElement('div'); help.className='recval-help'; help.textContent=(opts.help||'Select every assignment you worked. Expand a group to see its options.'); wrap.appendChild(help);
+    const summary=document.createElement('div'); summary.className='recval-summary'; wrap.appendChild(summary);
+    function updateSummary(){
+      const arr=[...selected];
+      summary.innerHTML='<b>'+(opts.summaryLabel||'Assignments Selected')+'</b>'+(arr.length?'<br>'+arr.join(', '):'<br><span class="recval-sum-empty">None yet</span>');
+      done.disabled=selected.size===0;
+    }
+    groups.forEach(function(g){
+      const row=document.createElement('div'); row.className='recval-row';
+      const head=document.createElement('button'); head.type='button'; head.className='recval-cat'; head.innerHTML='<span>'+g.group+'</span><span class="recval-caret">▾</span>';
+      const panel=document.createElement('div'); panel.className='recval-panel'; panel.style.display='none';
+      let otherBox=null;
+      g.items.forEach(function(it){
+        const chip=document.createElement('button'); chip.type='button'; chip.className='recval-chip'; chip.textContent=it;
+        chip.onclick=function(ev){ ev.stopPropagation();
+          if(selected.has(it)){ selected.delete(it); chip.classList.remove('sel'); } else { selected.add(it); chip.classList.add('sel'); }
+          updateSummary();
+        };
+        panel.appendChild(chip);
+      });
+      const oc=document.createElement('button'); oc.type='button'; oc.className='recval-chip'; oc.textContent='Other';
+      oc.onclick=function(ev){ ev.stopPropagation();
+        if(oc.classList.contains('sel')){ oc.classList.remove('sel'); if(otherBox){otherBox.remove();otherBox=null;} [...selected].forEach(function(l){ if(l.indexOf(g.group+' (Other): ')===0) selected.delete(l); }); delete others[g.group]; updateSummary(); return; }
+        oc.classList.add('sel');
+        if(!otherBox){
+          otherBox=document.createElement('div'); otherBox.className='recval-other';
+          const ta=document.createElement('input'); ta.type='text'; ta.className='recval-other-input'; ta.placeholder='Describe the assignment...';
+          const sv=document.createElement('button'); sv.type='button'; sv.className='recval-other-save'; sv.textContent='Add';
+          sv.onclick=async function(){ const t=ta.value.trim(); if(!t) return; sv.disabled=true; sv.textContent='...'; const r=await standardizeOther(t,'assignment'); selected.add(g.group+' (Other): '+r.label); others[g.group]=r.original; ta.disabled=true; sv.textContent='Added ✓'; updateSummary(); };
+          ta.addEventListener('keydown',function(e){ if(e.key==='Enter'){e.preventDefault();sv.onclick();} });
+          otherBox.appendChild(ta); otherBox.appendChild(sv); panel.appendChild(otherBox); ta.focus();
+        }
+      };
+      panel.appendChild(oc);
+      head.onclick=function(){ panel.style.display = panel.style.display==='none'?'flex':'none'; };
+      row.appendChild(head); row.appendChild(panel); wrap.appendChild(row);
+    });
+    const controls=document.createElement('div'); controls.className='recval-controls';
+    const done=document.createElement('button'); done.type='button'; done.className='recval-done'; done.textContent='Done'; done.disabled=true;
+    done.onclick=async function(){ wrap.remove(); if(typeof opts.onConfirm==='function'){ await opts.onConfirm([...selected], others); } };
+    controls.appendChild(done); wrap.appendChild(controls);
+    chatWindow.appendChild(wrap); scrollBottom(); updateSummary();
+}
+
 // Operational context for report outputs.
 function operationalContextText(fd){
   const lines=[];
   if(fd.positionHeld) lines.push('Position: '+fd.positionHeld);
-  if(fd.assignmentsWorked && fd.assignmentsWorked.length) lines.push('Assignments Worked: '+fd.assignmentsWorked.join(', '));
-  if(fd.assignmentTimeline) lines.push('Assignment Timeline: '+fd.assignmentTimeline);
+  if(fd.assignmentsWorked && fd.assignmentsWorked.length) lines.push('Initial Assignment(s): '+fd.assignmentsWorked.join(', '));
+  if(fd.reassignmentAssignments && fd.reassignmentAssignments.length) lines.push('Reassigned To: '+fd.reassignmentAssignments.join(', '));
+  else if(fd.assignmentStatus) lines.push('Assignment Status: '+fd.assignmentStatus);
+  else if(fd.assignmentTimeline) lines.push('Reassignment Details: '+fd.assignmentTimeline);
   return lines.join('\n');
 }
 
@@ -3464,59 +3520,10 @@ async function askNextQuestion(){
   }
 
   if(step.isAssignments){
-    inputArea.style.display='none'; awaitingInput=false;
-    const groups=activeVenueConfig().assignmentGroups;
-    const selected=new Set();
-    const others={};
-    const wrap=document.createElement('div'); wrap.className='op-wrap';
-    const help=document.createElement('div'); help.className='recval-help'; help.textContent='Select every assignment you worked. Expand a group to see its options.'; wrap.appendChild(help);
-    const summary=document.createElement('div'); summary.className='recval-summary'; wrap.appendChild(summary);
-    function updateSummary(){
-      const arr=[...selected];
-      summary.innerHTML='<b>Assignments Selected</b>'+(arr.length?'<br>'+arr.join(', '):'<br><span class="recval-sum-empty">None yet</span>');
-      done.disabled=selected.size===0;
-    }
-    groups.forEach(function(g){
-      const row=document.createElement('div'); row.className='recval-row';
-      const head=document.createElement('button'); head.type='button'; head.className='recval-cat'; head.innerHTML='<span>'+g.group+'</span><span class="recval-caret">▾</span>';
-      const panel=document.createElement('div'); panel.className='recval-panel'; panel.style.display='none';
-      let otherBox=null;
-      g.items.forEach(function(it){
-        const chip=document.createElement('button'); chip.type='button'; chip.className='recval-chip'; chip.textContent=it;
-        chip.onclick=function(ev){ ev.stopPropagation();
-          if(selected.has(it)){ selected.delete(it); chip.classList.remove('sel'); } else { selected.add(it); chip.classList.add('sel'); }
-          updateSummary();
-        };
-        panel.appendChild(chip);
-      });
-      const oc=document.createElement('button'); oc.type='button'; oc.className='recval-chip'; oc.textContent='Other';
-      oc.onclick=function(ev){ ev.stopPropagation();
-        if(oc.classList.contains('sel')){ oc.classList.remove('sel'); if(otherBox){otherBox.remove();otherBox=null;} [...selected].forEach(function(l){ if(l.indexOf(g.group+' (Other): ')===0) selected.delete(l); }); delete others[g.group]; updateSummary(); return; }
-        oc.classList.add('sel');
-        if(!otherBox){
-          otherBox=document.createElement('div'); otherBox.className='recval-other';
-          const ta=document.createElement('input'); ta.type='text'; ta.className='recval-other-input'; ta.placeholder='Describe the assignment...';
-          const sv=document.createElement('button'); sv.type='button'; sv.className='recval-other-save'; sv.textContent='Add';
-          sv.onclick=async function(){ const t=ta.value.trim(); if(!t) return; sv.disabled=true; sv.textContent='...'; const r=await standardizeOther(t,'assignment'); selected.add(g.group+' (Other): '+r.label); others[g.group]=r.original; ta.disabled=true; sv.textContent='Added ✓'; updateSummary(); };
-          ta.addEventListener('keydown',function(e){ if(e.key==='Enter'){e.preventDefault();sv.onclick();} });
-          otherBox.appendChild(ta); otherBox.appendChild(sv); panel.appendChild(otherBox); ta.focus();
-        }
-      };
-      panel.appendChild(oc);
-      head.onclick=function(){ panel.style.display = panel.style.display==='none'?'flex':'none'; };
-      row.appendChild(head); row.appendChild(panel); wrap.appendChild(row);
-    });
-    const controls=document.createElement('div'); controls.className='recval-controls';
-    const done=document.createElement('button'); done.type='button'; done.className='recval-done'; done.textContent='Done'; done.disabled=true;
-    done.onclick=async function(){
-      wrap.remove();
-      formData.assignmentsWorked=[...selected];
-      formData.assignmentsWorkedOriginal=others;
-      addBubble(formData.assignmentsWorked.join(', '),'user');
-      flowIndex++; await askNextQuestion();
-    };
-    controls.appendChild(done); wrap.appendChild(controls);
-    chatWindow.appendChild(wrap); scrollBottom(); updateSummary();
+    mountAssignmentSelector({ onConfirm: async function(arr, others){
+      formData.assignmentsWorked=arr; formData.initialAssignments=arr; formData.assignmentsWorkedOriginal=others;
+      addBubble(arr.join(', '),'user'); flowIndex++; await askNextQuestion();
+    }});
     return;
   }
 
@@ -3525,19 +3532,16 @@ async function askNextQuestion(){
     addQuickReplies(['✅ Yes','🔄 No — I was reassigned'], async function(ans){
       clearQuickReplies(); addBubble(ans,'user');
       if(ans.indexOf('Yes')!==-1){
-        formData.assignmentTimeline='Remained in the assigned position(s) for the entire shift.';
+        formData.assignmentStatus='Remained in the assigned position(s) for the entire shift.'; formData.reassignmentAssignments=[]; formData.assignmentTimeline='';
         flowIndex++; await askNextQuestion();
       } else {
         showTyping(); await delay(300); removeTyping();
-        addBubble('Describe your reassignment(s).','ai');
-        inputArea.style.display='flex'; awaitingInput=true; document.getElementById('inputHint').style.display='block'; userInput.focus();
-        sendInterceptor=async(raw)=>{
-          inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
-          showTyping(); await delay(400); removeTyping();
-          formData.assignmentTimelineRaw=(raw||'').trim(); const cleaned=await cleanWithAI((raw||'').trim(), 'Assignment timeline for the '+roleNoun()+' at '+formData.venue+'. Refer to the person as "the '+roleNoun()+'", never "the officer".', 'field', 'assignmentTimeline');
-          formData.assignmentTimeline=cleaned||(raw||'').trim();
-          flowIndex++; await askNextQuestion();
-        };
+        addBubble('Which assignment(s) were you reassigned to?','ai');
+        formData.assignmentStatus='Reassigned'; formData.assignmentTimeline='';
+        mountAssignmentSelector({ summaryLabel:'Reassigned To', help:'Select every assignment you were reassigned to. Expand a group to see its options.', selectedValues:(formData.reassignmentAssignments||[]), onConfirm: async function(arr, others){
+          formData.reassignmentAssignments=arr; formData.reassignmentOthers=others;
+          addBubble(arr.join(', '),'user'); flowIndex++; await askNextQuestion();
+        }});
       }
     });
     return;
@@ -3547,8 +3551,10 @@ async function askNextQuestion(){
     inputArea.style.display='none'; awaitingInput=false;
     let html='<b>Today\'s Operational Context</b><br><br>';
     html+='<b>Position</b><br>'+(formData.positionHeld||'—')+'<br><br>';
-    html+='<b>Assignments Worked</b><br>'+((formData.assignmentsWorked&&formData.assignmentsWorked.length)?formData.assignmentsWorked.map(function(a){return '\u2713 '+a;}).join('<br>'):'None')+'<br><br>';
-    html+='<b>Assignment Timeline</b><br>'+(formData.assignmentTimeline||'—');
+    html+='<b>Initial Assignment(s)</b><br>'+((formData.assignmentsWorked&&formData.assignmentsWorked.length)?formData.assignmentsWorked.map(function(a){return '\u2713 '+a;}).join('<br>'):'None')+'<br><br>';
+    if(formData.reassignmentAssignments&&formData.reassignmentAssignments.length){ html+='<b>Reassigned To</b><br>'+formData.reassignmentAssignments.map(function(a){return '\u2713 '+a;}).join('<br>'); }
+    else if(formData.assignmentStatus){ html+='<b>Assignment Status</b><br>'+formData.assignmentStatus; }
+    else if(formData.assignmentTimeline){ html+='<b>Reassignment Details</b><br>'+formData.assignmentTimeline; }
     addBubble(html,'ai');
     addQuickReplies(['✅ Looks Correct','✏️ Edit'], async function(ans){
       clearQuickReplies(); addBubble(ans,'user');

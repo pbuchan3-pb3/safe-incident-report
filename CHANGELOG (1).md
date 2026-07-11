@@ -7,6 +7,21 @@ Semantic versioning: MAJOR.MINOR.PATCH.
 - Dual-channel messaging: transcription failure never implies the audio failed.
 - Recorder diagnostics under ?debug=1; ?srtest=1 recognition-only probe.
 
+## [2.0.4] — Structured Reassignment
+- Reassignment now reuses the shared grouped assignment selector (new reusable
+  mountAssignmentSelector({mode/prompt/selectedValues/onConfirm})) instead of a
+  free-text box. Prompt: "Which assignment(s) were you reassigned to?"
+- Initial vs. reassigned assignments stored distinctly: assignmentsWorked /
+  initialAssignments (initial) and reassignmentAssignments (new); assignmentStatus
+  records "Remained..." or "Reassigned". No fabricated timeline text.
+- Operational Context, review screen, PDF/Word/email (via operationalContextText),
+  and the export payload now show "Initial Assignment(s)" and "Reassigned To"
+  separately; assignment values are never labeled "Assignment Timeline".
+- Legacy fallback: old assignmentTimeline free-text renders under "Reassignment
+  Details" (never relabeled as a timeline).
+- Incident location untouched (no cross-contamination). Worker unchanged;
+  recorder, transcription, Field Mode, name-card, Word encoding all byte-identical.
+
 ## [2.0.2b part 2] — Word Export Repair
 - Word/RTF encoding fixed: non-ASCII (em/en dashes, curly quotes/apostrophes)
   now emitted as RTF \uN? escapes — eliminates mojibake (no more "a-euro"
