@@ -5,7 +5,7 @@
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
   RELEASE: v2.0.2b — Mobile Field Experience Completion (functional core: 1.9.12 incident module).
-  APPLICATION VERSION: 2.0.2b  (Mobile Field Mode, name-card, voice-control)
+  APPLICATION VERSION: 2.0.2b  (part 2: Word export encoding/header/markdown repair)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
@@ -4550,7 +4550,7 @@ function generateWord(isIncident) {
   content += `Physical description provided for identification purposes only.\nThis report is confidential and intended solely for S.A.F.E. Management and Ford Field HR review.\n`;
 
   // Convert to RTF for proper Word formatting
-  const esc = s => (s||'N/A').replace(/[\\{}]/g,'\\$&').replace(/\n/g,'\\par ');
+  const esc = s => (s||'N/A').replace(/\*\*/g,'').replace(/\x60/g,'').replace(/^\s*#{1,6}\s*/gm,'').replace(/[\\{}]/g,'\\$&').replace(/[^\x00-\x7F]/g,function(ch){return String.fromCharCode(92)+'u'+ch.charCodeAt(0)+'?';}).replace(/\n/g,'\\par ');
   const rtfField = (lbl,val) => '{\\pard\\sb40{\\b '+esc(lbl)+': }'+esc(val||'N/A')+'\\par}';
   const rtfHead = s => '{\\pard\\sb180\\sa60\\b\\fs24\\cf1 '+esc(s)+'\\par}';
   const rtfDiv = '{\\pard\\brdrb\\brdrs\\brdrw6 \\par}';
@@ -4558,10 +4558,10 @@ function generateWord(isIncident) {
   let rtf = '{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Arial;}}{\\colortbl;\\red26\\green46\\blue74;\\red232\\green25\\blue44;}\\f0\\fs22\\paperw12240\\paperh15840\\margl1440\\margr1440\\margt1440\\margb1440';
   rtf += '{\\pard\\qc\\b\\fs32\\cf1 S.A.F.E. MANAGEMENT\\par}';
   rtf += '{\\pard\\qc\\b\\fs26\\cf2 '+(isIncident?'INCIDENT REPORT':'EMPLOYEE RECOGNITION REPORT')+'\\par}';
-  rtf += '{\\pard\\qc\\fs18 Submission ID: '+submissionId+' | Filed: '+esc(content.split('\n')[2].replace('Filed: ',''))+'\\par}';
+  rtf += '{\\pard\\qc\\fs18 Submission ID: '+submissionId+' | Filed: '+esc(content.split('\n')[3].replace('Filed: ',''))+'\\par}';
   rtf += rtfDiv;
   // Re-use the plain text content, converting line by line
-  content.split('\n').forEach(line => {
+  content.split('\n').slice(4).forEach(line => {
     if(line.startsWith('===')) { rtf += rtfDiv; }
     else if(line.match(/^[A-Z &]+$/)) { rtf += rtfHead(line); }
     else if(line.startsWith('---')) { /* skip */ }
