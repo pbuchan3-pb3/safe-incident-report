@@ -5,7 +5,7 @@
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
   RELEASE: v2.0.2b — Mobile Field Experience Completion (functional core: 1.9.12 incident module).
-  APPLICATION VERSION: 2.0.7   (Native PDF & Word file sharing)
+  APPLICATION VERSION: 2.0.8   (Conversational refinement + adaptive recognition)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
@@ -963,7 +963,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '2.0.7';
+const APP_VERSION = '2.0.8';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -1217,7 +1217,8 @@ const recognitionFlow = [
   {key:'supervisorEmail', ask:()=>savedEmail ? `What is your email address? We have <strong>${savedEmail}</strong> on file — tap to use it, or type a new one.` : 'What is your email address? A copy of this recognition will be sent to you automatically.', isEmail:true, savedEmailChip:true},
   {key:'employeeName', ask:"Tell me the employee's name.", isEmployeeName:true},
   {key:'employeeRole', ask:"What is their role or position?", quickReplies:['Event Security','Guest Services','Usher','Parking','SAFE Ops','Supervisor','Manager','Other — specify']},
-  {key:'recognitionDescription', editorProfile:'employeeRecognition', mountRecorder:true, ask:"Tell me what this employee did — I'll write it up professionally."},
+  {key:'recognitionDescription', editorProfile:'employeeRecognition', mountRecorder:true, ask:()=>`Tell me what ${empRef()} did that deserves recognition — I'll write it up professionally.`},
+  {key:'recognitionBenefit', ask:()=>`Who benefited from what ${empRef()} did?`, isRecognitionBenefit:true},
   {key:'recognitionValues', ask:"How did their actions reflect S.A.F.E. values? Tap all that apply.", isRecognitionValues:true},
   {key:'recognitionObservations', ask:"Any additional observations to add? (optional)", isRecognitionObservations:true},
   {key:'additionalComments', editorProfile:'employeeRecognition', mountRecorder:true, ask:"Anything else to add to this recognition?", isAdditionalComments:true},
@@ -1247,12 +1248,14 @@ function exitFieldMode(){ _fieldModeOn=false; document.body.classList.remove('fi
 function nameCardHtml(p){
   p=p||{};
   const rows=[];
-  if(p.first) rows.push('First: <strong>'+p.first+'</strong>');
-  if(p.middle) rows.push('Middle: <strong>'+p.middle+'</strong>');
-  if(p.last) rows.push('Last: <strong>'+p.last+'</strong>');
+  if(p.first) rows.push('First Name: <strong>'+p.first+'</strong>');
+  if(p.middle) rows.push('Middle Name: <strong>'+p.middle+'</strong>');
+  if(p.last) rows.push('Last Name: <strong>'+p.last+'</strong>');
   if(p.suffix) rows.push('Suffix: <strong>'+p.suffix+'</strong>');
-  return 'I found:<br>'+rows.join('<br>')+'<br><br>Use this?';
+  return 'I found:<br>'+rows.join('<br>')+'<br><br>Does this look correct?';
 }
+// Shared confirmed-name reference for interview prompts (reuses isConfirmedPersonName).
+function empRef(){ var n=(formData.employeeDisplayName||'').trim(); return (n && isConfirmedPersonName(n,'')) ? n : 'this employee'; }
 function updateProgress(){
   if(!activeFlow || activeFlow.length === 0) return;
   const pct = Math.round((flowIndex / activeFlow.length) * 100);
@@ -2638,6 +2641,21 @@ async function recProcessTranscript(){
   try{ rewrite=await cleanWithAI(raw, 'Voice narrative for '+(formData.venue||'the venue')+'.', 'description', key, prof); }
   catch(e){ rewrite=raw; }
   safeDiag({phase:'speech',finalTranscriptCaptured:true,editorProfileUsed:prof||'(field default)'});
+  const _looksRejected = /(do(es)? not contain|no (clear )?factual|cannot (be )?prepare|unable to (prepare|generate|create)|not enough (information|detail)|insufficient (information|detail)|couldn'?t (find|identify) (any|enough))/i.test(rewrite||'') && (rewrite||'').length < 260;
+  if(_looksRejected){
+    recCollapse(); showTyping(); await delay(300); removeTyping();
+    addBubble("I couldn't understand enough of the recording to prepare a report. Would you like to re-record, review the transcript, or type it instead?",'ai');
+    const editFrom=async function(val){ inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; formData[key]=val; formData[key+'Raw']=raw; formData.transcriptRaw=raw; formData.transcriptEdited=val; recAdvanceAfterTranscript(); };
+    addQuickReplies(['\ud83c\udf99 Re-record','\ud83d\udcc4 Review the transcript','\u2328 Type it instead'], async function(a){
+      clearQuickReplies(); addBubble(a,'user');
+      if(a.indexOf('Re-record')!==-1){ mountRecorderCard(recState.fieldKey, recState.editorProfile, recState.onTranscriptComplete); return; }
+      addBubble(a.indexOf('Review')!==-1 ? 'Here is what I captured — edit it directly, then tap send:' : 'Type it directly, then tap send:','ai');
+      if(a.indexOf('Review')!==-1){ userInput.value=raw; userInput.style.height='auto'; userInput.style.height=Math.min(userInput.scrollHeight,220)+'px'; }
+      inputArea.style.display='flex'; awaitingInput=true; const h=document.getElementById('inputHint'); if(h)h.style.display='block'; userInput.focus();
+      sendInterceptor=async function(edited){ await editFrom((edited||'').trim()); };
+    });
+    return;
+  }
   recState.rewrite=rewrite; recCollapse();
   showTyping(); await delay(300); removeTyping();
   addBubble('Here is the write-up from your recording:<br><br><em>"'+rewrite+'"</em><br><br>Does this accurately capture what happened?','ai');
@@ -3638,6 +3656,24 @@ async function askNextQuestion(){
     return;
   }
 
+  if(step.isRecognitionBenefit){
+    inputArea.style.display='none'; awaitingInput=false;
+    const opts=['Guest(s)','Employee(s)','Team','Supervisor','Event Operations','Multiple Groups','Other','Not Applicable'];
+    addQuickReplies(opts, async function(choice){
+      clearQuickReplies(); addBubble(choice,'user'); formData.recognitionBeneficiary=choice;
+      if(choice==='Guest(s)'){
+        showTyping(); await delay(250); removeTyping();
+        addBubble('Approximately how many guests were assisted?','ai');
+        const counts=['1','2\u20135','6\u201310','11\u201320','20+','Other'];
+        addQuickReplies(counts, async function(c){
+          clearQuickReplies(); addBubble(c,'user');
+          if(c==='Other'){ inputArea.style.display='flex'; awaitingInput=true; const h=document.getElementById('inputHint'); if(h)h.style.display='block'; userInput.focus(); sendInterceptor=async function(raw){ inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; formData.recognitionGuestCount=(raw||'').trim(); addBubble((raw||'').trim(),'user'); flowIndex++; await askNextQuestion(); }; }
+          else { formData.recognitionGuestCount=c; flowIndex++; await askNextQuestion(); }
+        });
+      } else { formData.recognitionGuestCount=''; flowIndex++; await askNextQuestion(); }
+    });
+    return;
+  }
   if(step.isRecognitionValues){
     inputArea.style.display='none';
     document.getElementById('inputHint').style.display='none';
