@@ -5,7 +5,7 @@
   Venue: Ford Field, Detroit, Michigan  ·  Developer: Peyton Buchanan III
   ============================================================================
   RELEASE: v2.0.2b — Mobile Field Experience Completion (functional core: 1.9.12 incident module).
-  APPLICATION VERSION: 2.0.8   (Conversational refinement + adaptive recognition)
+  APPLICATION VERSION: 2.0.9   (Recognition intelligence: category branching, structured behaviors)
   PRODUCTION FILENAME:  index.html
   PRIMARY DEPLOYMENT:   GitHub Pages only  (Netlify retired)
   PRODUCTION URL:       https://pbuchan3-pb3.github.io/safe-incident-report/
@@ -963,7 +963,7 @@ function renderDiagPanel(){
   }).join('');
   el.innerHTML='<div class="sdp-h">AI Rewrite Diagnostics (debug)</div>'+rows;
 }
-const APP_VERSION = '2.0.8';
+const APP_VERSION = '2.0.9';
 const enableVoiceIncidentCapture = true;  // v1.1.0 recorder feature flag; set false to fully revert to v1.0.0 behavior
 
 // ── SPEECH RECOGNITION (MIC INPUT) ────────────────────────────────────────
@@ -1217,10 +1217,11 @@ const recognitionFlow = [
   {key:'supervisorEmail', ask:()=>savedEmail ? `What is your email address? We have <strong>${savedEmail}</strong> on file — tap to use it, or type a new one.` : 'What is your email address? A copy of this recognition will be sent to you automatically.', isEmail:true, savedEmailChip:true},
   {key:'employeeName', ask:"Tell me the employee's name.", isEmployeeName:true},
   {key:'employeeRole', ask:"What is their role or position?", quickReplies:['Event Security','Guest Services','Usher','Parking','SAFE Ops','Supervisor','Manager','Other — specify']},
+  {key:'recognitionCategory', ask:()=>`What best describes what ${empRef()} did?`, isRecognitionCategory:true},
   {key:'recognitionDescription', editorProfile:'employeeRecognition', mountRecorder:true, ask:()=>`Tell me what ${empRef()} did that deserves recognition — I'll write it up professionally.`},
-  {key:'recognitionBenefit', ask:()=>`Who benefited from what ${empRef()} did?`, isRecognitionBenefit:true},
   {key:'recognitionValues', ask:"How did their actions reflect S.A.F.E. values? Tap all that apply.", isRecognitionValues:true},
-  {key:'recognitionObservations', ask:"Any additional observations to add? (optional)", isRecognitionObservations:true},
+  {key:'recognitionRecommendation', ask:"Would you like to add a recognition recommendation? (optional)", isRecognitionRecommendation:true},
+  {key:'recognitionObservations', ask:"Which behaviors did you observe? Tap all that apply \u2014 or skip.", isRecognitionObservations:true},
   {key:'additionalComments', editorProfile:'employeeRecognition', mountRecorder:true, ask:"Anything else to add to this recognition?", isAdditionalComments:true},
 ];
 
@@ -1254,6 +1255,23 @@ function nameCardHtml(p){
   if(p.suffix) rows.push('Suffix: <strong>'+p.suffix+'</strong>');
   return 'I found:<br>'+rows.join('<br>')+'<br><br>Does this look correct?';
 }
+// v2.0.9 Recognition Intelligence: category-driven follow-ups (config, not code).
+const RECOGNITION_CATEGORY_CONFIG={
+  'Guest Service':   { followUp:{ key:'recognitionGuestCount', ask:'Approximately how many guests benefited?', options:['1','2\u20135','6\u201310','11\u201320','20+','Other'] }, usesGuestCount:true },
+  'Teamwork':        { followUp:{ key:'recognitionBeneficiary', ask:'Who benefited?', options:['Fellow employees','Supervisor','Guests','Operations','Entire team','Multiple groups','Other'] }, usesBenefit:true },
+  'Leadership':      { followUp:{ key:'recognitionLeadership', ask:'What leadership behavior was demonstrated?', freeText:true }, usesLeadership:true },
+  'Safety':          { followUp:{ key:'recognitionSafety', ask:'What unsafe condition was prevented?', freeText:true }, usesSafety:true },
+  'Initiative':      { followUp:{ key:'recognitionInitiative', ask:'What extra responsibility was accepted?', freeText:true } },
+  'Professionalism': { followUp:{ key:'recognitionProfessionalism', ask:'What professional behavior stood out?', freeText:true } },
+  'Other':           { followUp:null }
+};
+function recognitionCategoryConfig(){ return RECOGNITION_CATEGORY_CONFIG[formData.recognitionCategory]||null; }
+function recognitionUsesGuestCount(){ const c=recognitionCategoryConfig(); return !!(c&&c.usesGuestCount); }
+function recognitionUsesBenefitQuestion(){ const c=recognitionCategoryConfig(); return !!(c&&c.usesBenefit); }
+function recognitionUsesLeadershipQuestions(){ const c=recognitionCategoryConfig(); return !!(c&&c.usesLeadership); }
+function recognitionUsesSafetyQuestions(){ const c=recognitionCategoryConfig(); return !!(c&&c.usesSafety); }
+function buildRecognitionInterview(){ const c=recognitionCategoryConfig(); return c?c.followUp:null; }
+const OBSERVED_BEHAVIOR_OPTIONS=['Volunteered to assist','Accepted reassignment','Assisted another employee','Mentored employee','Demonstrated leadership','Positive attitude','Excellent communication','Guest service','Initiative','Problem solving','Teamwork','Safety awareness','Stayed beyond assignment','Covered staffing shortage','De-escalation','Other'];
 // Shared confirmed-name reference for interview prompts (reuses isConfirmedPersonName).
 function empRef(){ var n=(formData.employeeDisplayName||'').trim(); return (n && isConfirmedPersonName(n,'')) ? n : 'this employee'; }
 function updateProgress(){
@@ -1436,12 +1454,17 @@ function sendViaMailto(isIncident){
     const empName=fd.employeeDisplayName||`${fd.employeeFirstName||''} ${fd.employeeLastName||''}`.trim();
     body += `RECOGNITION DETAILS\n-------------------\n`;
     body += `Employee: ${empName}\nRole: ${fd.employeeRole||'N/A'}\n\n`;
+    if(fd.recognitionCategory) body += `Category: ${fd.recognitionCategory}\n\n`;
     body += `Description:\n${fd.recognitionNarrative||fd.recognitionDescription||'N/A'}\n\n`;
-    body += `Additional Observations:\n${fd.recognitionObservations||'None'}\n\n`;
+    if(fd.recognitionBeneficiary) body += `Who Benefited: ${fd.recognitionBeneficiary}\n`;
+    if(fd.recognitionGuestCount) body += `Guests Benefited: ${fd.recognitionGuestCount}\n`;
+    if(fd.recognitionRecommendation) body += `Recommendation: ${fd.recognitionRecommendation}\n`;
+    if((fd.recognitionBeneficiary||fd.recognitionGuestCount||fd.recognitionRecommendation)) body += `\n`;
+    if(fd.recognitionObservations && fd.recognitionObservations!=='None') body += `Additional Observations:\n${fd.recognitionObservations}\n\n`;
     body += `S.A.F.E. Values Demonstrated: ${fd.recognitionValues||'N/A'}\n\n`;
     { const _ob=observedBehaviorsText(fd); if(_ob) body += `Observed Behaviors:\n${_ob}\n\n`; }
   }
-  body += `Additional Comments: ${fd.additionalComments||'None'}\n\n`;
+  if(fd.additionalComments && fd.additionalComments!=='None' && fd.additionalComments!=='N/A') body += `Additional Comments: ${fd.additionalComments}\n\n`;
   body += `---\nPhysical description provided for identification purposes only.\nThis report is confidential and intended solely for S.A.F.E. Management and Ford Field HR review.`;
 
   const to = supEmail ? `${hrEmail},${supEmail}` : hrEmail;
@@ -1507,6 +1530,11 @@ async function submitToSheets(isIncident) {
         recognitionDescription: fd.recognitionDescription || '',
         recognitionImpact: fd.recognitionImpact || '',
         recognitionNarrative: fd.recognitionNarrative || '',
+        recognitionCategory: fd.recognitionCategory || '',
+        recognitionBeneficiary: fd.recognitionBeneficiary || '',
+        recognitionGuestCount: fd.recognitionGuestCount || '',
+        recognitionRecommendation: fd.recognitionRecommendation || '',
+        recognitionObservedBehaviors: (fd.recognitionObservedBehaviors||[]).join('; '),
         recognitionValues: fd.recognitionValues || '',
         recognitionValueBehaviors: JSON.stringify(fd.recognitionValueBehaviors||{}),
         recognitionObservations: fd.recognitionObservations || '',
@@ -2982,7 +3010,7 @@ async function runRecognitionSynthesis(){
   if(formData.recognitionAdaptive && formData.recognitionAdaptive.length) parts.push('Context from follow-up questions (use for operational detail, do not quote verbatim): '+formData.recognitionAdaptive.join('; '));
   const composed=parts.join('\n');
   showTyping(); speak('Putting the recognition together'); addBubble('Putting your recognition together...','ai');
-  const ctx='This is an employee recognition report for '+formData.venue+'.';
+  let ctx='This is an employee recognition report for '+formData.venue+'.'+(formData.recognitionCategory?(' Recognition category: '+formData.recognitionCategory+'.'):'')+' Where the facts support it, make clear what happened, why it was exceptional, how it helped operations, and what positive impact resulted. Do not exaggerate; do not invent; remain factual.';
   const woven=await cleanWithAI(composed, ctx, 'description', 'recognitionNarrative', 'employeeRecognition');
   formData.recognitionNarrative=woven;
   removeTyping(); showTyping(); await delay(400); removeTyping();
@@ -3116,7 +3144,8 @@ async function runWitnessInterviews(typesArr, i){
 }
 async function witnessStatementStep(type, w, typesArr, i){
   showTyping(); await delay(250); removeTyping();
-  addBubble('Would you like to document what the '+type+' witness observed?','ai');
+  const _who=(w&&isConfirmedPersonName(w.name,''))?w.name:('the '+type+' witness');
+  addBubble('What did '+_who+' tell you? You can record or type their statement \u2014 or skip.','ai');
   addQuickReplies(['Record Statement','Type Statement','Skip'], async function(ss){
     clearQuickReplies(); addBubble(ss,'user');
     const cont=async function(){ formData.witnessList.push(w); await runWitnessInterviews(typesArr, i+1); };
@@ -3656,21 +3685,37 @@ async function askNextQuestion(){
     return;
   }
 
-  if(step.isRecognitionBenefit){
+  if(step.isRecognitionCategory){
     inputArea.style.display='none'; awaitingInput=false;
-    const opts=['Guest(s)','Employee(s)','Team','Supervisor','Event Operations','Multiple Groups','Other','Not Applicable'];
-    addQuickReplies(opts, async function(choice){
-      clearQuickReplies(); addBubble(choice,'user'); formData.recognitionBeneficiary=choice;
-      if(choice==='Guest(s)'){
-        showTyping(); await delay(250); removeTyping();
-        addBubble('Approximately how many guests were assisted?','ai');
-        const counts=['1','2\u20135','6\u201310','11\u201320','20+','Other'];
-        addQuickReplies(counts, async function(c){
+    addQuickReplies(Object.keys(RECOGNITION_CATEGORY_CONFIG), async function(cat){
+      clearQuickReplies(); addBubble(cat,'user'); formData.recognitionCategory=cat;
+      const fu=buildRecognitionInterview();
+      const done=async function(){ flowIndex++; await askNextQuestion(); };
+      if(!fu){ await done(); return; }
+      showTyping(); await delay(250); removeTyping();
+      addBubble(fu.ask,'ai');
+      formData.recognitionAdaptive=formData.recognitionAdaptive||[];
+      const store=async function(val){ formData[fu.key]=val; formData.recognitionAdaptive.push(fu.ask+' '+val); await done(); };
+      if(fu.freeText){
+        inputArea.style.display='flex'; awaitingInput=true; const h=document.getElementById('inputHint'); if(h)h.style.display='block'; userInput.focus();
+        sendInterceptor=async function(raw){ inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; const v=(raw||'').trim(); addBubble(v,'user'); await store(v); };
+      } else {
+        addQuickReplies(fu.options, async function(c){
           clearQuickReplies(); addBubble(c,'user');
-          if(c==='Other'){ inputArea.style.display='flex'; awaitingInput=true; const h=document.getElementById('inputHint'); if(h)h.style.display='block'; userInput.focus(); sendInterceptor=async function(raw){ inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; formData.recognitionGuestCount=(raw||'').trim(); addBubble((raw||'').trim(),'user'); flowIndex++; await askNextQuestion(); }; }
-          else { formData.recognitionGuestCount=c; flowIndex++; await askNextQuestion(); }
+          if(c==='Other'){ inputArea.style.display='flex'; awaitingInput=true; const h=document.getElementById('inputHint'); if(h)h.style.display='block'; userInput.focus(); sendInterceptor=async function(raw){ inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; const v=(raw||'').trim(); addBubble(v,'user'); await store(v); }; }
+          else { await store(c); }
         });
-      } else { formData.recognitionGuestCount=''; flowIndex++; await askNextQuestion(); }
+      }
+    });
+    return;
+  }
+  if(step.isRecognitionRecommendation){
+    inputArea.style.display='none'; awaitingInput=false;
+    addQuickReplies(['Recognition Only','Supervisor Commendation','HR Recognition','Employee of the Month','Quarterly Recognition','Annual Recognition','Other','Skip'], async function(r){
+      clearQuickReplies(); addBubble(r,'user');
+      if(r==='Skip'){ formData.recognitionRecommendation=''; flowIndex++; await askNextQuestion(); return; }
+      if(r==='Other'){ inputArea.style.display='flex'; awaitingInput=true; const h=document.getElementById('inputHint'); if(h)h.style.display='block'; userInput.focus(); sendInterceptor=async function(raw){ inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; const v=(raw||'').trim(); addBubble(v,'user'); formData.recognitionRecommendation=v; flowIndex++; await askNextQuestion(); }; return; }
+      formData.recognitionRecommendation=r; flowIndex++; await askNextQuestion();
     });
     return;
   }
@@ -3782,30 +3827,43 @@ async function askNextQuestion(){
   }
 
     if(step.isRecognitionObservations){
-    if(typeof mountRecorderCard==='function' && typeof enableVoiceIncidentCapture!=='undefined' && enableVoiceIncidentCapture){ mountRecorderCard('recognitionObservations','employeeRecognition',function(){return showRecognitionSummary();}); }
-    inputArea.style.display='flex'; awaitingInput=true;
-    document.getElementById('inputHint').style.display='block';
-    userInput.focus();
-    addQuickReplies(['Skip — none to add'], async(ans)=>{
-      clearQuickReplies(); addBubble(ans,'user'); sendInterceptor=null;
-      inputArea.style.display='none'; awaitingInput=false;
-      formData.recognitionObservations='None';
-      await showRecognitionSummary();
+    inputArea.style.display='none'; awaitingInput=false;
+    const picked=new Set();
+    const wrap=document.createElement('div'); wrap.className='op-wrap';
+    OBSERVED_BEHAVIOR_OPTIONS.forEach(function(opt){
+      const b=document.createElement('button'); b.type='button'; b.className='op-btn'; b.textContent=opt;
+      b.onclick=function(){ if(picked.has(opt)){ picked.delete(opt); b.classList.remove('op-btn--sel'); } else { picked.add(opt); b.classList.add('op-btn--sel'); } };
+      wrap.appendChild(b);
     });
-    sendInterceptor=async(raw)=>{
-      clearQuickReplies();
-      inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null;
-      const _obsRaw=(raw||'').trim();
-      showTyping(); await delay(400); removeTyping();
-      const _obsClean=await cleanWithAI(_obsRaw, 'Employee recognition additional observations for '+formData.venue+'.', 'field', 'recognitionObservations', 'employeeRecognition');
-      formData.recognitionObservations=_obsClean||_obsRaw;
+    const done=document.createElement('button'); done.type='button'; done.className='op-btn op-btn--primary'; done.textContent='\u2713 Done';
+    const skip=document.createElement('button'); skip.type='button'; skip.className='op-btn'; skip.textContent='Skip \u2014 none to add';
+    const finish=async function(list){
+      wrap.remove();
+      formData.recognitionObservedBehaviors=list;
+      formData.recognitionObservations=list.length?list.join(', '):'None';
+      addBubble(list.length?list.join(', '):'Skip \u2014 none to add','user');
       await showRecognitionSummary();
     };
+    done.onclick=async function(){
+      const list=[...picked];
+      if(list.indexOf('Other')!==-1){
+        wrap.remove(); addBubble(list.join(', '),'user');
+        showTyping(); await delay(200); removeTyping();
+        addBubble('Describe the other behavior you observed:','ai');
+        inputArea.style.display='flex'; awaitingInput=true; const h=document.getElementById('inputHint'); if(h)h.style.display='block'; userInput.focus();
+        sendInterceptor=async function(raw){ inputArea.style.display='none'; awaitingInput=false; sendInterceptor=null; const v=(raw||'').trim(); addBubble(v,'user');
+          const final=list.filter(function(x){return x!=='Other';}); if(v) final.push(v);
+          formData.recognitionObservedBehaviors=final; formData.recognitionObservations=final.length?final.join(', '):'None';
+          await showRecognitionSummary(); };
+        return;
+      }
+      await finish(list);
+    };
+    skip.onclick=async function(){ await finish([]); };
+    wrap.appendChild(done); wrap.appendChild(skip);
+    chatWindow.appendChild(wrap); scrollBottom();
     return;
   }
-
-
-
 
   if(step.isActionsMulti){
     inputArea.style.display='none'; awaitingInput=false;
@@ -4590,14 +4648,18 @@ function generatePDF(isIncident, _mode) {
     body += fv('Employee Role', fd.employeeRole);
     body += `</div>`;
     body += `<div class="field"><div class="field-label">Description of Good Deed</div><div class="field-value narrative">${fd.recognitionNarrative || fd.recognitionDescription || 'Not provided'}</div></div>`;
-    body += `<div class="field" style="margin-top:10px;"><div class="field-label">Additional Observations</div><div class="field-value narrative">${fd.recognitionObservations || 'None'}</div></div>`;
+    if(fd.recognitionCategory) body += `<div class="field" style="margin-top:10px;"><div class="field-label">Category</div><div class="field-value">${fd.recognitionCategory}</div></div>`;
+    if(fd.recognitionBeneficiary) body += `<div class="field" style="margin-top:10px;"><div class="field-label">Who Benefited</div><div class="field-value">${fd.recognitionBeneficiary}</div></div>`;
+    if(fd.recognitionGuestCount) body += `<div class="field" style="margin-top:10px;"><div class="field-label">Guests Benefited</div><div class="field-value">${fd.recognitionGuestCount}</div></div>`;
+    if(fd.recognitionRecommendation) body += `<div class="field" style="margin-top:10px;"><div class="field-label">Recommendation</div><div class="field-value">${fd.recognitionRecommendation}</div></div>`;
+    if(fd.recognitionObservations && fd.recognitionObservations!=='None') body += `<div class="field" style="margin-top:10px;"><div class="field-label">Additional Observations</div><div class="field-value narrative">${fd.recognitionObservations}</div></div>`;
     body += `<div class="field"><div class="field-label">S.A.F.E. Values Demonstrated</div><div class="field-value">${fd.recognitionValues || 'Not provided'}</div></div>`;
     { const _ob=observedBehaviorsText(fd); if(_ob) body += `<div class="field" style="margin-top:10px;"><div class="field-label">Observed Behaviors</div><div class="field-value narrative">${_ob.replace(/\n/g,'<br>')}</div></div>`; }
   }
 
   // Additional Comments
-  body += `<div class="section-title">Additional Comments</div>`;
-  body += `<div class="field"><div class="field-value">${fd.additionalComments || 'None'}</div></div>`;
+  if(fd.additionalComments && fd.additionalComments!=='None' && fd.additionalComments!=='N/A'){ body += `<div class="section-title">Additional Comments</div>`;
+  body += `<div class="field"><div class="field-value">${fd.additionalComments || 'None'}</div></div>`; }
 
   // Signature Block
   body += `
@@ -4716,7 +4778,12 @@ function generateWord(isIncident, _mode) {
     content += `RECOGNITION DETAILS\n${'-'.repeat(30)}\n`;
     content += `Employee: ${empName}\nRole: ${fd.employeeRole||'N/A'}\n\n`;
     content += `Description:\n${fd.recognitionNarrative||fd.recognitionDescription||'N/A'}\n\n`;
-    content += `Additional Observations:\n${fd.recognitionObservations||'None'}\n\n`;
+    if(fd.recognitionCategory) content += `Category: ${fd.recognitionCategory}\n`;
+    if(fd.recognitionBeneficiary) content += `Who Benefited: ${fd.recognitionBeneficiary}\n`;
+    if(fd.recognitionGuestCount) content += `Guests Benefited: ${fd.recognitionGuestCount}\n`;
+    if(fd.recognitionRecommendation) content += `Recommendation: ${fd.recognitionRecommendation}\n`;
+    if(fd.recognitionObservations && fd.recognitionObservations!=='None') content += `Additional Observations:\n${fd.recognitionObservations}\n`;
+    content += `\n`;
     content += `S.A.F.E. Values Demonstrated: ${fd.recognitionValues||'N/A'}\n\n`;
     { const _ob=observedBehaviorsText(fd); if(_ob) content += `Observed Behaviors:\n${_ob}\n\n`; }
   }
